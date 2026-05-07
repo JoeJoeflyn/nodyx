@@ -6,19 +6,37 @@ import { build, files, version } from '$service-worker'
 declare const self: ServiceWorkerGlobalScope
 
 // ── Cache names ───────────────────────────────────────────────────────────────
+// Versioned by SvelteKit's `version` token: every deploy mints fresh cache
+// names, and the previous ones get pruned in `activate`.
 
 const SHELL_CACHE   = `nodyx-shell-${version}`
 const CONTENT_CACHE = `nodyx-content-${version}`
 const IMAGE_CACHE   = `nodyx-images-${version}`
 
-// Assets statiques à precacher (shell de l'app)
-const SHELL_ASSETS = [...build, ...files]
+// Minimal precache: only the small files needed for an offline shell to boot
+// (HTML offline page is embedded, manifest + PWA icons + favicons). The
+// JS/CSS chunks under /_app/immutable/ are intentionally NOT precached,
+// because:
+//   1. They have hash-based URLs and `cache-control: immutable, max-age=1y`
+//      from the upstream server, so the browser's own HTTP cache handles
+//      them perfectly with zero work from the service worker.
+//   2. Precaching them was the root cause of "users stuck on the old
+//      version after a deploy until they manually clear their cache" —
+//      every old chunk hash stayed in this SW's cache forever, even though
+//      the new HTML pointed at completely different chunk names.
+//
+// On the fly, we fall back to NETWORK-FIRST for those chunks (with a
+// best-effort cache copy for offline boots), so the next deploy is visible
+// to every user the moment the new SW takes over (skipWaiting + claim).
+const PRECACHE_PATHS = files.filter(p =>
+  p.endsWith('.png') || p.endsWith('.ico') || p.endsWith('.json') || p.endsWith('.webmanifest')
+)
 
 // ── Installation ─────────────────────────────────────────────────────────────
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SHELL_CACHE).then(cache => cache.addAll(SHELL_ASSETS))
+    caches.open(SHELL_CACHE).then(cache => cache.addAll(PRECACHE_PATHS))
   )
   // Prise de contrôle immédiate — pas d'attente de fermeture des anciens onglets
   self.skipWaiting()
@@ -27,15 +45,19 @@ self.addEventListener('install', (event) => {
 // ── Activation ───────────────────────────────────────────────────────────────
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then(async (keys) => {
-      const current = new Set([SHELL_CACHE, CONTENT_CACHE, IMAGE_CACHE])
-      for (const key of keys) {
-        if (!current.has(key)) await caches.delete(key)
-      }
-    })
-  )
-  self.clients.claim()
+  event.waitUntil((async () => {
+    const keys = await caches.keys()
+    const current = new Set([SHELL_CACHE, CONTENT_CACHE, IMAGE_CACHE])
+    for (const key of keys) {
+      if (!current.has(key)) await caches.delete(key)
+    }
+    await self.clients.claim()
+    // Tell every open tab that a fresh service worker is now in charge,
+    // so the page can decide to show a "new version available" toast or
+    // simply log it. Non-blocking: ignored if no client listens.
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const c of clients) c.postMessage({ type: 'sw:updated', version })
+  })())
 })
 
 // ── Fetch strategy ────────────────────────────────────────────────────────────
@@ -54,8 +76,17 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/api/v1/notifications/subscribe')
   ) return
 
-  // ── Assets statiques (shell) — Cache First ─────────────────────────────────
-  if (SHELL_ASSETS.includes(url.pathname)) {
+  // ── Chunks SvelteKit (/_app/immutable/...) — Network First avec fallback
+  // cache. Les chunks ont des hashs uniques par build : on prend la version
+  // réseau d'abord (fraîche), on stocke pour offline, on retombe sur le cache
+  // si le réseau échoue. Plus jamais de chunk périmé servi après un deploy.
+  if (url.pathname.startsWith('/_app/immutable/') || build.includes(url.pathname)) {
+    event.respondWith(networkFirstChunk(request))
+    return
+  }
+
+  // ── Assets statiques précachés (icons, manifest) — Cache First ────────────
+  if (PRECACHE_PATHS.includes(url.pathname)) {
     event.respondWith(
       caches.match(request).then(cached => cached ?? fetch(request))
     )
@@ -93,6 +124,22 @@ self.addEventListener('fetch', (event) => {
 })
 
 // ── Stratégies ────────────────────────────────────────────────────────────────
+
+// For SvelteKit immutable chunks: ALWAYS try the network first so a freshly
+// deployed build is picked up immediately. Cache as a fallback for offline
+// loads. Hash-based URLs mean this strategy is safe even if the cache fills
+// up with old hashes — they'll never be requested again by a current HTML.
+async function networkFirstChunk(request: Request): Promise<Response> {
+  const cache = await caches.open(SHELL_CACHE)
+  try {
+    const res = await fetch(request)
+    if (res.ok) cache.put(request, res.clone()).catch(() => { /* quota / opaque */ })
+    return res
+  } catch {
+    const cached = await cache.match(request)
+    return cached ?? new Response('', { status: 503, statusText: 'Offline' })
+  }
+}
 
 async function staleWhileRevalidate(request: Request, cacheName: string): Promise<Response> {
   const cache   = await caches.open(cacheName)

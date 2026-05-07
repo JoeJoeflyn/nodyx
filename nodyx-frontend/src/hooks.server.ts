@@ -1,4 +1,28 @@
-import type { HandleFetch } from '@sveltejs/kit';
+import type { Handle, HandleFetch } from '@sveltejs/kit';
+
+// Make sure /service-worker.js (and any other SW-like files) are never cached
+// by intermediate CDNs. Default behaviour: Cloudflare cached service-worker.js
+// for ~17 min, so users were stuck on the old SW after a deploy. With
+// `cache-control: no-cache, no-store, must-revalidate`, the CDN passes the
+// request through every time and the browser only ever sees the latest build.
+//
+// We also apply this to /manifest.json, because a stale manifest with old
+// icon paths can break the PWA install prompt.
+const NO_CACHE_PATHS = new Set([
+	'/service-worker.js',
+	'/sw.js',
+	'/manifest.json',
+]);
+
+export const handle: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	if (NO_CACHE_PATHS.has(event.url.pathname)) {
+		response.headers.set('cache-control', 'no-cache, no-store, must-revalidate');
+		response.headers.set('pragma',         'no-cache');
+		response.headers.set('expires',        '0');
+	}
+	return response;
+};
 
 // Strip the Origin header for external directory/search requests.
 // SvelteKit SSR automatically adds an Origin header to outgoing fetch calls,
