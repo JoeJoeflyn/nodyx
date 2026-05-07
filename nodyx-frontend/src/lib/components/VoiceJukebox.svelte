@@ -1,11 +1,12 @@
 <script lang="ts">
 	import {
 		jukeboxStore, jukeboxVolume, jukeboxMuted, jukeboxAutoplayBlocked,
+		jukeboxStartedMuted,
 		jukeboxPlay, jukeboxPause, jukeboxSeek, jukeboxClear,
 		jukeboxSkipNext, jukeboxSkipPrev,
 		jukeboxToggleRepeat, jukeboxToggleShuffle,
 		jukeboxLoad, jukeboxAddToQueue, jukeboxVote, jukeboxRemoveFromQueue,
-		jukeboxSetVolume, jukeboxToggleMute, jukeboxUnblock,
+		jukeboxSetVolume, jukeboxToggleMute, jukeboxUnblock, jukeboxEnableAudio,
 		jukeboxReplayFromHistory,
 		parseYouTubeUrl, fmtTime,
 	} from '$lib/jukebox'
@@ -21,6 +22,7 @@
 	const vol            = $derived($jukeboxVolume)
 	const muted          = $derived($jukeboxMuted)
 	const autoplayBlocked = $derived($jukeboxAutoplayBlocked)
+	const startedMuted    = $derived($jukeboxStartedMuted)
 
 	// ── Theme ──────────────────────────────────────────────────────────────────
 	const accent      = '#c8914a'
@@ -147,7 +149,20 @@
 		</div>
 
 	{:else}
-		<!-- ── Autoplay blocked banner ───────────────────────────────────────── -->
+		<!-- ── Started muted banner (positive UX, common case) ────────────────── -->
+		{#if startedMuted}
+			<button
+				onclick={jukeboxEnableAudio}
+				class="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold focus:outline-none transition-opacity hover:opacity-90"
+				style="background:rgba(74,222,128,0.16); color:#86efac; border-bottom:1px solid rgba(74,222,128,0.25); animation:nodyx-pulse 2.4s ease-in-out infinite;"
+				title="Le navigateur a démarré la lecture en muet (autoplay policy). Clique pour activer le son et te resynchroniser."
+			>
+				<span>🔊</span>
+				<span>Activer le son</span>
+			</button>
+		{/if}
+
+		<!-- ── Autoplay blocked banner (rare fallback when even muted play fails) ──── -->
 		{#if autoplayBlocked}
 			<button
 				onclick={jukeboxUnblock}

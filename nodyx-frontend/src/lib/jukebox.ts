@@ -60,6 +60,11 @@ export const jukeboxVolume         = writable<number>(_lsNum('jb_vol', 80))
 export const jukeboxMuted          = writable<boolean>(_lsBool('jb_muted', false))
 export const jukeboxAutoplayBlocked = writable<boolean>(false)
 
+// True when audio is playing but muted because the browser refused unmuted
+// autoplay (no user gesture yet). User clicks the "Activer le son" overlay
+// to unmute and resync to the current host position.
+export const jukeboxStartedMuted   = writable<boolean>(false)
+
 // ── Internal state ────────────────────────────────────────────────────────────
 
 let _socket:    Socket | null = null
@@ -70,6 +75,33 @@ let _ytReady    = false
 let _pendingOp: (() => void) | null = null
 let _progressTick: ReturnType<typeof setInterval> | null = null
 let _suppressBroadcast = false  // prevents broadcasting during local unblock
+
+// Has the user clicked anywhere in the jukebox (or its container) since
+// joining the channel? Browsers allow unmuted playVideo() only after such a
+// gesture. Until then, incoming "play" states from the host start MUTED with
+// an overlay to enable sound. Reset on channel disconnect.
+let _userInteracted = false
+
+// Global listeners we install on first jukebox mount, removed on cleanup.
+// They flip `_userInteracted` to true on the first real input from the user
+// (any click, tap or key press anywhere on the page). Lets a member who
+// joins a channel where music is already playing get unmuted audio as soon
+// as they interact with the page once, without having to click the specific
+// "Activer le son" button.
+function _onAnyUserGesture(): void { _userInteracted = true }
+let _gestureListenersAttached = false
+function _attachGestureListeners(): void {
+  if (_gestureListenersAttached || typeof document === 'undefined') return
+  document.addEventListener('pointerdown', _onAnyUserGesture, { once: false, capture: true, passive: true })
+  document.addEventListener('keydown',     _onAnyUserGesture, { once: false, capture: true, passive: true })
+  _gestureListenersAttached = true
+}
+function _detachGestureListeners(): void {
+  if (!_gestureListenersAttached || typeof document === 'undefined') return
+  document.removeEventListener('pointerdown', _onAnyUserGesture, { capture: true } as EventListenerOptions)
+  document.removeEventListener('keydown',     _onAnyUserGesture, { capture: true } as EventListenerOptions)
+  _gestureListenersAttached = false
+}
 
 // ── YouTube URL parsing ───────────────────────────────────────────────────────
 
@@ -101,6 +133,7 @@ function _loadYTApi(): Promise<void> {
 
 export async function mountYTPlayer(containerId: string): Promise<void> {
   if (_ytPlayer) return  // already mounted
+  _attachGestureListeners()
   await _loadYTApi()
   return new Promise(resolve => {
     const YT = (window as any).YT
@@ -169,6 +202,35 @@ export function jukeboxUnblock(): void {
   }
 }
 
+// Called by user click on the "Activer le son" overlay. The track is already
+// playing muted (from a remote state arriving before any user gesture). This
+// un-mutes the player, restores the user's volume preference, and resyncs to
+// the host's current position so the audio is in time with what the listener
+// has been seeing visually.
+export function jukeboxEnableAudio(): void {
+  _userInteracted = true
+  jukeboxStartedMuted.set(false)
+  if (!_ytPlayer || !_ytReady) return
+
+  // Restore audio: respect the user's per-session mute preference if they had
+  // already toggled it, otherwise un-mute and restore the volume slider.
+  const userPrefMuted = get(jukeboxMuted)
+  if (!userPrefMuted) {
+    try {
+      _ytPlayer.unMute()
+      _ytPlayer.setVolume(get(jukeboxVolume))
+    } catch { /* ignore */ }
+  }
+
+  // Resync to current host position (the listener has been hearing silence
+  // while the video kept playing, so jumping to "now" is the correct UX).
+  const state = get(jukeboxStore)
+  if (state.playing && state.track) {
+    const target = _livePosition(state)
+    try { _ytPlayer.seekTo(target, true) } catch { /* ignore */ }
+  }
+}
+
 // ── Sync helpers ──────────────────────────────────────────────────────────────
 
 function _livePosition(state: JukeboxState): number {
@@ -199,6 +261,17 @@ function _applyState(state: JukeboxState): void {
     const sameVideo = prev.track?.videoId === state.track?.videoId
     const target    = _livePosition(state)
 
+    // Browser autoplay policies refuse unmuted playVideo() before any user
+    // gesture. To stay synchronized visually + audibly, we MUTE the player
+    // before any incoming "play" command if the user hasn't interacted yet,
+    // and surface a "Activer le son" overlay (jukeboxStartedMuted=true).
+    // The user clicks once → jukeboxEnableAudio() un-mutes and resyncs.
+    const needMutedStart = state.playing && !_userInteracted
+    if (needMutedStart) {
+      try { _ytPlayer.mute() } catch { /* ignore */ }
+      jukeboxStartedMuted.set(true)
+    }
+
     if (state.track) {
       if (!sameVideo) {
         // New video: load, then explicitly play/pause
@@ -206,7 +279,9 @@ function _applyState(state: JukeboxState): void {
         if (state.playing) {
           _ytPlayer.playVideo()
           setTimeout(() => _ytPlayer?.playVideo(), 600)
-          // Detect browser autoplay blockage (socket event ≠ user gesture)
+          // Detect browser autoplay blockage AFTER the muted-start fallback.
+          // Muted play is almost always allowed, so this banner now only
+          // triggers in pathological cases (extension blocking, etc.).
           // State 1=playing, 3=buffering → OK ; anything else → blocked
           setTimeout(() => {
             const ps = _ytPlayer?.getPlayerState?.()
@@ -218,9 +293,10 @@ function _applyState(state: JukeboxState): void {
           setTimeout(() => _ytPlayer?.pauseVideo(), 800)
         }
       } else {
-        // Same video: sync position if drift > 2.5s
+        // Same video: sync position if drift > 0.8s (tightened from 2.5s for
+        // a noticeably tighter shared-listening experience).
         const cur = _ytPlayer.getCurrentTime?.() ?? 0
-        if (Math.abs(cur - target) > 2.5) _ytPlayer.seekTo(target, true)
+        if (Math.abs(cur - target) > 0.8) _ytPlayer.seekTo(target, true)
         if (state.playing) {
           _ytPlayer.playVideo()
           // Detect blockage for same-video play commands too
@@ -339,14 +415,17 @@ export function cleanupJukebox(socket: Socket): void {
   socket.off('jukebox:update')
   socket.off('jukebox:request_sync')
   _stopProgressLoop()
+  _detachGestureListeners()
   try { _ytPlayer?.destroy?.() } catch { /* ignore */ }
-  _ytPlayer  = null
-  _ytReady   = false
-  _pendingOp = null
-  _socket    = null
-  _channelId = null
+  _ytPlayer        = null
+  _ytReady         = false
+  _pendingOp       = null
+  _socket          = null
+  _channelId       = null
+  _userInteracted  = false
   jukeboxStore.set({ ..._INIT })
   jukeboxAutoplayBlocked.set(false)
+  jukeboxStartedMuted.set(false)
 }
 
 // ── Public API — user actions ─────────────────────────────────────────────────
