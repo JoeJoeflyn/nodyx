@@ -404,9 +404,12 @@
 <svelte:window onkeydown={handleGlobalKeydown} />
 
 <svelte:head>
-	{#if communityLogo}
-		<link rel="icon" href={communityLogo} />
-	{/if}
+	<!-- The favicon is intentionally not overridden by the community logo
+	     anymore. It stays the Nodyx brand mark declared in app.html (and
+	     a self-hoster can replace static/favicon.ico if they want their
+	     own). Decoupling favicon (brand identity) from communityLogo
+	     (community identity) prevents an uploaded square logo from being
+	     stretched into a 16×16 tab icon. -->
 	<meta property="og:site_name" content={communityName} />
 	<meta name="theme-color" content="#6366f1" />
 	<!-- Preload all Google Font presets (avatar/username effects) -->
