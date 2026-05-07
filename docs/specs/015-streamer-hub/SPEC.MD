@@ -302,24 +302,34 @@ Twitch                 nodyx.org                Nodyx instance
 
 ---
 
-## 6. Chat bridge Twitch IRC ↔ Nodyx
+## 6. Chat bridge Twitch ↔ Nodyx
 
-### 6.1 Architecture
+### 6.1 Architecture (EventSub Chat, pas IRC)
 
-Connexion IRC TLS persistante depuis `nodyx-core` vers `irc.chat.twitch.tv:6697`. Authentification avec le `access_token` du streamer (PASS + NICK).
+Twitch a poussé en GA fin 2024 deux APIs qui rendent IRC obsolète pour notre cas d'usage :
+- **EventSub Chat** (`channel.chat.message`) : webhook qui pousse chaque message du chat vers nous, dans le même pipeline que les autres events (subs, follows, etc.)
+- **Helix Send Chat Message** (`POST /chat/messages`) : envoie un message dans le chat depuis le compte streamer
 
-Pour chaque message IRC :
-- Parse les badges (BTTV/FFZ/7TV cache + Twitch native CDN)
-- Convertit en payload `chat:message` Nodyx
-- Émet sur le channel Nodyx dédié `#twitch-chat` (auto-créé)
+Donc **zéro connexion IRC** à maintenir. Le bridge devient un simple flux de webhooks et de POST HTTP, dans la même couche que tout le reste.
 
-Pour chaque message Nodyx posté dans `#twitch-chat` :
-- Convertit en `PRIVMSG #channel :message`
-- Envoie via la connexion IRC
+```
+Inbound  : Twitch chat → EventSub channel.chat.message webhook → Nodyx chat #twitch-chat
+Outbound : Message Nodyx dans #twitch-chat → POST /chat/messages Helix → Twitch chat
+```
 
-### 6.2 Préservation des badges et emotes
+Les messages reçus arrivent dans `streamer_events` avec `event_type = 'chat.message'` et un `payload` contenant `{ broadcaster_user_id, chatter_user_id, message, badges, fragments... }`.
 
-- **Badges Twitch** (sub, mod, vip, premium) : sprite officiel via Helix `/chat/badges/global` + `/chat/badges/channel`
+### 6.2 Channel Nodyx dédié
+
+Un channel `#twitch-chat` est auto-créé à la première connexion Twitch. Il est read-write par défaut pour tous les membres de l'instance. Toute écriture dans ce channel est relayée vers le chat Twitch.
+
+Mode "lecture seule pour les non-streamers" optionnel via la config admin.
+
+### 6.3 Préservation des badges et emotes
+
+EventSub Chat fournit déjà les `badges` et `fragments` (avec emote IDs) dans le payload. On enrichit côté Nodyx avec :
+
+- **Badges Twitch** (sub, mod, vip, premium) : sprite officiel via Helix `/chat/badges/global` + `/chat/badges/channel`, cachés en Redis 24h
 - **Emotes natives Twitch** : URL CDN `https://static-cdn.jtvnw.net/emoticons/v2/{id}/default/dark/2.0`
 - **BTTV** : `https://api.betterttv.net/3/cached/users/twitch/{user_id}` + `https://cdn.betterttv.net/emote/{id}/2x.webp`
 - **FFZ** : `https://api.frankerfacez.com/v1/room/id/{room_id}` + cache 24h
@@ -327,10 +337,21 @@ Pour chaque message Nodyx posté dans `#twitch-chat` :
 
 Tous les caches stockés en Redis (`emotes:bttv:channel:{user_id}`, etc., TTL 24h).
 
-### 6.3 Limites techniques
+### 6.4 Garde-fou : check stream live avant send
 
-- Twitch IRC : 20 messages / 30 secondes pour un compte non-mod, 100 / 30s pour un mod, 7500 messages / 30s pour un partner. Acceptable pour 95% des cas.
-- Si rate-limit hit : queue Redis `streamer:chat:queue` avec backoff exponentiel.
+Avant chaque `POST /chat/messages` outbound, on vérifie que `streamer_sessions` a une session ouverte pour ce streamer (`ended_at IS NULL`). Sinon, on n'envoie pas (un message dans le chat d'un stream offline est inutile et perçu comme spam par les viewers qui se connectent à la prochaine session).
+
+Mode **"test"** : un toggle admin bypasse ce check pour permettre au streamer de tester l'envoi à froid.
+
+### 6.5 Limites techniques
+
+- **Helix Send Chat Message** : limite de 100 req/min pour un compte régulier, 1500 req/min pour un compte affilié/partenaire. Largement suffisant.
+- **EventSub Chat** : pas de limite côté reception, c'est Twitch qui pousse.
+- Si rate-limit hit côté send : queue Redis `streamer:chat:send_queue` avec backoff exponentiel + alerte admin si la queue dépasse 50 messages en attente.
+
+### 6.6 Pourquoi pas IRC
+
+IRC reste fonctionnel à la date de cette spec, mais Twitch a clairement signalé sa volonté de pousser EventSub Chat comme remplacement. Choisir IRC dès Phase 2 = se créer une dette technique pour un refactor inévitable. Choisir EventSub Chat = aligné avec la direction Twitch, code plus simple, pipeline unifié avec le reste des events.
 
 ---
 
@@ -369,19 +390,45 @@ Tous les caches stockés en Redis (`emotes:bttv:channel:{user_id}`, etc., TTL 24
 
 ## 8. OBS Stream Deck web
 
-### 8.1 Connexion OBS WebSocket v5
+### 8.1 Topologies supportées
+
+Trois cas réels chez les streamers :
+
+| Topologie | Cas d'usage | Configuration Nodyx |
+|---|---|---|
+| **A. PC unique** | Streamer débutant, configurateur OBS sur la même machine que le navigateur | `ws://localhost:4455` |
+| **B. Multi-PC LAN** | Streamer sérieux : PC gaming + PC streaming + Pi pour OBS, tous sur le même réseau | `ws://192.168.X.Y:4455` (IP locale du PC OBS) |
+| **C. Distant via tunnel** | Stream à distance, PC OBS chez soi, navigateur en déplacement | Tunnel utilisateur (Tailscale, Cloudflare Tunnel, headscale, …) qui expose le PC OBS sur l'internet, puis `wss://obs.tunnel.example:4455` |
+
+**Phase 3 (initiale)** couvre A et B en mode **navigateur-direct** : le frontend Nodyx ouvre une connexion WebSocket directe vers OBS. Avantages :
+- Latence minimale (pas de hop serveur)
+- Aucun credential OBS sur le serveur Nodyx
+- Marche en LAN sans aucune config réseau supplémentaire
+
+**Phase 6+ (futur)** ajoute un mode **proxy serveur** pour le cas C sans tunnel utilisateur :
+- Credentials OBS chiffrés côté serveur Nodyx
+- Le serveur Nodyx maintient la connexion OBS
+- Le navigateur parle au serveur Nodyx via Socket.IO
+- Latence +30-80ms acceptable, fonctionne depuis n'importe où
+
+### 8.2 Configuration
 
 Le streamer :
-1. Installe OBS 28+ (built-in WebSocket server v5)
-2. Active "WebSocket Server" dans OBS Settings
+1. Installe OBS ≥ 28 (WebSocket server v5 built-in)
+2. Active "WebSocket Server" dans OBS Settings → Tools → WebSocket Server Settings
 3. Note le port (4455 par défaut) et le mot de passe généré
 4. Configure dans Nodyx `/admin/streamer-hub/obs` :
-   - URL : `ws://localhost:4455` (ou IP du PC du streamer)
-   - Password : copié depuis OBS
+   - **URL** : `ws://localhost:4455` (cas A) ou `ws://<IP-LAN>:4455` (cas B). En cas C, l'URL du tunnel
+   - **Password** : copié depuis OBS
 
-Le frontend Nodyx ouvre une **connexion WebSocket directe depuis le navigateur** vers OBS (pas via le serveur). Avantage : moins de hops, latence minimale, pas de credential côté serveur Nodyx.
+Le frontend teste la connexion immédiatement après save (handshake WebSocket v5 + auth challenge). Feedback clair : ✓ "Connecté à OBS [version]" ou ✗ avec le message d'erreur exact (timeout, mauvais password, port fermé).
 
-Limitation : le navigateur du streamer doit pouvoir joindre OBS. Si OBS tourne sur le PC local, `ws://localhost:4455` fonctionne. Si OBS tourne sur un autre PC, il faut que les ports soient routables.
+### 8.3 Doc tunnel pour le cas C
+
+`docs/admin/streamer-hub-obs-tunnel.md` (FR + EN) liste 3 setups éprouvés :
+- **Tailscale** (le plus simple, gratuit jusqu'à 100 devices) : configuration en 5 commandes
+- **Cloudflare Tunnel** (gratuit, requiert un domaine sur CF) : `cloudflared tunnel`
+- **headscale** (auto-hébergé Tailscale) : pour les puristes self-hosted
 
 ### 8.2 Actions exposées
 
@@ -412,31 +459,52 @@ Layout sauvegardé en `streamer_obs_config.scenes_layout` (JSONB).
 
 ## 9. Stats live & récap polls
 
-### 9.1 Stats live
+### 9.1 Modèle "1 thread par mois, 1 post par stream"
+
+Plutôt que créer un thread par stream (catastrophe de pollution pour un streamer quotidien : 30 threads/mois, recherche cassée, pagination ingérable), on consolide :
+
+- **1 thread mensuel** auto-créé au premier stream du mois, dans la catégorie "Streams" (auto-créée la 1ère fois)
+- **Titre** : `[Streams] Mai 2026`
+- **Chaque stream du mois** = un post dans ce thread, formaté en récap consolidé
+- **Stream en cours** = le post du jour en mode "live" qui se met à jour en temps réel
+- **Stream terminé** = le post passe en version finale (totaux figés)
+
+Bénéfices :
+- Lisibilité : on voit l'historique d'un mois en un coup d'œil
+- Recherche : `Mai 2026` retourne 1 thread, pas 30
+- Archive automatique : les threads des mois passés s'accumulent proprement, sans intervention manuelle
+- Engagement : les viewers peuvent commenter chaque stream dans son post, sans noyer le thread
+
+### 9.2 Stats live (stream en cours)
 
 À l'événement `stream.online` :
-- Création d'un thread auto dans la catégorie "Streams" (auto-créée la 1ère fois)
-- Titre : `[Stream] [Date]: [Titre Twitch]`
-- Premier post : embed live qui se met à jour toutes les 60s avec :
-  - Catégorie Twitch
+- Si pas de thread `[Streams] [Mois Année]` pour le mois en cours → création
+- Création d'un nouveau post dans ce thread, marqué `live = true`
+- Le post contient un embed temps réel mis à jour toutes les 60s :
+  - Titre Twitch + catégorie
   - Nombre de viewers actuels
-  - Nombre de followers gagnés
-  - Nombre de subs gagnés
-  - Nombre de raids reçus
+  - Followers / subs / raids gagnés depuis le début de la session
   - Top 5 chatters (messages envoyés)
   - Top 5 emotes utilisées
+  - Lien vers le replay (rempli à `stream.offline`)
 
 À l'événement `stream.offline` :
-- Édition du premier post → version finale (durée totale, peak viewers, etc.)
-- Post de récap automatique :
+- Le post passe en version finale (totaux figés, plus de mise à jour)
+- Post de récap consolidé :
 
 ```
-🎬 Stream terminé après 4h 23min
-👥 Peak: 234 viewers
-🆕 +12 followers, +3 subs, +1 raid (Streamer X)
+🎬 Stream du 7 mai 2026 — 4h 23min
+🎮 Catégorie : Just Chatting
+👥 Peak : 234 viewers (moy. 187)
+🆕 +12 followers, +3 subs, +1 raid (Streamer X arrive avec 89 viewers)
 💬 1 247 messages, 47 chatters uniques
-🎉 Top emote: KEKW (203 occurrences)
+🎉 Top emote : KEKW (203 occurrences)
+🔗 [Replay sur Twitch](...)
 ```
+
+### 9.3 Récap mensuel
+
+Le 1er de chaque mois à 00:00 UTC, un dernier post est ajouté au thread du mois précédent : récap mensuel agrégé (total heures streamées, croissance followers, top events, etc.). Puis le thread est verrouillé (lectures OK, plus d'écriture).
 
 ### 9.2 Récap polls
 
@@ -456,6 +524,27 @@ Quand un message Twitch ou Nodyx contient `!topclips` (et que l'auteur a le droi
 - Récupère les 5 top clips de la semaine
 - Post un message dans le chat Nodyx avec previews
 - Si OBS est connecté : option pour afficher en overlay pendant 30s
+
+### 10.2 Rate-limit anti-flood
+
+Toutes les commandes chat (`!topclips`, `!followage`, `!uptime`, …) sont **rate-limitées par utilisateur** via Redis :
+- Cooldown global par commande : 30 s
+- Cooldown spécifique par couple (utilisateur, commande) : 60 s
+- Si flood détecté (5 hits du cooldown en 1 min) : timeout 5 min de l'utilisateur sur les commandes (le chat normal reste ouvert)
+- Bypass : le streamer + ses mods n'ont aucun cooldown
+
+Implémentation : clé Redis `streamer:cmd:{cmd}:{user_id}` avec TTL = cooldown. Présence de la clé = on ignore la commande silencieusement (pas de toast, pas de spam de "tu dois attendre").
+
+### 10.3 Liste des commandes chat (Phase 5)
+
+| Commande | Action | Cooldown |
+|---|---|---|
+| `!topclips` | Top 5 clips de la semaine | 30 s |
+| `!uptime` | Durée du stream en cours | 10 s |
+| `!followage [@user]` | Depuis quand `user` follow | 30 s |
+| `!so @user` | Shoutout (post un récap du dernier stream de `user`, mods only) | 30 s |
+| `!discord` ou `!nodyx` | Lien vers l'instance Nodyx | 60 s |
+| `!commands` | Liste les commandes dispo | 30 s |
 
 ### 10.2 Raider preview
 
@@ -518,13 +607,16 @@ Effet viral : chaque streamer Nodyx qui installe l'extension promeut Nodyx aupr�
 
 | Phase | Livrable | Effort | Valeur |
 |---|---|---|---|
-| **1 — Foundations Twitch** | OAuth Twitch streamer, EventSub (follow / sub / raid / bits / poll / stream), feed activité dans le chat Nodyx, `users.twitch_id`, OAuth viewer | 2-3 j | 🔥 Déjà utilisable comme alerte streamer |
-| **2 — Chat unifié Twitch ↔ Nodyx** | Bridge IRC bidirectionnel, badges Twitch + BTTV/FFZ/7TV emotes, channel `#twitch-chat` auto | 3-4 j | 🔥 Remplace Streamer.bot pour 90% des cas |
-| **3 — OBS Stream Deck web** | Connexion OBS WebSocket v5 depuis le navigateur, grille drag-and-drop, actions essentielles | 4-5 j | 🔥 Remplace Stream Deck Elgato (~150€) |
-| **4 — Stats live + récap polls** | Thread auto-update, récap auto en fin de stream, mirror polls Twitch | 3-4 j | 🔥 Remplace une partie de StreamElements |
-| **5 — Top clips, raider preview, Twitch Extension** | Commandes `!topclips`, raider preview overlay, générateur d'extension Twitch | 1-2 sem | 🔥 Effet viral |
+| **0 — Spike technique** | OAuth Twitch streamer + 1 webhook EventSub qui logge l'event dans la console + refresh token. Aucune UI, aucune persistence, aucun chat. **Lever les doutes du flow OAuth/HMAC/refresh avant tout engagement de Phase 1.** | 1-2 j | Validation de faisabilité |
+| **1 — Foundations Twitch** | OAuth Twitch streamer (+ stockage chiffré), EventSub complet (follow / sub / raid / bits / poll / stream), feed activité dans le chat Nodyx, `users.twitch_id`, OAuth viewer (3 flows) | 2-3 j | 🔥 Déjà utilisable comme alerte streamer |
+| **2 — Chat unifié Twitch ↔ Nodyx** | Bridge **EventSub Chat (in) + Helix Send Chat Message (out)**, badges Twitch + BTTV/FFZ/7TV emotes, channel `#twitch-chat` auto, check stream live avant send | 3-4 j | 🔥 Remplace Streamer.bot pour 90% des cas |
+| **3 — OBS Stream Deck web** | Connexion OBS WebSocket v5 depuis le navigateur (LAN + tunnel), grille drag-and-drop, actions essentielles, doc tunnel pour multi-PC | 4-5 j | 🔥 Remplace Stream Deck Elgato (~150€) |
+| **4 — Stats live + récap polls** | Thread mensuel + post-par-stream auto-update, récap auto en fin de stream + récap mensuel le 1er de chaque mois, mirror polls Twitch | 3-4 j | 🔥 Remplace une partie de StreamElements |
+| **5 — Top clips, raider preview, commandes chat, Twitch Extension** | Commandes `!topclips` `!uptime` `!followage` `!so` `!commands` (avec rate-limit), raider preview overlay, générateur d'extension Twitch | 1-2 sem | 🔥 Effet viral |
 
-**Phase 1 seule** rend déjà Nodyx utilisable comme remplaçant de Streamlabs/StreamElements pour les alertes basiques. Chaque phase ajoutée empile de la valeur sans casser ce qui précède.
+**Phase 0 (Spike)** est OBLIGATOIRE avant Phase 1. C'est un proof-of-concept jeté qui valide que le flow OAuth Twitch + signature HMAC EventSub + refresh tokens fonctionne bout en bout dans notre environnement Caddy + nodyx-core. Si la Phase 0 révèle un blocage technique majeur (cas tordu CORS, problème de redirect URI multi-instance, etc.), on l'apprend en 1 jour, pas en plein milieu de la Phase 1. Le code de Phase 0 est jeté ou intégré, peu importe — l'objectif est l'apprentissage.
+
+**Phase 1 seule** (après spike validé) rend déjà Nodyx utilisable comme remplaçant de Streamlabs/StreamElements pour les alertes basiques. Chaque phase ajoutée empile de la valeur sans casser ce qui précède.
 
 ---
 
@@ -598,8 +690,18 @@ Effet viral : chaque streamer Nodyx qui installe l'extension promeut Nodyx aupr�
 
 ## 17. Décision finale demandée
 
-OK pour partir sur cette spec ?
+OK pour partir sur cette spec, version 2 (post-revue Pokled) ?
 
-Si oui, je commence par la Phase 1 (Foundations Twitch) sur la branche `feat/streamer-hub-phase-1`, en suivant le même pattern que pour le backup system (branche dédiée, smoke test sur prod avant merge, mode maintenance auto-actif si besoin de toucher à des données critiques).
+Si oui, on attaque dans cet ordre :
+1. **Phase 0 — Spike technique** sur la branche `feat/streamer-hub-spike`. 1 à 2 jours. Objectif : OAuth Twitch streamer + 1 webhook EventSub bout-en-bout, dans notre topologie Caddy + nodyx-core. Pas d'UI, pas de DB, pas de chat. On loggue dans la console et on valide. Si OK : merge `main`, on garde le code minimal de validation comme base. Si KO : on apprend, on adapte la spec, on relance.
+2. **Phase 1 — Foundations Twitch** sur la branche `feat/streamer-hub-phase-1`, en suivant le pattern backup system : branche dédiée, smoke test sur prod avant merge, mode maintenance auto-actif si besoin de toucher à des données critiques.
 
-Si tu veux ajuster quelque chose : scopes Twitch en plus/en moins, autre ordre des phases, autre découpage…
+Changements depuis v1 (revue Pokled) :
+- Section 6 : abandon d'IRC, passage à EventSub Chat + Helix Send Chat Message
+- Section 8 : ajout des topologies multi-PC (LAN + tunnel) + plan Phase 6+ pour proxy serveur
+- Section 9 : threads consolidés (1 par mois, 1 post par stream) au lieu d'1 thread par stream
+- Section 10 : rate-limit anti-flood sur les commandes chat + liste des commandes Phase 5
+- Section 13 : ajout de la Phase 0 (Spike technique) obligatoire avant Phase 1
+- Section 6.4 : check stream live avant chaque send chat outbound
+
+Si tu veux ajuster encore : scopes Twitch en plus/en moins, autre ordre des phases, autre découpage…
