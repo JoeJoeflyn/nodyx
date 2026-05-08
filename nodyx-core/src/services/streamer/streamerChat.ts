@@ -22,6 +22,11 @@ const SYSTEM_EMAIL          = 'system@nodyx.invalid'
 // bcrypt hash invalide intentionnellement, jamais matchable côté login.
 // Le check password fait par bcrypt.compare retournera toujours false.
 const SYSTEM_PASSWORD_HASH  = '!system-no-login-' + 'x'.repeat(40)
+const SYSTEM_AVATAR_URL     = '/icons/icon-192.png'   // logo Nodyx servi par le frontend
+const SYSTEM_DISPLAY_NAME   = 'Nodyx'
+const SYSTEM_NAME_COLOR     = '#7c3aed'               // purple Nodyx, cohérent MODULE_DISPLAY
+const SYSTEM_NAME_GLOW      = '#9146ff'               // glow Twitch purple (subtile)
+const SYSTEM_BIO            = 'Bot officiel du Streamer Hub. Publie automatiquement les follows, subs, raids, lives et polls de la chaîne. Ne peut pas être contacté.'
 
 // ── Channel auto-create / find ──────────────────────────────────────────────
 
@@ -70,18 +75,20 @@ export async function ensureSystemUser(communityId: string): Promise<string | nu
     [SYSTEM_USERNAME],
   )
   let userId: string
+  let justCreated = false
   if (existing.rows[0]) {
     userId = existing.rows[0].id
   } else {
     const created = await db.query<{ id: string }>(
-      `INSERT INTO users (username, email, password)
-       VALUES ($1, $2, $3)
+      `INSERT INTO users (username, email, password, avatar)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (username) DO NOTHING
        RETURNING id`,
-      [SYSTEM_USERNAME, SYSTEM_EMAIL, SYSTEM_PASSWORD_HASH],
+      [SYSTEM_USERNAME, SYSTEM_EMAIL, SYSTEM_PASSWORD_HASH, SYSTEM_AVATAR_URL],
     )
     if (created.rows[0]) {
       userId = created.rows[0].id
+      justCreated = true
     } else {
       // Race : un autre thread l'a créé entre nos 2 queries — re-find
       const refind = await db.query<{ id: string }>(
@@ -91,6 +98,22 @@ export async function ensureSystemUser(communityId: string): Promise<string | nu
       if (!refind.rows[0]) return null
       userId = refind.rows[0].id
     }
+  }
+
+  // 1.b. À la création seulement, set le profil custom (display_name, color,
+  // glow, bio). On n'overwrite PAS si l'admin a déjà customisé le profil
+  // après-coup (idempotent uniquement à la 1ère écriture).
+  if (justCreated) {
+    await db.query(
+      `UPDATE user_profiles
+       SET display_name        = $2,
+           name_color          = $3,
+           name_glow           = $4,
+           name_glow_intensity = 8,
+           bio                 = $5
+       WHERE user_id = $1`,
+      [userId, SYSTEM_DISPLAY_NAME, SYSTEM_NAME_COLOR, SYSTEM_NAME_GLOW, SYSTEM_BIO],
+    )
   }
 
   // 2. Ensure community membership (idempotent, role member)
