@@ -58,8 +58,10 @@ Garde cette valeur dans un coffre (1Password / pass / Bitwarden). Si tu la perds
 Ajouter dans `nodyx-core/.env` (prod : `/var/www/nexus/nodyx-core/.env`) :
 
 ```bash
-TWITCH_CLIENT_ID=<copié depuis dev.twitch.tv>
-TWITCH_CLIENT_SECRET=<copié depuis dev.twitch.tv>
+# App Twitch DÉDIÉE au streamer hub (ne pas écraser TWITCH_CLIENT_ID/SECRET du
+# widget homepage si déjà configuré, ce sont deux apps différentes).
+STREAMER_TWITCH_CLIENT_ID=<copié depuis dev.twitch.tv>
+STREAMER_TWITCH_CLIENT_SECRET=<copié depuis dev.twitch.tv>
 
 STREAMER_SPIKE_ENABLED=1
 STREAMER_OAUTH_KEY=<sortie de la commande crypto.randomBytes ci-dessus>

@@ -36,15 +36,18 @@ export class TwitchError extends Error {
   }
 }
 
+// Vars dédiées au spike : on N'utilise PAS TWITCH_CLIENT_ID/SECRET du widget
+// homepage, qui est une app Twitch différente (sans redirect URI configurée
+// pour le streamer hub). Le spike vit dans son propre couloir d'env vars.
 function clientId(): string {
-  const v = process.env.TWITCH_CLIENT_ID
-  if (!v) throw new Error('TWITCH_CLIENT_ID non défini')
+  const v = process.env.STREAMER_TWITCH_CLIENT_ID
+  if (!v) throw new Error('STREAMER_TWITCH_CLIENT_ID non défini (app Twitch dédiée au Streamer Hub)')
   return v
 }
 
 function clientSecret(): string {
-  const v = process.env.TWITCH_CLIENT_SECRET
-  if (!v) throw new Error('TWITCH_CLIENT_SECRET non défini')
+  const v = process.env.STREAMER_TWITCH_CLIENT_SECRET
+  if (!v) throw new Error('STREAMER_TWITCH_CLIENT_SECRET non défini')
   return v
 }
 
