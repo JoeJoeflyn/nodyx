@@ -12,7 +12,7 @@ import {
 } from './tokenService'
 import { createSubscription, listSubscriptions, setExternalSubId } from './eventsubService'
 import { recordEvent } from './eventService'
-import { pushEventToChat } from './streamerChat'
+import { pushEventToChat, pushTwitchChatMessage, ensureTwitchChatChannel, getInstanceCommunityId } from './streamerChat'
 import { audit } from './audit'
 import { twitchProvider } from './providers/twitchProvider'
 import type { StreamerProvider, ProviderId } from './providers/_types'
@@ -229,6 +229,22 @@ export async function subscribeAllStreamerEvents(args: {
         status:    'failed',
         error:     (err as Error).message,
       })
+    }
+  }
+
+  // Si chat.message subscribe a réussi, auto-créer le channel #twitch-chat
+  // pour qu'il apparaisse dans la liste avant même le 1er message reçu.
+  // Best-effort : si l'auto-create échoue (pas de community resolvable),
+  // le channel sera créé lazy au 1er pushChatMessage (brique 2.3).
+  const chatSubOk = results.some(r =>
+    r.eventType === 'channel.chat.message' && r.status === 'created'
+  )
+  if (chatSubOk) {
+    try {
+      const communityId = await getInstanceCommunityId()
+      if (communityId) await ensureTwitchChatChannel(communityId)
+    } catch (err) {
+      console.error('[streamerHub] ensureTwitchChatChannel failed', err)
     }
   }
 
@@ -470,6 +486,24 @@ export async function ingestEvent(args: {
   payload:     Record<string, unknown>
   externalId?: string | null
 }): Promise<void> {
+  // ── Phase 2 — chat bridge inbound ──────────────────────────────────────
+  // Les messages chat ont un volume très élevé (potentiellement 100+/min sur
+  // un stream actif). On NE PERSISTE PAS dans streamer_events (la table
+  // resterait propre pour les vrais events). On les pousse direct dans
+  // #twitch-chat où ils sont déjà persistés via channel_messages.
+  if (args.eventType === 'channel.chat.message') {
+    try {
+      await pushTwitchChatMessage({
+        provider: args.provider,
+        payload:  args.payload,
+      })
+    } catch (err) {
+      console.error('[streamerHub] pushTwitchChatMessage failed', err)
+    }
+    return
+  }
+
+  // ── Phase 1 — events normaux ──────────────────────────────────────────
   // Map Twitch user_id présent dans le payload vers un user Nodyx via twitch_id
   // (linked par flow A/C). Si pas de match, user_id reste NULL.
   let userId: string | null = null
