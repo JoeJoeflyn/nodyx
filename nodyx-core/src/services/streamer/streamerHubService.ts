@@ -107,13 +107,23 @@ export const PHASE_1_SCOPES = [
   'moderator:read:followers',
 ] as const
 
-// Dès Phase 2 (chat bridge), on demande aussi user:read:chat / user:write:chat.
-// On exporte la liste élargie pour faciliter la transition sans refactor des
-// routes côté caller.
+// Phase 2 (chat bridge) — scopes spécifiques EventSub Chat + Helix Send :
+//
+// - user:read:chat   : prérequis pour channel.chat.message (sub user-scoped)
+// - user:write:chat  : prérequis pour Helix POST /chat/messages (outbound)
+// - user:bot         : exigé EN PLUS de user:read:chat quand le sub est créé
+//                      via app access token (notre cas, vu que Twitch refuse
+//                      les user tokens pour les webhook subscriptions). Subtil.
+// - channel:bot      : exigé sur le broadcaster pour autoriser le bot à
+//                      poster dans son chat. Comme broadcaster = streamer, il
+//                      se l'accorde à lui-même.
+// - channel:read:polls : Phase 4 récap polls
 export const STREAMER_HUB_SCOPES = [
   ...PHASE_1_SCOPES,
   'user:read:chat',
   'user:write:chat',
+  'user:bot',
+  'channel:bot',
   'channel:read:polls',
 ] as const
 
@@ -127,11 +137,11 @@ interface SubscribeSpec {
   eventType: string
   version:   string
   condition: Record<string, string>
-  // Scope user requis pour cette subscription. Si le streamer connecté n'a
-  // pas accordé ce scope, on skip silencieusement (pas d'erreur). Permet de
-  // dégrader gracieusement quand on ajoute des events Phase 2+ sur des
-  // anciennes connexions Phase 1.
-  requiredScope?: string
+  // Scopes user requis pour cette subscription. Si le streamer connecté n'a
+  // pas accordé l'un de ces scopes, on skip silencieusement (pas d'erreur).
+  // Permet de dégrader gracieusement quand on ajoute des events Phase 2+
+  // sur des anciennes connexions qui n'ont pas tous les scopes.
+  requiredScopes?: readonly string[]
 }
 
 function buildSubscribeSpecs(broadcasterId: string): SubscribeSpec[] {
@@ -150,13 +160,21 @@ function buildSubscribeSpecs(broadcasterId: string): SubscribeSpec[] {
     { eventType: 'stream.offline',             version: '1', condition: { broadcaster_user_id: broadcasterId } },
 
     // ── Phase 2 — chat bridge ─────────────────────────────────────────────
-    // channel.chat.message exige le scope user:read:chat sur le user_id
-    // (qui est le lecteur du chat, ici le streamer lit son propre chat).
+    // channel.chat.message via app access token exige TROIS scopes du user_id :
+    //   - user:read:chat   (lire le chat du user_id)
+    //   - user:bot         (créer le sub via app token, exigé par Twitch quand
+    //                       l'utilisateur agit comme un bot lecteur)
+    //   - channel:bot      (autoriser le bot à intervenir sur la chaîne du
+    //                       broadcaster ; ici broadcaster == user_id == streamer)
+    //
+    // Sans ces 3 scopes, Twitch refuse avec 403 "subscription missing proper
+    // authorization". Le check ci-dessous skip la sub gracieusement si un
+    // scope manque, plutôt que de tenter et échouer.
     {
       eventType: 'channel.chat.message',
       version:   '1',
       condition: { broadcaster_user_id: broadcasterId, user_id: broadcasterId },
-      requiredScope: 'user:read:chat',
+      requiredScopes: ['user:read:chat', 'user:bot', 'channel:bot'],
     },
   ]
 }
@@ -218,15 +236,19 @@ export async function subscribeAllStreamerEvents(args: {
   broadcasterId: string
   publicBase:    string  // ex https://nodyx.org
   grantedScopes?: readonly string[] | string[]  // scopes effectivement accordés par le streamer
+  // Si true, DELETE toutes les subs Twitch existantes du broadcaster avant
+  // de re-créer. À utiliser sur les reconnexions OAuth (les anciens secrets
+  // HMAC sont perdus, leur webhook handler répondrait 404 → drift). Si false
+  // (default), on dédup les existantes (status='exists', ne crée pas de row
+  // DB côté Nodyx — utilisé pour les syncs incrémentaux).
+  cleanupExisting?: boolean
 }): Promise<SubscribeResult[]> {
   const appToken = await args.provider.getAppAccessToken()
   const specs    = buildSubscribeSpecs(args.broadcasterId)
   const granted  = new Set(args.grantedScopes ?? [])
   const results: SubscribeResult[] = []
 
-  // Liste les subs existantes côté Twitch UNE FOIS pour pouvoir dédupliquer.
-  // Évite la dérive "27 subs sur Twitch alors qu'on en veut 10" qu'on avait
-  // au premier sync de Phase 2.
+  // Liste les subs existantes côté Twitch UNE FOIS.
   let existingSubs: Awaited<ReturnType<StreamerProvider['listEventSubscriptions']>> = []
   try {
     existingSubs = await args.provider.listEventSubscriptions(appToken)
@@ -234,19 +256,40 @@ export async function subscribeAllStreamerEvents(args: {
     console.error('[streamerHub] listEventSubscriptions failed (continuing without dedup)', err)
   }
 
+  // Mode reconnexion : supprime toutes les subs existantes du broadcaster
+  // (matched par condition.broadcaster_user_id ou .to_broadcaster_user_id ou
+  // .user_id == broadcasterId) pour repartir de zéro. Les nouvelles seront
+  // créées avec des secrets HMAC frais accessibles côté Nodyx.
+  if (args.cleanupExisting && existingSubs.length > 0) {
+    const ours = existingSubs.filter(s =>
+      s.condition.broadcaster_user_id    === args.broadcasterId ||
+      s.condition.to_broadcaster_user_id === args.broadcasterId ||
+      s.condition.user_id                === args.broadcasterId,
+    )
+    for (const sub of ours) {
+      try { await args.provider.deleteEventSubscription(appToken, sub.id) }
+      catch (err) { console.error('[streamerHub] cleanup deleteEventSubscription failed', err) }
+    }
+    // Vide la liste des existantes pour que le matchesSpec ne skip plus
+    existingSubs = []
+  }
+
   // Lazy-load le user access token : on ne le récupère que si une spec en a besoin.
   let userToken: string | null = null
   let userTokenLoaded = false
 
   for (const spec of specs) {
-    // Skip si scope requis non accordé.
-    if (spec.requiredScope && !granted.has(spec.requiredScope)) {
-      results.push({
-        eventType: spec.eventType,
-        status:    'skipped',
-        reason:    `missing_scope:${spec.requiredScope}`,
-      })
-      continue
+    // Skip si un des scopes requis n'est pas accordé.
+    if (spec.requiredScopes) {
+      const missing = spec.requiredScopes.filter(s => !granted.has(s))
+      if (missing.length > 0) {
+        results.push({
+          eventType: spec.eventType,
+          status:    'skipped',
+          reason:    `missing_scopes:${missing.join(',')}`,
+        })
+        continue
+      }
     }
 
     // Skip si déjà subscribed côté Twitch.
@@ -259,25 +302,12 @@ export async function subscribeAllStreamerEvents(args: {
       continue
     }
 
-    // Choix du token : user access token si requiredScope (event user-scoped),
-    // sinon app access token (events broadcaster-scoped).
-    let accessToken = appToken
-    if (spec.requiredScope) {
-      if (!userTokenLoaded) {
-        userToken = await getValidUserAccessToken(args.provider)
-        userTokenLoaded = true
-      }
-      if (!userToken) {
-        results.push({
-          eventType: spec.eventType,
-          status:    'failed',
-          error:     'no_valid_user_access_token',
-        })
-        continue
-      }
-      accessToken = userToken
-    }
-
+    // Twitch exige un APP access token pour POST /eventsub/subscriptions
+    // (les user tokens sont rejetés avec "auth must use app access token to
+    // create webhook subscription"). Le scope check se fait côté Twitch en
+    // examinant les tokens user actifs pour le user_id de la condition.
+    // Pour channel.chat.message, le user_id (broadcaster) doit avoir accordé
+    // user:read:chat + user:bot + channel:bot — vérifié via spec.requiredScope.
     try {
       const hmacSecret = randomBytes(32).toString('base64url').slice(0, 64)
       const placeholder = await createSubscription({
@@ -289,9 +319,9 @@ export async function subscribeAllStreamerEvents(args: {
 
       const callbackUrl = `${args.publicBase.replace(/\/+$/, '')}/api/v1/integrations/twitch/eventsub/${placeholder.callbackNonce}`
       const created = await args.provider.createEventSubscription({
-        accessToken,
-        eventType:  spec.eventType,
-        condition:  { ...spec.condition, version: spec.version },
+        accessToken: appToken,
+        eventType:   spec.eventType,
+        condition:   { ...spec.condition, version: spec.version },
         callbackUrl,
         hmacSecret,
       })
@@ -304,13 +334,24 @@ export async function subscribeAllStreamerEvents(args: {
         externalSubId: created.externalSubId,
       })
     } catch (err) {
+      // Pour le diagnostic : on garde le body Twitch dans error si possible.
+      const e = err as Error & { body?: unknown }
+      const errMsg = e.body
+        ? `${e.message} — ${typeof e.body === 'string' ? e.body : JSON.stringify(e.body)}`
+        : e.message
       results.push({
         eventType: spec.eventType,
         status:    'failed',
-        error:     (err as Error).message,
+        error:     errMsg,
       })
     }
   }
+
+  // Variables user token déclarées mais inutilisées vu qu'on est revenu à
+  // l'app token uniquement. On les garde pour le moment au cas où Twitch
+  // changerait de politique.
+  void userToken
+  void userTokenLoaded
 
   // Si chat.message subscribe a réussi (created OU déjà exists), auto-créer
   // le channel #twitch-chat pour qu'il apparaisse dans la liste avant même
@@ -399,12 +440,16 @@ export async function completeOAuthCallback(args: {
     [user.id, user.login, args.adminUserId],
   )
 
-  // 5. Subscribe aux events Phase 1+2 (skip ceux dont le scope manque)
+  // 5. Subscribe aux events Phase 1+2.
+  // cleanupExisting:true = on est dans un OAuth callback (1ère connexion ou
+  // reconnexion). Si reconnexion avec nouveaux scopes, les anciennes subs
+  // Twitch ont des secrets HMAC perdus côté Nodyx → on DELETE et recrée.
   const subscribeResults = await subscribeAllStreamerEvents({
-    provider:      args.provider,
-    broadcasterId: user.id,
-    publicBase:    args.publicBase,
-    grantedScopes: tokens.scopes,
+    provider:        args.provider,
+    broadcasterId:   user.id,
+    publicBase:      args.publicBase,
+    grantedScopes:   tokens.scopes,
+    cleanupExisting: true,
   })
 
   await audit({
