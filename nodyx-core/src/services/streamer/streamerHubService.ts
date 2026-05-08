@@ -640,6 +640,30 @@ export async function ingestEvent(args: {
     userId = lookup.rows[0]?.id ?? null
   }
 
+  // ── Phase 2 — sessions de stream ──────────────────────────────────────
+  // Spec §5.2 : stream.online ouvre une session, stream.offline la ferme.
+  // Nécessaire pour le check "stream live ?" du chat bridge outbound (§6.4).
+  // Phase 4 ajoutera les stats agrégées (peak_viewers, etc).
+  if (args.eventType === 'stream.online') {
+    const evt = (args.payload as { event?: { id?: string; started_at?: string; type?: string; broadcaster_user_id?: string } }).event
+    if (evt?.id && evt.started_at) {
+      await db.query(
+        `INSERT INTO streamer_sessions (provider, external_id, started_at)
+         VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING`,
+        [args.provider, evt.id, evt.started_at],
+      ).catch(err => console.error('[streamerHub] streamer_sessions insert failed', err))
+    }
+  } else if (args.eventType === 'stream.offline') {
+    // stream.offline n'a pas de stream_id, on clôt toutes les sessions
+    // ouvertes du provider (en pratique il y en a au plus 1).
+    await db.query(
+      `UPDATE streamer_sessions SET ended_at = NOW()
+       WHERE provider = $1 AND ended_at IS NULL`,
+      [args.provider],
+    ).catch(err => console.error('[streamerHub] streamer_sessions close failed', err))
+  }
+
   await recordEvent({
     provider:   args.provider,
     eventType:  args.eventType,
