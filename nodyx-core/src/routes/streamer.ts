@@ -7,17 +7,22 @@
 
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { adminOnly } from '../middleware/adminOnly'
+import { requireAuth } from '../middleware/auth'
 import { redis } from '../config/database'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
 import {
   completeOAuthCallback,
+  completeViewerOAuth,
   consumeOAuthState,
   createOAuthState,
   getProvider,
+  getViewerLink,
   ingestEvent,
   listEventSubStatus,
+  unlinkViewerTwitch,
   STREAMER_HUB_SCOPES,
+  VIEWER_SCOPES,
 } from '../services/streamer/streamerHubService'
 
 import {
@@ -107,8 +112,9 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
   server.get('/twitch/auth-init', { preHandler: adminOnly }, async (request) => {
     const provider = getProvider('twitch')
     const state = await createOAuthState({
-      adminUserId: request.user!.userId,
-      ip:          request.ip,
+      kind:         'streamer',
+      targetUserId: request.user!.userId,
+      ip:           request.ip,
     })
     const authorizeUrl = provider.buildAuthorizeUrl({
       redirectUri: redirectUri(),
@@ -117,6 +123,40 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
       forceVerify: true,
     })
     return { authorizeUrl }
+  })
+
+  // GET /twitch/viewer/auth-init  (auth-only) — viewer Flow A : lier son
+  // compte Twitch perso à son profil Nodyx. Scopes minimaux user:read:email.
+  server.get('/twitch/viewer/auth-init', { preHandler: requireAuth }, async (request) => {
+    const provider = getProvider('twitch')
+    const state = await createOAuthState({
+      kind:         'viewer',
+      targetUserId: request.user!.userId,
+      ip:           request.ip,
+    })
+    const authorizeUrl = provider.buildAuthorizeUrl({
+      redirectUri: redirectUri(),
+      state,
+      scopes:      [...VIEWER_SCOPES],
+      forceVerify: true,
+    })
+    return { authorizeUrl }
+  })
+
+  // GET /twitch/viewer/me  (auth-only) — état du link Twitch du user actuel
+  server.get('/twitch/viewer/me', { preHandler: requireAuth }, async (request) => {
+    const link = await getViewerLink(request.user!.userId)
+    return { link }
+  })
+
+  // DELETE /twitch/viewer/unlink  (auth-only) — délie le compte Twitch
+  server.delete('/twitch/viewer/unlink', { preHandler: requireAuth }, async (request, reply) => {
+    const ok = await unlinkViewerTwitch({
+      viewerUserId: request.user!.userId,
+      ip:           request.ip,
+    })
+    if (!ok) return reply.code(404).send({ ok: false, error: 'no_twitch_link' })
+    return { ok: true }
   })
 
   // GET /twitch/callback (public — Twitch nous appelle)
@@ -150,13 +190,47 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
       return reply.code(400).send({ ok: false, error: 'invalid_or_expired_state' })
     }
 
+    // Branch sur le kind du state : streamer (admin OAuth complet) ou
+    // viewer (lier juste le twitch_id à un user Nodyx existant).
+    if (stateData.kind === 'viewer') {
+      try {
+        const result = await completeViewerOAuth({
+          provider:     getProvider('twitch'),
+          code:         q.code,
+          redirectUri:  redirectUri(),
+          viewerUserId: stateData.targetUserId,
+          ip:           request.ip,
+        })
+        // Si Twitch déjà lié à un autre Nodyx, on renvoie 409 + détail
+        if (result.alreadyLinkedTo) {
+          return reply.code(409).send({
+            ok:    false,
+            error: 'twitch_id_already_linked',
+            message: `Ce compte Twitch est déjà lié au membre ${result.alreadyLinkedTo}.`,
+            twitchLogin: result.twitchLogin,
+          })
+        }
+        // Pour le viewer, on redirect vers /settings avec un query param
+        // qui permet à la page settings d'afficher un toast de confirmation
+        // et d'ouvrir directement le pane "Comptes liés".
+        return reply.redirect(
+          '/settings?just_linked_twitch=' + encodeURIComponent(result.twitchLogin),
+          302,
+        )
+      } catch (err) {
+        const e = err as Error
+        return reply.code(502).send({ ok: false, kind: 'viewer', error: 'pipeline_failure', message: e.message })
+      }
+    }
+
+    // kind === 'streamer'
     try {
       const result = await completeOAuthCallback({
         provider:    getProvider('twitch'),
         code:        q.code,
         redirectUri: redirectUri(),
         publicBase:  publicBase(),
-        adminUserId: stateData.adminUserId,
+        adminUserId: stateData.targetUserId,
         ip:          request.ip,
       })
       return reply.send({
@@ -170,7 +244,7 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
       const status = err instanceof ProviderError ? err.status : 500
       await audit({
         action: 'connect_twitch', status: 'failed',
-        userId: stateData.adminUserId, ipAddress: request.ip,
+        userId: stateData.targetUserId, ipAddress: request.ip,
         metadata: { stage: 'callback_pipeline' },
         error:    e.message,
       })

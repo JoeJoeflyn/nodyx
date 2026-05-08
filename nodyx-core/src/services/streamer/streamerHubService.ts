@@ -18,25 +18,30 @@ import { twitchProvider } from './providers/twitchProvider'
 import type { StreamerProvider, ProviderId } from './providers/_types'
 
 // ── State CSRF (OAuth) ───────────────────────────────────────────────────────
+// Le state discrimine deux flows :
+//   - kind=streamer : connecter le compte Twitch principal de l'instance
+//                     (admin only, OAuth complet avec tous les scopes)
+//   - kind=viewer   : lier son compte Twitch personnel à son profil Nodyx
+//                     (auth required, scope minimal user:read:email)
 
 const STATE_PREFIX      = 'streamer:oauth:state:'
 const STATE_TTL_SECONDS = 600  // 10 min
 
-interface OAuthState {
-  adminUserId: string
-  ip:          string
-  createdAt:   number
-}
+export type OAuthState =
+  | { kind: 'streamer'; targetUserId: string; ip: string; createdAt: number }
+  | { kind: 'viewer';   targetUserId: string; ip: string; createdAt: number }
 
 export async function createOAuthState(args: {
-  adminUserId: string
-  ip:          string
+  kind:         OAuthState['kind']
+  targetUserId: string  // adminUserId pour streamer, viewerUserId pour viewer
+  ip:           string
 }): Promise<string> {
   const token = randomBytes(32).toString('base64url')
   const payload: OAuthState = {
-    adminUserId: args.adminUserId,
-    ip:          args.ip,
-    createdAt:   Date.now(),
+    kind:         args.kind,
+    targetUserId: args.targetUserId,
+    ip:           args.ip,
+    createdAt:    Date.now(),
   }
   await redis.set(STATE_PREFIX + token, JSON.stringify(payload), 'EX', STATE_TTL_SECONDS)
   return token
@@ -75,6 +80,10 @@ export const STREAMER_HUB_SCOPES = [
   'user:write:chat',
   'channel:read:polls',
 ] as const
+
+// Scopes minimaux pour le viewer flow : on a juste besoin d'identifier le user
+// Twitch et de récupérer son login. Pas besoin de lire son chat, ses subs, etc.
+export const VIEWER_SCOPES = ['user:read:email'] as const
 
 // ── Subscribe EventSub events Phase 1 (§5.2 spec) ───────────────────────────
 
@@ -227,6 +236,122 @@ export async function completeOAuthCallback(args: {
     email:            user.email,
     subscribeResults,
   }
+}
+
+// ── Viewer OAuth flow : lier un compte Twitch à un user Nodyx existant ─────
+
+export interface CompleteViewerOAuthResult {
+  twitchId:       string
+  twitchLogin:    string
+  twitchEmail:    string | null
+  alreadyLinkedTo: string | null  // username Nodyx si twitch_id déjà pris
+}
+
+export async function completeViewerOAuth(args: {
+  provider:      StreamerProvider
+  code:          string
+  redirectUri:   string
+  viewerUserId:  string
+  ip:            string
+}): Promise<CompleteViewerOAuthResult> {
+  // 1. exchange code → tokens
+  const tokens = await args.provider.exchangeCode(args.code, args.redirectUri)
+
+  // 2. getCurrentUser
+  const user = await args.provider.getCurrentUser(tokens.accessToken)
+
+  // 3. Vérifier si ce twitch_id est déjà lié à un autre user Nodyx
+  const existing = await db.query<{ username: string; id: string }>(
+    `SELECT id, username FROM users WHERE twitch_id = $1 AND id != $2 LIMIT 1`,
+    [user.id, args.viewerUserId],
+  )
+  if (existing.rows.length > 0) {
+    await audit({
+      action:    'connect_twitch',
+      status:    'failed',
+      userId:    args.viewerUserId,
+      ipAddress: args.ip,
+      metadata:  {
+        kind:           'viewer',
+        twitchId:       user.id,
+        twitchLogin:    user.login,
+        reason:         'twitch_id_already_linked',
+        otherUserId:    existing.rows[0].id,
+      },
+    })
+    return {
+      twitchId:        user.id,
+      twitchLogin:     user.login,
+      twitchEmail:     user.email,
+      alreadyLinkedTo: existing.rows[0].username,
+    }
+  }
+
+  // 4. UPDATE le user Nodyx avec son twitch_id + login
+  await db.query(
+    `UPDATE users SET twitch_id = $1, twitch_login = $2 WHERE id = $3`,
+    [user.id, user.login, args.viewerUserId],
+  )
+
+  await audit({
+    action:    'connect_twitch',
+    status:    'success',
+    userId:    args.viewerUserId,
+    ipAddress: args.ip,
+    metadata:  {
+      kind:        'viewer',
+      twitchId:    user.id,
+      twitchLogin: user.login,
+    },
+  })
+
+  // Note : on jette les tokens viewer (access + refresh) après usage. Pas
+  // besoin de les chiffrer / persister, on a juste utilisé le flow OAuth
+  // pour vérifier que le user contrôle bien ce compte Twitch. Phase futur
+  // pourrait les stocker pour des features comme "afficher mes subs aux
+  // streamers Nodyx que je suis", mais hors Phase 1.
+  void tokens
+
+  return {
+    twitchId:        user.id,
+    twitchLogin:     user.login,
+    twitchEmail:     user.email,
+    alreadyLinkedTo: null,
+  }
+}
+
+export async function unlinkViewerTwitch(args: {
+  viewerUserId: string
+  ip:           string
+}): Promise<boolean> {
+  const result = await db.query<{ twitch_login: string }>(
+    `UPDATE users SET twitch_id = NULL, twitch_login = NULL
+     WHERE id = $1 AND twitch_id IS NOT NULL
+     RETURNING twitch_login`,
+    [args.viewerUserId],
+  )
+  const ok = result.rows.length > 0
+  await audit({
+    action:    'disconnect_twitch',
+    status:    ok ? 'success' : 'failed',
+    userId:    args.viewerUserId,
+    ipAddress: args.ip,
+    metadata:  {
+      kind:        'viewer',
+      twitchLogin: result.rows[0]?.twitch_login,
+    },
+  })
+  return ok
+}
+
+export async function getViewerLink(viewerUserId: string): Promise<{ twitchId: string; twitchLogin: string } | null> {
+  const result = await db.query<{ twitch_id: string; twitch_login: string }>(
+    `SELECT twitch_id, twitch_login FROM users WHERE id = $1`,
+    [viewerUserId],
+  )
+  const row = result.rows[0]
+  if (!row?.twitch_id) return null
+  return { twitchId: row.twitch_id, twitchLogin: row.twitch_login }
 }
 
 // ── Reconcile / re-subscribe (admin manual trigger) ─────────────────────────
