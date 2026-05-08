@@ -146,7 +146,14 @@ export const twitchProvider: StreamerProvider = {
     const cleanCondition = { ...condition }
     delete (cleanCondition as Record<string, string>).version
 
-    const data = await helixPost<{ data: CreatedSubscription[] }>('/eventsub/subscriptions', accessToken, {
+    // Twitch wire format: { data: [{ id, status, type, version, condition, transport, ... }] }.
+    // On mappe id → externalSubId pour la convention interne.
+    const data = await helixPost<{ data: Array<{
+      id:        string
+      status:    string
+      type:      string
+      condition: Record<string, string>
+    }> }>('/eventsub/subscriptions', accessToken, {
       type:    eventType,
       version,
       condition: cleanCondition,
@@ -157,7 +164,13 @@ export const twitchProvider: StreamerProvider = {
       },
     })
     if (!data.data.length) throw new ProviderError('twitch', 500, data, 'createEventSubscription empty response')
-    return data.data[0]
+    const raw = data.data[0]
+    return {
+      externalSubId: raw.id,
+      status:        raw.status,
+      type:          raw.type,
+      condition:     raw.condition,
+    }
   },
 
   async deleteEventSubscription(appAccessToken: string, externalSubId: string): Promise<void> {
