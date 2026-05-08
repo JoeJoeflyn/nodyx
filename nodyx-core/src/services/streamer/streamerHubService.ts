@@ -119,16 +119,22 @@ export const STREAMER_HUB_SCOPES = [
 // Twitch et de récupérer son login. Pas besoin de lire son chat, ses subs, etc.
 export const VIEWER_SCOPES = ['user:read:email'] as const
 
-// ── Subscribe EventSub events Phase 1 (§5.2 spec) ───────────────────────────
+// ── Subscribe EventSub events Phase 1 + 2 (§5.2 + §6.1 spec) ───────────────
 
 interface SubscribeSpec {
   eventType: string
   version:   string
   condition: Record<string, string>
+  // Scope user requis pour cette subscription. Si le streamer connecté n'a
+  // pas accordé ce scope, on skip silencieusement (pas d'erreur). Permet de
+  // dégrader gracieusement quand on ajoute des events Phase 2+ sur des
+  // anciennes connexions Phase 1.
+  requiredScope?: string
 }
 
-function buildSubscribeSpecsForPhase1(broadcasterId: string): SubscribeSpec[] {
+function buildSubscribeSpecs(broadcasterId: string): SubscribeSpec[] {
   return [
+    // ── Phase 1 — alertes streamer ────────────────────────────────────────
     // channel.follow v2 demande explicitement moderator_user_id (la nouvelle
     // API EventSub force le filtre côté streamer = lui-même)
     { eventType: 'channel.follow',             version: '2', condition: { broadcaster_user_id: broadcasterId, moderator_user_id: broadcasterId } },
@@ -140,26 +146,53 @@ function buildSubscribeSpecsForPhase1(broadcasterId: string): SubscribeSpec[] {
     { eventType: 'channel.poll.end',           version: '1', condition: { broadcaster_user_id: broadcasterId } },
     { eventType: 'stream.online',              version: '1', condition: { broadcaster_user_id: broadcasterId } },
     { eventType: 'stream.offline',             version: '1', condition: { broadcaster_user_id: broadcasterId } },
+
+    // ── Phase 2 — chat bridge ─────────────────────────────────────────────
+    // channel.chat.message exige le scope user:read:chat sur le user_id
+    // (qui est le lecteur du chat, ici le streamer lit son propre chat).
+    {
+      eventType: 'channel.chat.message',
+      version:   '1',
+      condition: { broadcaster_user_id: broadcasterId, user_id: broadcasterId },
+      requiredScope: 'user:read:chat',
+    },
   ]
 }
 
+// Alias rétrocompatible (l'ancien nom apparaît encore dans les commits).
+const buildSubscribeSpecsForPhase1 = buildSubscribeSpecs
+
 export interface SubscribeResult {
   eventType:     string
-  status:        'created' | 'failed'
+  status:        'created' | 'skipped' | 'failed'
   externalSubId?: string
   error?:        string
+  reason?:       string  // ex: 'missing_scope:user:read:chat'
 }
 
 export async function subscribeAllStreamerEvents(args: {
   provider:      StreamerProvider
   broadcasterId: string
   publicBase:    string  // ex https://nodyx.org
+  grantedScopes?: readonly string[] | string[]  // scopes effectivement accordés par le streamer
 }): Promise<SubscribeResult[]> {
   const appToken = await args.provider.getAppAccessToken()
-  const specs    = buildSubscribeSpecsForPhase1(args.broadcasterId)
+  const specs    = buildSubscribeSpecs(args.broadcasterId)
+  const granted  = new Set(args.grantedScopes ?? [])
   const results: SubscribeResult[] = []
 
   for (const spec of specs) {
+    // Skip si scope requis non accordé. Permet d'ajouter de nouveaux events
+    // (Phase 2+) sans casser les streamers connectés en Phase 1 sans le scope.
+    if (spec.requiredScope && !granted.has(spec.requiredScope)) {
+      results.push({
+        eventType: spec.eventType,
+        status:    'skipped',
+        reason:    `missing_scope:${spec.requiredScope}`,
+      })
+      continue
+    }
+
     try {
       const hmacSecret = randomBytes(32).toString('base64url').slice(0, 64) // 64 ASCII chars (10..100 OK)
       const placeholder = await createSubscription({
@@ -200,6 +233,33 @@ export async function subscribeAllStreamerEvents(args: {
   }
 
   return results
+}
+
+// ── Sync subscriptions (admin-triggered) ────────────────────────────────────
+// Ré-exécute subscribeAllStreamerEvents pour le primary streamer connecté.
+// L'INSERT dans createSubscription a un ON CONFLICT (provider, event_type)
+// DO UPDATE qui re-cycle nonce + secret HMAC. Côté Twitch, comme on souscrit
+// avec une nouvelle URL callback (nonce différent), Twitch crée une nouvelle
+// subscription sans casser l'ancienne — l'ancienne deviendra "failed" après
+// quelques retries (404 sur l'ancien nonce dont la row a été UPDATED).
+//
+// Ce pattern marche pour ajouter des events Phase 2+ sur un streamer connecté
+// en Phase 1, sans qu'il ait à se reconnecter.
+
+export async function syncStreamerSubscriptions(args: {
+  provider:    StreamerProvider
+  publicBase:  string
+}): Promise<{ ok: true; results: SubscribeResult[] } | { ok: false; reason: string }> {
+  const primary = await findPrimaryStreamer(args.provider.id)
+  if (!primary) return { ok: false, reason: 'no_primary_streamer' }
+
+  const results = await subscribeAllStreamerEvents({
+    provider:      args.provider,
+    broadcasterId: primary.externalId,
+    publicBase:    args.publicBase,
+    grantedScopes: primary.scopes,
+  })
+  return { ok: true, results }
 }
 
 // ── OAuth callback flow (high-level orchestration) ──────────────────────────
@@ -244,11 +304,12 @@ export async function completeOAuthCallback(args: {
     [user.id, user.login, args.adminUserId],
   )
 
-  // 5. Subscribe aux events Phase 1
+  // 5. Subscribe aux events Phase 1+2 (skip ceux dont le scope manque)
   const subscribeResults = await subscribeAllStreamerEvents({
     provider:      args.provider,
     broadcasterId: user.id,
     publicBase:    args.publicBase,
+    grantedScopes: tokens.scopes,
   })
 
   await audit({
