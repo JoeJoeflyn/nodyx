@@ -15,6 +15,7 @@
 import { db } from '../../config/database'
 import * as Channel from '../../models/channel'
 import { io } from '../../socket/io'
+import { renderChatMessage } from './emotes'
 import type { ProviderId } from './providers/_types'
 
 const STREAMER_EVENTS_SLUG = 'streamer-events'
@@ -365,6 +366,14 @@ async function resolveTwitchAuthor(args: {
 
 // ── Inbound : push un message Twitch chat dans #twitch-chat ────────────────
 
+interface TwitchFragment {
+  type:       'text' | 'cheermote' | 'emote' | 'mention'
+  text:       string
+  emote?:     { id: string; emote_set_id?: string; format?: string[] }
+  cheermote?: { prefix?: string; bits?: number }
+  mention?:   { user_id?: string; user_login?: string }
+}
+
 export async function pushTwitchChatMessage(args: {
   provider:      ProviderId  // toujours 'twitch' actuellement
   payload:       unknown
@@ -375,14 +384,14 @@ export async function pushTwitchChatMessage(args: {
       chatter_user_id?:     string
       chatter_user_login?:  string
       chatter_user_name?:   string
-      message?:             { text?: string; fragments?: unknown[] }
+      message?:             { text?: string; fragments?: TwitchFragment[] }
       message_id?:          string
       badges?:              unknown[]
       color?:               string
     }
   }
   const evt = body?.event
-  if (!evt?.chatter_user_id || !evt.chatter_user_login || !evt.message?.text) return
+  if (!evt?.chatter_user_id || !evt.chatter_user_login || !evt.broadcaster_user_id || !evt.message?.text) return
 
   const communityId = await getInstanceCommunityId()
   if (!communityId) return
@@ -398,14 +407,29 @@ export async function pushTwitchChatMessage(args: {
   })
   if (!author) return
 
-  // Phase 2 brique 2.3 : on pousse le texte brut. Les emotes natives Twitch
-  // + BTTV/FFZ/7TV seront parsées en brique 2.5.
-  const text = evt.message.text.slice(0, 10000)
+  // Brique 2.5 : render le message en HTML avec emotes natives Twitch
+  // (depuis fragments) + BTTV/FFZ/7TV (depuis cache Redis 24h).
+  // Si le rendering échoue, on tombe en fallback sur le texte brut escaped.
+  let content: string
+  try {
+    content = await renderChatMessage({
+      twitchBroadcasterId: evt.broadcaster_user_id,
+      text:                evt.message.text,
+      fragments:           evt.message.fragments,
+    })
+  } catch (err) {
+    console.error('[streamerChat] renderChatMessage failed, falling back to plain text', err)
+    content = evt.message.text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+  }
+  content = content.slice(0, 10000)  // limite avant addMessage
 
   const message = await Channel.addMessage({
     channel_id: channelId,
     author_id:  author.userId,
-    content:    text,
+    content,
   })
 
   if (io) {
