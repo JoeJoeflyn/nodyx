@@ -31,8 +31,8 @@ import {
 
 import {
   findByNonce,
-  markEnabled,
-  markRevoked,
+  markEnabledById,
+  markRevokedById,
   readHmacSecretByNonce,
 } from '../services/streamer/eventsubService'
 
@@ -297,8 +297,8 @@ export const streamerEventsubPlugin: FastifyPluginAsync = async (server) => {
       if (typeof challenge !== 'string') {
         return reply.code(400).send({ error: 'missing_challenge' })
       }
-      await markEnabled(sub.provider, sub.externalSubId)
-      request.log.info({ subId: sub.externalSubId, eventType: sub.eventType }, 'EventSub verification OK → enabled')
+      await markEnabledById(sub.id)
+      request.log.info({ rowId: sub.id, eventType: sub.eventType }, 'EventSub verification OK → enabled')
       return reply
         .code(200)
         .header('content-type', 'text/plain; charset=utf-8')
@@ -333,8 +333,8 @@ export const streamerEventsubPlugin: FastifyPluginAsync = async (server) => {
 
     if (msgType === MSG_TYPE_REVOCATION) {
       const reason = (body as { subscription?: { status?: string } }).subscription?.status
-      await markRevoked(sub.provider, sub.externalSubId, reason)
-      request.log.warn({ subId: sub.externalSubId, reason }, 'EventSub revoked by Twitch')
+      await markRevokedById(sub.id, reason)
+      request.log.warn({ rowId: sub.id, eventType: sub.eventType, reason }, 'EventSub revoked by Twitch')
       return reply.code(204).send()
     }
 

@@ -178,40 +178,56 @@ export async function readHmacSecretByNonce(nonce: string): Promise<string | nul
 }
 
 // ── Status transitions ───────────────────────────────────────────────────────
+// On adresse les rows par leur id DB (pas par external_sub_id), parce que
+// Twitch envoie le webhook verification avant que notre UPDATE post-create-API
+// n'ait écrit le vrai external_sub_id. Le rowId est stable depuis l'INSERT.
 
-export async function markEnabled(provider: ProviderId, externalSubId: string): Promise<void> {
+export async function markEnabledById(rowId: string): Promise<void> {
   await db.query(
     `UPDATE streamer_eventsub_subscriptions
      SET status = 'enabled', enabled_at = NOW()
-     WHERE provider = $1 AND external_sub_id = $2 AND status != 'revoked'`,
-    [provider, externalSubId],
+     WHERE id = $1 AND status != 'revoked'`,
+    [rowId],
   )
 }
 
-export async function markRevoked(
-  provider: ProviderId,
-  externalSubId: string,
-  reason?: string,
-): Promise<void> {
-  await db.query(
+export async function markRevokedById(rowId: string, reason?: string): Promise<void> {
+  const result = await db.query<{ external_sub_id: string; provider: ProviderId }>(
     `UPDATE streamer_eventsub_subscriptions
      SET status = 'revoked', revoked_at = NOW()
-     WHERE provider = $1 AND external_sub_id = $2`,
-    [provider, externalSubId],
+     WHERE id = $1
+     RETURNING external_sub_id, provider`,
+    [rowId],
   )
+  const row = result.rows[0]
   await audit({
     action:    'eventsub_revoked',
     status:    'success',
-    metadata:  { provider, externalSubId, reason: reason ?? null },
+    metadata:  {
+      provider:      row?.provider,
+      externalSubId: row?.external_sub_id,
+      reason:        reason ?? null,
+    },
   })
 }
 
-export async function markFailed(provider: ProviderId, externalSubId: string): Promise<void> {
+export async function markFailedById(rowId: string): Promise<void> {
   await db.query(
     `UPDATE streamer_eventsub_subscriptions
      SET status = 'failed'
-     WHERE provider = $1 AND external_sub_id = $2`,
-    [provider, externalSubId],
+     WHERE id = $1`,
+    [rowId],
+  )
+}
+
+// Set le vrai external_sub_id reçu de Twitch après l'API call. Appelé depuis
+// streamerHubService.subscribeAllStreamerEvents juste après response Twitch.
+export async function setExternalSubId(rowId: string, externalSubId: string): Promise<void> {
+  await db.query(
+    `UPDATE streamer_eventsub_subscriptions
+     SET external_sub_id = $1
+     WHERE id = $2`,
+    [externalSubId, rowId],
   )
 }
 

@@ -10,7 +10,7 @@ import {
   findPrimaryStreamer,
   type StreamerTokenRow,
 } from './tokenService'
-import { createSubscription, listSubscriptions } from './eventsubService'
+import { createSubscription, listSubscriptions, setExternalSubId } from './eventsubService'
 import { recordEvent } from './eventService'
 import { audit } from './audit'
 import { twitchProvider } from './providers/twitchProvider'
@@ -134,13 +134,12 @@ export async function subscribeAllStreamerEvents(args: {
         hmacSecret,
       })
 
-      // Mettre à jour external_sub_id en place (le placeholder était 'pending')
-      await db.query(
-        `UPDATE streamer_eventsub_subscriptions
-         SET external_sub_id = $1
-         WHERE id = $2`,
-        [created.externalSubId, placeholder.id],
-      )
+      // Set le vrai external_sub_id reçu de Twitch (le placeholder était 'pending').
+      // Note : Twitch peut avoir déjà appelé /eventsub/:nonce pour la verification
+      // entre l'INSERT et ici. Le webhook handler markEnabledById(sub.id) fait
+      // référence au rowId stable, donc l'enabled_at est déjà set même si le
+      // status était 'pending' au moment de la verification.
+      await setExternalSubId(placeholder.id, created.externalSubId)
 
       results.push({
         eventType:     spec.eventType,
