@@ -2,14 +2,14 @@
 
 **Date du spike** : 2026-05-08
 **Branche** : `feat/streamer-hub-spike`
-**Tampon final** : ✅ **GO Phase 1** (5 / 6 critères validés, 1 différé sans bloquant)
-**Durée** : ~3h, du scaffold au déploiement prod inclus.
+**Tampon final** : ✅ **GO Phase 1** (6 / 6 critères validables)
+**Durée** : ~3h, du scaffold au canary live inclus.
 
 ---
 
 ## TL;DR
 
-Le spike a validé tout ce qu'il pouvait valider côté code et infra (chiffrement, HMAC, scopes, refresh). La spec peut partir sur Phase 1 sans réécriture. Une seule question reste ouverte (le pipeline `notification` au moment d'un go-live réel), mais elle partage 99% du code path avec la `verification` qui a été validée bout-en-bout.
+Le spike a validé bout-en-bout tout ce qui était testable côté code et infra (chiffrement, HMAC, scopes, refresh, canary `stream.online` réel reçu en 2ms). La spec peut partir sur Phase 1 sans réécriture. Les 3 points §15.bis #3-#5 restants sont explicitement hors scope spike et arriveront en Phase 5.
 
 ---
 
@@ -30,7 +30,7 @@ Le spike a validé tout ce qu'il pouvait valider côté code et infra (chiffreme
 | A | Chiffrement AES-256-GCM + HKDF master + sel par row (§12.1) | ✅ GO | 10/10 tests négatifs verts (`src/tests/streamer-spike-crypto.test.ts`) : altérer master / sel / IV / tag / ciphertext fait échouer le déchiffrement. Round-trip live validé via le flow OAuth (encrypt à l'inscription + decrypt au refresh). |
 | B | Nonce URL EventSub + HMAC SHA-256 (§12.2) | ✅ GO | Round-trip Twitch → handler validé en **1.6 seconde**. Verification challenge accepté, status passé `pending → enabled`. Le nonce 32 octets base64url évite tout endpoint global devinable. |
 | C | Refresh tokens proactif (§12.3) | ✅ GO | `GET /refresh?id=36520358` a généré un nouveau couple access/refresh, re-chiffrés avec un nouveau sel + IV. `rotated_at` mis à jour. Ouvre la voie à la rotation forcée 30 j en Phase 5. |
-| D | Canary `stream.online` (notification path) | ⏸ À valider | Le path `verification` est validé. Le path `notification` partage 99% du code (HMAC, dedup, dispatch) mais n'a pas été testé live. Pas bloquant : le test arrivera naturellement au prochain go-live du streamer. Si problème, isolé et corrigeable en < 1h. |
+| D | Canary `stream.online` (notification path) | ✅ GO | Stream test lancé live, webhook reçu en **2 ms** (POST `/eventsub/98JmfVN2B0Z…` → log `🎬 EventSub notification reçue`). HMAC ✓, dedup ✓, parsing body ✓ (broadcaster_user_id, type, started_at extraits proprement). Pipeline complet validé. |
 
 ---
 
