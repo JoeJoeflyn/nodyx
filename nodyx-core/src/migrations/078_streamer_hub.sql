@@ -16,18 +16,27 @@
 --   - rotation forcée tokens 30j prévue Phase 5 via rotated_at + cron
 
 -- ─── Tokens OAuth chiffrés (provider × streamer) ─────────────────────────────
+-- Chaque token (access + refresh) a son propre triplet (salt, iv, tag) pour
+-- que GCM reste correct (jamais 2 IV identiques sous la même clé dérivée).
+-- key_version est partagé entre les deux : ils sont rotated ensemble.
 CREATE TABLE IF NOT EXISTS streamer_oauth_tokens (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider          TEXT NOT NULL CHECK (provider IN ('twitch', 'owncast', 'peertube', 'youtube', 'kick')),
   user_id           UUID REFERENCES users(id) ON DELETE CASCADE,
   external_id       TEXT NOT NULL,                          -- Twitch user_id, etc.
   external_login    TEXT NOT NULL,
-  access_token_enc  BYTEA NOT NULL,                         -- AES-256-GCM ciphertext
+  -- access_token : ciphertext + son propre triplet HKDF/GCM
+  access_token_enc  BYTEA NOT NULL,
+  access_salt       BYTEA NOT NULL,                         -- 16 octets HKDF salt
+  access_iv         BYTEA NOT NULL,                         -- 12 octets IV unique
+  access_tag        BYTEA NOT NULL,                         -- 16 octets tag GCM
+  -- refresh_token : ciphertext + son propre triplet HKDF/GCM
   refresh_token_enc BYTEA NOT NULL,
-  enc_salt          BYTEA NOT NULL,                         -- 16 octets HKDF salt par row
-  enc_iv            BYTEA NOT NULL,                         -- 12 octets IV unique par chiffrement
-  enc_tag           BYTEA NOT NULL,                         -- 16 octets tag GCM
-  key_version       INTEGER NOT NULL DEFAULT 1,             -- master_key_v{N}, rotation Phase 5
+  refresh_salt      BYTEA NOT NULL,
+  refresh_iv        BYTEA NOT NULL,
+  refresh_tag       BYTEA NOT NULL,
+  -- master_key_v{N}, partagé pour les deux tokens. Rotation Phase 5.
+  key_version       INTEGER NOT NULL DEFAULT 1,
   scopes            TEXT[] NOT NULL,
   expires_at        TIMESTAMPTZ NOT NULL,
   is_streamer       BOOLEAN NOT NULL DEFAULT FALSE,         -- TRUE pour le streamer principal
