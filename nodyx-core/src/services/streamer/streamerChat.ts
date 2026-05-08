@@ -34,13 +34,19 @@ export async function ensureStreamerEventsChannel(communityId: string): Promise<
     return _cachedChannelId
   }
 
-  // Create
+  // Create + mark as system-managed (lecture seule pour les non-mods,
+  // cf migration 080). Channel.create n'expose pas is_system_managed dans
+  // son interface publique, donc on UPDATE juste après l'INSERT.
   const channel = await Channel.create({
     community_id: communityId,
     name:         STREAMER_EVENTS_NAME,
     description:  'Activité live de la chaîne (follows, subs, raids, lives, polls). Auto-géré par le Streamer Hub.',
     type:         'text',
   })
+  await db.query(
+    `UPDATE channels SET is_system_managed = TRUE WHERE id = $1`,
+    [channel.id],
+  )
   _cachedChannelId = channel.id
   return _cachedChannelId
 }
