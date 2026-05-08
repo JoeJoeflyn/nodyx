@@ -161,6 +161,18 @@ server.register(adminBackupRoutes,    { prefix: '/api/v1' })
 server.register(canvasRoutes,         { prefix: '/api/v1/canvas' })
 server.register(twitchRoutes,         { prefix: '/api/v1/twitch' })
 
+// ── Streamer Hub spike (Phase 0) ──────────────────────────────────────────────
+// Activé uniquement si STREAMER_SPIKE_ENABLED=1. Code isolé sous src/spike/
+// (pas dans le sanctuaire /routes). Voir docs/specs/015-streamer-hub/SPEC.MD.
+if (process.env.STREAMER_SPIKE_ENABLED === '1') {
+  import('./spike/streamer').then(({ default: streamerSpikePlugin }) => {
+    server.register(streamerSpikePlugin)
+    console.log('🧪 Streamer Hub spike activé (STREAMER_SPIKE_ENABLED=1)')
+  }).catch(err => {
+    console.error('Streamer Hub spike: échec du chargement', err)
+  })
+}
+
 const start = async () => {
   // Validate critical environment variables at startup.
   const jwtSecret = process.env.JWT_SECRET ?? ''
