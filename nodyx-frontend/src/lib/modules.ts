@@ -60,7 +60,10 @@ export const MODULE_DISPLAY: Record<string, ModuleDisplay> = {
   contact:            { id: 'contact',           name: 'Contact',         description: 'Formulaire de contact public pour les visiteurs.',           family: 'website', icon: '📬', color: '#ec4899', core: false, hasPublicFace: true, tags: ['toutes'],                         status: 'soon' },
   sponsors:           { id: 'sponsors',          name: 'Sponsors',        description: 'Bandeau de logos sponsors et partenaires.',                  family: 'website', icon: '🤝', color: '#ec4899', core: false, hasPublicFace: true, tags: ['sport', 'événementiel'],          status: 'soon' },
 
-  // integration — all soon
+  // integration — Phase 1 livré
+  'streamer-hub': { id: 'streamer-hub', name: 'Streamer Hub', description: 'Tout l\'écosystème streamer dans Nodyx : OAuth Twitch, webhooks EventSub (follow / sub / raid / bits / polls / live), Stream Deck web, stats, top clips.', family: 'integration', icon: '🎬', color: '#9146ff', core: false, hasPublicFace: false, tags: ['gaming', 'streaming'], status: 'stable', isNew: true },
+
+  // integration — soon
   'rss-import': { id: 'rss-import', name: 'Import RSS',  description: 'Importe des fils RSS comme threads de forum automatiquement.', family: 'integration', icon: '📡', color: '#6b7280', core: false, hasPublicFace: false, tags: ['media', 'société'],  status: 'soon' },
   webhook:      { id: 'webhook',    name: 'Webhooks',     description: "Envoie des événements Nodyx vers des services tiers.",          family: 'integration', icon: '🔗', color: '#6b7280', core: false, hasPublicFace: false, tags: ['société', 'makers'],  status: 'soon' },
   'ical-sync':  { id: 'ical-sync',  name: 'Sync iCal',   description: 'Synchronise le calendrier avec Google Calendar, Outlook…',     family: 'integration', icon: '🔄', color: '#6b7280', core: false, hasPublicFace: false, tags: ['sport', 'société'],   status: 'soon' },

@@ -31,6 +31,99 @@
     let activeSection = $state('network')
     let langSaved     = $state(false)
 
+    // ── Twitch link (viewer flow) ─────────────────────────────────────────────
+    type TwitchLink = { twitchId: string; twitchLogin: string } | null
+
+    let twitchLink: TwitchLink = $state(null)
+    let twitchLoaded            = $state(false)
+    let twitchConnecting        = $state(false)
+    let twitchUnlinking         = $state(false)
+    let twitchToast             = $state<string | null>(null)
+    let twitchError             = $state<string | null>(null)
+
+    async function loadTwitchLink() {
+        const token = ($page.data as any).token as string | null
+        if (!token) { twitchLoaded = true; return }
+        try {
+            const res = await fetch('/api/v1/streamer/twitch/viewer/me', {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            if (res.ok) {
+                const j = await res.json()
+                twitchLink = j.link ?? null
+            }
+        } catch {}
+        twitchLoaded = true
+    }
+
+    async function connectTwitch() {
+        if (twitchConnecting) return
+        twitchConnecting = true
+        twitchError = null
+        try {
+            const token = ($page.data as any).token as string | null
+            const res = await fetch('/api/v1/streamer/twitch/viewer/auth-init', {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            if (!res.ok) {
+                twitchError = 'Impossible de démarrer la connexion Twitch (HTTP ' + res.status + ')'
+                twitchConnecting = false
+                return
+            }
+            const { authorizeUrl } = await res.json()
+            window.location.href = authorizeUrl
+        } catch {
+            twitchError = 'Erreur réseau'
+            twitchConnecting = false
+        }
+    }
+
+    async function unlinkTwitch() {
+        if (twitchUnlinking || !twitchLink) return
+        if (!confirm(`Délier ${twitchLink.twitchLogin} de votre profil Nodyx ?`)) return
+        twitchUnlinking = true
+        twitchError = null
+        try {
+            const token = ($page.data as any).token as string | null
+            const res = await fetch('/api/v1/streamer/twitch/viewer/unlink', {
+                method:  'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            if (res.ok) {
+                twitchLink = null
+                twitchToast = 'Compte Twitch délié'
+                setTimeout(() => twitchToast = null, 3500)
+            } else {
+                twitchError = 'Délier a échoué'
+            }
+        } catch {
+            twitchError = 'Erreur réseau'
+        } finally {
+            twitchUnlinking = false
+        }
+    }
+
+    // Lis ?just_linked_twitch=login au mount → toast + ouvre la section
+    $effect(() => {
+        const justLinked = $page.url.searchParams.get('just_linked_twitch')
+        if (justLinked) {
+            activeSection = 'connected-accounts'
+            twitchToast   = `Compte Twitch lié : @${justLinked}`
+            setTimeout(() => twitchToast = null, 4500)
+            // Nettoyer l'URL pour ne pas rejouer le toast au refresh
+            const url = new URL(window.location.href)
+            url.searchParams.delete('just_linked_twitch')
+            window.history.replaceState({}, '', url)
+        }
+    })
+
+    // Charge le link au premier passage sur la section
+    $effect(() => {
+        if (activeSection === 'connected-accounts' && !twitchLoaded) {
+            loadTwitchLink()
+        }
+    })
+
     function setLocale(code: Locale) {
         locale.setLocale(code)
         langSaved = true
@@ -422,6 +515,19 @@
                 <span class="sb-label">{tFn('settings.signet.label')}</span>
                 {#if signetDevices.length > 0}
                     <span class="sb-badge">{signetDevices.length}</span>
+                {/if}
+            </button>
+
+            <button class="sb-item {activeSection === 'connected-accounts' ? 'active' : ''}"
+                    onclick={() => activeSection = 'connected-accounts'}>
+                <span class="sb-icon" style="background: rgba(124,58,237,0.12); color: #a78bfa">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                </span>
+                <span class="sb-label">Comptes liés</span>
+                {#if twitchLoaded && twitchLink}
+                    <span class="sb-badge-dot" style="background:#10b981"></span>
                 {/if}
             </button>
 
@@ -871,6 +977,98 @@
                 </div>
                 {/if}
             </div>
+        </div>
+        {/if}
+
+        <!-- ═══ COMPTES LIÉS ══════════════════════════════════════════════════ -->
+        {#if activeSection === 'connected-accounts'}
+        <div class="s-pane" style="--accent: #a78bfa; --accent-bg: rgba(124,58,237,0.08); --accent-border: rgba(124,58,237,0.2)">
+            <div class="s-pane-header">
+                <div class="s-pane-icon" style="background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="s-pane-title">Comptes liés</h2>
+                    <p class="s-pane-desc">
+                        Lie tes comptes externes à ton profil Nodyx pour qu'ils soient reconnus
+                        automatiquement dans les fonctionnalités correspondantes.
+                    </p>
+                </div>
+            </div>
+
+            <div class="s-card" style="padding: 20px">
+                <div style="display: flex; gap: 16px; align-items: flex-start;">
+                    <div style="width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg,#9146ff,#7c3aed); display:flex; align-items:center; justify-content:center; font-size: 22px; flex-shrink: 0;">
+                        🎬
+                    </div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
+                            <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #fff;">Twitch</h3>
+                            {#if twitchLink}
+                                <span style="font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(16,185,129,0.15); color:#34d399; border: 1px solid rgba(16,185,129,0.3);">
+                                    lié
+                                </span>
+                            {/if}
+                        </div>
+                        <p style="margin: 6px 0 0; font-size: 13px; color: #94a3b8; line-height: 1.5;">
+                            {#if twitchLink}
+                                Connecté à <strong style="color:#a78bfa;">@{twitchLink.twitchLogin}</strong>.
+                                Quand tu follow, sub ou raid sur la chaîne Twitch principale de cette
+                                instance, l'événement sera relié à ton profil Nodyx.
+                            {:else}
+                                Lie ton compte Twitch pour que tes follows / subs / cheers / raids
+                                soient automatiquement reconnus comme étant les tiens dans Nodyx.
+                                Aucun token n'est conservé : on enregistre juste l'identifiant
+                                Twitch et ton login.
+                            {/if}
+                        </p>
+
+                        {#if twitchError}
+                            <div style="margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; font-size: 12px;">
+                                {twitchError}
+                            </div>
+                        {/if}
+
+                        <div style="margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap;">
+                            {#if !twitchLoaded}
+                                <span style="font-size: 12px; color: #64748b;">Chargement…</span>
+                            {:else if twitchLink}
+                                <button
+                                    onclick={unlinkTwitch}
+                                    disabled={twitchUnlinking}
+                                    style="font-size: 13px; padding: 8px 14px; border-radius: 8px; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; cursor: pointer; transition: background 0.15s;"
+                                    onmouseenter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.2)' }}
+                                    onmouseleave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.12)' }}
+                                >
+                                    {twitchUnlinking ? 'Délier…' : 'Délier mon compte Twitch'}
+                                </button>
+                            {:else}
+                                <button
+                                    onclick={connectTwitch}
+                                    disabled={twitchConnecting}
+                                    style="font-size: 13px; font-weight: 500; padding: 8px 16px; border-radius: 8px; background: #7c3aed; border: 1px solid #7c3aed; color: #fff; cursor: pointer; transition: background 0.15s; display: inline-flex; align-items: center; gap: 8px;"
+                                    onmouseenter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#6d28d9' }}
+                                    onmouseleave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#7c3aed' }}
+                                >
+                                    {#if twitchConnecting}
+                                        <span style="display: inline-block; animation: spin 1s linear infinite;">◌</span> Redirection…
+                                    {:else}
+                                        Lier mon compte Twitch
+                                    {/if}
+                                </button>
+                            {/if}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {#if twitchToast}
+                <div style="position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: 10px; background: rgba(16,185,129,0.18); border: 1px solid rgba(16,185,129,0.4); color: #6ee7b7; font-size: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); z-index: 1000;">
+                    {twitchToast}
+                </div>
+            {/if}
         </div>
         {/if}
 

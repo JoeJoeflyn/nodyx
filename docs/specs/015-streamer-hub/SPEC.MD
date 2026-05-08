@@ -1,8 +1,8 @@
 # Nodyx Streamer Hub
 
-**Statut** : v2.2 — Phase 0 (spike) ✅ close, Phase 1 prête à démarrer
+**Statut** : v2.3 — Phase 0 ✅ + Phase 1 ✅ livrée, Phase 2 prête à démarrer
 **Numéro de spec** : 015
-**Version** : 2.2 (2026-05-08)
+**Version** : 2.3 (2026-05-08)
 **Auteur** : Pokled + Claude
 **Phase cible** : v2.5 (Phase 1) → v2.7 (Phase 5 complète)
 
@@ -795,15 +795,32 @@ Ces 5 hypothèses de la spec n'étaient **pas confirmées** par la doc Twitch pu
 
 ## 17. Décision finale & ordre d'attaque
 
-Spec **v2.2** validée Pokled (2026-05-08). Phase 0 spike terminée avec succès (6/6 GO sur ce qui était validable, cf [PHASE_0_REPORT.md](PHASE_0_REPORT.md)).
+Spec **v2.3** validée Pokled (2026-05-08). Phase 0 ✅ + Phase 1 ✅ livrées en prod (`nodyx.org`). Phase 2 prête à démarrer.
 
 État actuel :
 
-1. ✅ **Phase 0 — Spike technique** sur `feat/streamer-hub-spike` (archive). OAuth + EventSub bout-en-bout validés en 3h, canary `stream.online` reçu live en 2 ms. Branche conservée comme archive, code helpers réutilisables pour Phase 1.
+1. ✅ **Phase 0 — Spike technique** (`feat/streamer-hub-spike`, archive). OAuth + EventSub bout-en-bout validés en 3h, canary `stream.online` reçu live en 2 ms. Branche conservée comme archive.
 
-2. ➡️ **Phase 1 — Foundations Twitch** sur `feat/streamer-hub-phase-1` (à démarrer depuis `main`). Pattern backup system : branche dédiée, smoke test sur prod avant merge, mode maintenance auto-actif si on touche à des données critiques. Estimé 2-3 j.
+2. ✅ **Phase 1 — Foundations Twitch** (`feat/streamer-hub-phase-1`, mergée dans `main`). Livré 2026-05-08 :
+   - OAuth Twitch streamer + tokens chiffrés AES-256-GCM avec HKDF master + sel par row (§12.1)
+   - EventSub 9 events souscrits (`channel.follow` v2, `subscribe`, `subscription.gift`, `cheer`, `raid`, `poll.begin/end`, `stream.online/offline`)
+   - Webhook `/api/v1/integrations/twitch/eventsub/{nonce}` avec HMAC SHA-256 + dedup Redis 24h + persist DB
+   - Page admin `/admin/streamer-hub` (statut connection, liste subscriptions, feed events, actions refresh/disconnect)
+   - Module `streamer-hub` enregistré dans le system de modules (`/admin/modules`)
+   - Channel auto `#streamer-events` (`is_system_managed=TRUE`, lecture seule sauf mods)
+   - User système Nodyx auto-créé (avatar logo, name_color #7c3aed, glow Twitch purple, bio)
+   - Push automatique des events au chat avec 9 templates formatés
+   - OAuth viewer Flow A : `/settings` > "Comptes liés" pour lier son Twitch perso à son profil Nodyx
+   - Callback OAuth idempotent (gère les requests dupliqués Twitch sans page d'erreur)
+   - 204/204 tests verts, build TS clean
+
+3. ➡️ **Phase 2 — Chat unifié Twitch ↔ Nodyx** (à démarrer depuis `main` sur `feat/streamer-hub-phase-2`). Bridge EventSub Chat (in) + Helix Send Chat Message (out) + badges/emotes BTTV/FFZ/7TV + channel `#twitch-chat` auto. Estimé 3-4 j.
 
 ### Changelog de la spec
+
+**v2.3 — 2026-05-08** (post-livraison Phase 1)
+- §17 : Phase 1 marquée livrée, recap de ce qui est en prod, Phase 2 ordonnée
+- Pas de modif de spec technique : tout ce qui était spec'é a été livré tel quel.
 
 **v2.2 — 2026-05-08** (post-spike Phase 0)
 - §4.1 Scopes : retrait `clips:read` (n'existe pas chez Twitch) + retrait `chat:read`/`chat:edit` (anciens scopes IRC, remplacés par `user:read:chat`/`user:write:chat`). Phase explicite par scope (1 / 2 / 4 / 5).

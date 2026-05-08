@@ -45,6 +45,12 @@
 			],
 		},
 		{
+			section: 'Intégrations',
+			items: [
+				{ href: '/admin/streamer-hub', label: 'Streamer Hub', icon: '🎬' },
+			],
+		},
+		{
 			section: 'Instance',
 			items: [
 				{ href: '/admin/announcements', label: 'Annonces',      icon: '📢' },

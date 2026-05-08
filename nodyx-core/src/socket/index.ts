@@ -408,13 +408,22 @@ export function registerSocketIO(server: Server): void {
       // Contrôle d'accès : le socket doit avoir rejoint ce canal via chat:join (qui vérifie membership)
       // Double-check DB pour éviter les races après expulsion de la communauté
       if (!socket.rooms.has(`channel:${channelId}`)) return
-      const { rows: memberCheck } = await db.query(
-        `SELECT 1 FROM channels c
+      const { rows: memberCheck } = await db.query<{ role: string; is_system_managed: boolean }>(
+        `SELECT cm.role, c.is_system_managed FROM channels c
          JOIN community_members cm ON c.community_id = cm.community_id
          WHERE c.id = $1 AND cm.user_id = $2 LIMIT 1`,
         [channelId, userId]
-      ).catch(() => ({ rows: [] as any[] }))
+      ).catch(() => ({ rows: [] as { role: string; is_system_managed: boolean }[] }))
       if (!memberCheck.length) return
+
+      // Channel system-managed (ex: #streamer-events auto-créé) : seuls
+      // owners/admins/moderators peuvent y écrire. Les messages système
+      // (Streamer Hub, bots) bypass ce socket handler et passent par
+      // Channel.addMessage() direct, donc rien à filtrer pour eux ici.
+      if (memberCheck[0].is_system_managed && !['owner', 'admin', 'moderator'].includes(memberCheck[0].role)) {
+        socket.emit('chat:blocked', { reason: 'channel_read_only' })
+        return
+      }
 
       const sanitized = sanitize(content.trim())
       if (!sanitized || sanitized.length > 10000) return

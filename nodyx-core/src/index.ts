@@ -34,6 +34,7 @@ import { widgetDemoRoutes }  from './routes/widgetDemo'
 import { adminBackupRoutes } from './routes/admin_backups'
 import canvasRoutes          from './routes/canvas'
 import twitchRoutes           from './routes/twitch'
+import { streamerAdminPlugin, streamerEventsubPlugin } from './routes/streamer'
 import { setIO }              from './socket/io'
 import { registerSocketIO } from './socket/index'
 import { runMigrations }    from './scripts/migrate'
@@ -160,6 +161,13 @@ server.register(widgetDemoRoutes,     { prefix: '/api/v1' })
 server.register(adminBackupRoutes,    { prefix: '/api/v1' })
 server.register(canvasRoutes,         { prefix: '/api/v1/canvas' })
 server.register(twitchRoutes,         { prefix: '/api/v1/twitch' })
+
+// ── Streamer Hub (spec 015, Phase 1) ─────────────────────────────────────────
+// Deux scopes : admin OAuth + viewer feed sous /streamer, webhook EventSub
+// public sous /integrations. Le plugin EventSub a un content-type parser
+// custom encapsulé (raw body pour HMAC) sans impact sur les autres handlers.
+server.register(streamerAdminPlugin,    { prefix: '/api/v1/streamer' })
+server.register(streamerEventsubPlugin, { prefix: '/api/v1/integrations' })
 
 const start = async () => {
   // Validate critical environment variables at startup.
