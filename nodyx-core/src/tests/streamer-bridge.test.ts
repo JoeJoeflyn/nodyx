@@ -18,6 +18,11 @@ const { auditMock } = vi.hoisted(() => ({
   auditMock: vi.fn().mockResolvedValue(undefined),
 }))
 
+const { enqueueOutboundMock, startOutboundWorkerMock } = vi.hoisted(() => ({
+  enqueueOutboundMock:     vi.fn().mockResolvedValue({ length: 1, overflowAlerted: false }),
+  startOutboundWorkerMock: vi.fn(),
+}))
+
 vi.mock('../config/database', () => ({
   db:    { query: dbQueryMock },
   redis: {},
@@ -31,6 +36,11 @@ vi.mock('../services/streamer/tokenService', () => ({
 
 vi.mock('../services/streamer/audit', () => ({
   audit: auditMock,
+}))
+
+vi.mock('../services/streamer/chatOutboundQueue', () => ({
+  enqueueOutbound:      enqueueOutboundMock,
+  startOutboundWorker:  startOutboundWorkerMock,
 }))
 
 vi.mock('../services/streamer/providers/twitchProvider', () => ({
@@ -63,6 +73,7 @@ function streamerOfflineRow() {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  enqueueOutboundMock.mockResolvedValue({ length: 1, overflowAlerted: false })
   process.env.STREAMER_TWITCH_CLIENT_ID = 'test-client-id'
   delete process.env.STREAMER_CHAT_TEST_MODE
   delete process.env.STREAMER_CHAT_NO_PREFIX
@@ -308,5 +319,44 @@ describe('relayMessageToTwitch — erreurs Helix', () => {
 
     expect(r.ok).toBe(false)
     expect(r.reason).toBe('no_client_id')
+  })
+})
+
+describe('relayMessageToTwitch — 429 → queue (§6.5)', () => {
+  it('enqueue le message formaté et retourne rate_limited_queued sans audit dropped', async () => {
+    findPrimaryStreamerMock.mockResolvedValueOnce(primaryRow())
+    getDecryptedTokensMock.mockResolvedValueOnce({ accessToken: 'tok' })
+    dbQueryMock.mockResolvedValueOnce(streamerLiveRow())
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      text: async () => '{"error":"Too Many Requests"}',
+    })
+
+    const r = await relayMessageToTwitch({
+      provider:       'twitch',
+      authorUsername: 'alice',
+      authorUserId:   'u1',
+      text:           'hello',
+    })
+
+    expect(r).toEqual({ ok: false, reason: 'rate_limited_queued' })
+    expect(enqueueOutboundMock).toHaveBeenCalledTimes(1)
+    expect(enqueueOutboundMock.mock.calls[0]![0]).toBe('[alice] hello')
+    // 429 n'est PAS un drop, donc pas d'audit failed
+    expect(auditMock).not.toHaveBeenCalled()
+  })
+
+  it('stream_offline et no_streamer ne sont PAS auditées (bruit)', async () => {
+    findPrimaryStreamerMock.mockResolvedValueOnce(null)  // no_streamer
+    const r1 = await relayMessageToTwitch({
+      provider:       'twitch',
+      authorUsername: 'alice',
+      authorUserId:   'u1',
+      text:           'hello',
+    })
+    expect(r1.reason).toBe('no_streamer')
+    expect(auditMock).not.toHaveBeenCalled()
+    expect(enqueueOutboundMock).not.toHaveBeenCalled()
   })
 })

@@ -10,21 +10,18 @@
 //   - Garde-fou §6.4 : on ne relaie QUE si le streamer est actuellement en
 //     live (streamer_sessions.ended_at IS NULL). Sinon on persiste côté
 //     Nodyx mais on ne spam pas un chat offline. Mode test (env var) bypass.
+//   - Recovery §6.5 : si Helix retourne 429 (rate-limit), on enqueue dans
+//     chatOutboundQueue qui retry avec backoff exponentiel.
 
 import { db } from '../../config/database'
 import { findPrimaryStreamer, getDecryptedTokens, refreshAndPersist } from './tokenService'
 import { audit } from './audit'
 import { twitchProvider } from './providers/twitchProvider'
+import { enqueueOutbound, startOutboundWorker } from './chatOutboundQueue'
 import type { ProviderId } from './providers/_types'
 
-// Le préfixe peut être désactivé via env si l'admin veut une expérience plus
-// "pure bridge" (les messages apparaissent comme venant du streamer sans
-// indication). Par défaut on préfixe pour la transparence.
 const RELAY_PREFIX_DISABLED = process.env.STREAMER_CHAT_NO_PREFIX === '1'
-// Mode test : bypass le check stream live pour faciliter le smoke testing.
-// À NE PAS activer en prod stable. Pour un streamer qui veut tester son
-// pipeline avant un go-live, c'est utile.
-const RELAY_TEST_MODE = process.env.STREAMER_CHAT_TEST_MODE === '1'
+const RELAY_TEST_MODE       = process.env.STREAMER_CHAT_TEST_MODE === '1'
 
 // ── Stream live check (§6.4) ────────────────────────────────────────────────
 
@@ -53,14 +50,19 @@ interface HelixSendChatResponse {
   }>
 }
 
+type PostResult =
+  | { ok: true; messageId: string }
+  | { ok: false; rateLimited: true; status: number }
+  | { ok: false; rateLimited: false; reason: string }
+
 async function postTwitchChatMessage(args: {
   userAccessToken: string
   broadcasterId:   string
   senderId:        string
   message:         string
-}): Promise<{ ok: true; messageId: string } | { ok: false; reason: string }> {
+}): Promise<PostResult> {
   const clientId = process.env.STREAMER_TWITCH_CLIENT_ID
-  if (!clientId) return { ok: false, reason: 'no_client_id' }
+  if (!clientId) return { ok: false, rateLimited: false, reason: 'no_client_id' }
 
   const res = await fetch('https://api.twitch.tv/helix/chat/messages', {
     method:  'POST',
@@ -76,16 +78,20 @@ async function postTwitchChatMessage(args: {
     }),
   })
 
+  if (res.status === 429) {
+    return { ok: false, rateLimited: true, status: 429 }
+  }
+
   if (!res.ok) {
     const body = await res.text()
-    return { ok: false, reason: `http_${res.status}:${body.slice(0, 200)}` }
+    return { ok: false, rateLimited: false, reason: `http_${res.status}:${body.slice(0, 200)}` }
   }
 
   const data = await res.json() as HelixSendChatResponse
   const sent = data.data?.[0]
-  if (!sent) return { ok: false, reason: 'empty_response' }
+  if (!sent) return { ok: false, rateLimited: false, reason: 'empty_response' }
   if (!sent.is_sent) {
-    return { ok: false, reason: `dropped:${sent.drop_reason?.code ?? 'unknown'}` }
+    return { ok: false, rateLimited: false, reason: `dropped:${sent.drop_reason?.code ?? 'unknown'}` }
   }
   return { ok: true, messageId: sent.message_id }
 }
@@ -114,67 +120,85 @@ async function getValidStreamerAccessToken(): Promise<{ token: string; broadcast
   return { token: decrypted.accessToken, broadcasterId: primary.externalId }
 }
 
+// ── Dispatcher (utilisé par le path direct ET le worker queue) ──────────────
+// Prend un message déjà formaté (préfixe + truncation), résout token frais,
+// check stream live, envoie via Helix. Retourne un Result discriminé pour
+// que la queue puisse décider rescheduler vs drop.
+
+async function dispatchToTwitch(text: string): Promise<
+  | { ok: true }
+  | { ok: false; rateLimited: true }
+  | { ok: false; rateLimited: false; reason: string }
+> {
+  const tok = await getValidStreamerAccessToken()
+  if (!tok) return { ok: false, rateLimited: false, reason: 'no_streamer' }
+
+  const live = await isStreamerLive(tok.broadcasterId)
+  if (!live) return { ok: false, rateLimited: false, reason: 'stream_offline' }
+
+  const r = await postTwitchChatMessage({
+    userAccessToken: tok.token,
+    broadcasterId:   tok.broadcasterId,
+    senderId:        tok.broadcasterId,
+    message:         text,
+  })
+
+  if (r.ok) return { ok: true }
+  if (r.rateLimited) return { ok: false, rateLimited: true }
+  return { ok: false, rateLimited: false, reason: r.reason }
+}
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 export interface RelayResult {
-  ok:     boolean
-  reason?: string  // 'stream_offline', 'no_streamer', 'twitch_error', etc.
+  ok:      boolean
+  reason?: string  // 'stream_offline', 'no_streamer', 'rate_limited_queued', etc.
 }
 
 export async function relayMessageToTwitch(args: {
-  provider:       ProviderId  // toujours 'twitch' pour Phase 2
-  authorUsername: string      // le user Nodyx qui a écrit
-  authorUserId:   string | null  // pour audit (peut être null si bot/system)
+  provider:       ProviderId
+  authorUsername: string
+  authorUserId:   string | null
   text:           string
 }): Promise<RelayResult> {
   if (args.provider !== 'twitch') return { ok: false, reason: 'unsupported_provider' }
 
-  const tok = await getValidStreamerAccessToken()
-  if (!tok) {
-    return { ok: false, reason: 'no_streamer' }
-  }
-
-  const live = await isStreamerLive(tok.broadcasterId)
-  if (!live) {
-    // Persisté côté Nodyx mais non relayé. On ne logue pas en audit pour
-    // éviter le bruit (chaque message Nodyx sans stream live générerait une
-    // ligne audit). C'est un état attendu.
-    return { ok: false, reason: 'stream_offline' }
-  }
-
-  // Format : "[NodyxAuthor] message".
-  // Twitch limite les messages à 500 chars. On tronque proprement.
+  // Pré-formatage : prefix + truncation 500 chars (limite Twitch).
   const prefix  = RELAY_PREFIX_DISABLED ? '' : `[${args.authorUsername}] `
   const message = (prefix + args.text).slice(0, 500)
 
-  const result = await postTwitchChatMessage({
-    userAccessToken: tok.token,
-    broadcasterId:   tok.broadcasterId,
-    senderId:        tok.broadcasterId,  // stream poste comme lui-même (Phase 2 v1)
-    message,
-  })
+  const r = await dispatchToTwitch(message)
 
-  if (result.ok) {
-    return { ok: true }
+  if (r.ok) return { ok: true }
+
+  if (r.rateLimited) {
+    // 429 → on absorbe dans la queue, le worker retry avec backoff.
+    await enqueueOutbound(message)
+    return { ok: false, reason: 'rate_limited_queued' }
   }
 
-  // Échec : on logue en audit pour diagnostic mais on n'échoue pas l'appel
-  // initial. Le message reste persisté côté Nodyx, le user voit son message
-  // dans #twitch-chat même si Twitch a refusé.
-  await audit({
-    action:    'eventsub_subscribe',  // pas le meilleur slot, on créera un
-                                      // 'chat_relay_failed' plus tard si besoin
-    status:    'failed',
-    userId:    args.authorUserId,
-    metadata:  {
-      kind:           'chat_relay_to_twitch',
-      reason:         result.reason,
-      authorUsername: args.authorUsername,
-      textLength:     message.length,
-    },
-  })
-  return { ok: false, reason: result.reason }
+  // stream_offline et no_streamer sont des états attendus (pas d'audit pour
+  // éviter le bruit). Tout autre échec : audit pour diagnostic.
+  if (r.reason !== 'stream_offline' && r.reason !== 'no_streamer') {
+    await audit({
+      action:    'chat_relay_dropped',
+      status:    'failed',
+      userId:    args.authorUserId,
+      metadata:  {
+        reason:         r.reason,
+        authorUsername: args.authorUsername,
+        textLength:     message.length,
+      },
+    })
+  }
+  return { ok: false, reason: r.reason }
+}
+
+// Démarre le worker queue. À appeler une fois au boot (depuis index.ts).
+// Idempotent : startOutboundWorker garde un singleton interne.
+export function startChatOutboundWorker(): void {
+  startOutboundWorker(dispatchToTwitch)
 }
 
 // Export pour tests ou usage admin debug
-export const _testInternals = { isStreamerLive, postTwitchChatMessage }
+export const _testInternals = { isStreamerLive, postTwitchChatMessage, dispatchToTwitch }
