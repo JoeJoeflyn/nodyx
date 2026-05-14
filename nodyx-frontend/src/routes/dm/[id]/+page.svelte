@@ -8,16 +8,25 @@
 		encryptDM, decryptDM, loadEsyKey, barbarizeVisual,
 		type E2EStatus, type EsyKey
 	} from '$lib/e2e'
+	import ReactionTooltip from '$lib/components/ReactionTooltip.svelte'
+	import EmojiPicker from '$lib/components/EmojiPicker.svelte'
 
 	const tFn = $derived($t)
 
 	let { data } = $props()
+
+	interface DmReactionUser {
+		username:   string
+		name_color: string | null
+		created_at: string
+	}
 
 	interface DmReaction {
 		emoji:     string
 		count:     number
 		userIds:   string[]
 		usernames: string[]
+		users?:    DmReactionUser[]  // Layer 1 tooltip vivant : top 8 récents
 	}
 
 	interface DmMessage {
@@ -341,6 +350,58 @@
 				showInvite = false
 			}
 		} finally { inviting = null }
+	}
+
+	// ── Composer emoji picker (Layer 3) ────────────────────────────────────
+	// Bouton à gauche de la textarea : ouvre un popover EmojiPicker, l'emoji
+	// sélectionné est inséré à la position du curseur dans messageInput.
+	let composerEmojiOpen = $state(false)
+	let messageTextareaEl: HTMLTextAreaElement | null = $state(null)
+
+	function insertEmoji(emoji: string) {
+		const ta = messageTextareaEl
+		if (!ta) {
+			messageInput = messageInput + emoji
+			return
+		}
+		const start = ta.selectionStart ?? messageInput.length
+		const end   = ta.selectionEnd   ?? messageInput.length
+		messageInput = messageInput.slice(0, start) + emoji + messageInput.slice(end)
+		// Replace le curseur juste après l'emoji inséré (sur le tick suivant
+		// pour laisser Svelte synchroniser la valeur du textarea).
+		const newPos = start + emoji.length
+		tick().then(() => {
+			ta.focus()
+			ta.setSelectionRange(newPos, newPos)
+		})
+	}
+
+	// Ferme le popover emoji du composer si on clique en dehors.
+	$effect(() => {
+		if (!composerEmojiOpen) return
+		function onDocClick(e: MouseEvent) {
+			const el = e.target as HTMLElement
+			if (!el.closest('.dm-composer-emoji-btn') && !el.closest('.dm-composer-emoji-popover')) {
+				composerEmojiOpen = false
+			}
+		}
+		document.addEventListener('mousedown', onDocClick)
+		return () => document.removeEventListener('mousedown', onDocClick)
+	})
+
+	// ── Tooltip vivant sur les réactions (Layer 1) ────────────────────────
+	// Clé = msg.id + ':' + emoji. Delay 350ms à l'ouverture pour éviter le
+	// flash en survol rapide. Delay 120ms à la fermeture pour laisser le
+	// temps de glisser la souris du badge vers le tooltip.
+	let hoveredDmTooltipKey = $state<string | null>(null)
+	let dmTooltipTimer: ReturnType<typeof setTimeout> | null = null
+	function openDmTooltip(key: string) {
+		if (dmTooltipTimer) clearTimeout(dmTooltipTimer)
+		dmTooltipTimer = setTimeout(() => { hoveredDmTooltipKey = key }, 350)
+	}
+	function closeDmTooltip() {
+		if (dmTooltipTimer) clearTimeout(dmTooltipTimer)
+		dmTooltipTimer = setTimeout(() => { hoveredDmTooltipKey = null }, 120)
 	}
 
 	function toggleReaction(msg: DmMessage, emoji: string) {
@@ -1018,14 +1079,30 @@
 									<div class="flex flex-wrap gap-1 mt-1 {isMine ? 'justify-end' : 'justify-start'}">
 										{#each msg.reactions as r (r.emoji)}
 											{@const iReacted = r.userIds.includes(currentUserId)}
-											<button
-												onclick={() => toggleReaction(msg, r.emoji)}
-												class="dm-reaction-pill flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all
-												       {iReacted ? 'dm-reaction-mine' : 'dm-reaction-other'}"
-												title={r.usernames.join(', ')}>
-												<span>{r.emoji}</span>
-												<span class="font-semibold tabular-nums">{r.count}</span>
-											</button>
+											{@const tooltipKey = msg.id + ':' + r.emoji}
+											<div class="relative inline-block"
+											     onmouseenter={() => openDmTooltip(tooltipKey)}
+											     onmouseleave={closeDmTooltip}
+											     role="presentation">
+												<button
+													onclick={() => toggleReaction(msg, r.emoji)}
+													onfocus={() => openDmTooltip(tooltipKey)}
+													onblur={closeDmTooltip}
+													class="dm-reaction-pill flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-all
+													       {iReacted ? 'dm-reaction-mine' : 'dm-reaction-other'}"
+													title="">
+													<span>{r.emoji}</span>
+													<span class="font-semibold tabular-nums">{r.count}</span>
+												</button>
+												{#if hoveredDmTooltipKey === tooltipKey && r.users && r.users.length > 0}
+													<ReactionTooltip
+														users={r.users}
+														total={r.count}
+														emoji={r.emoji}
+														anchor="top"
+													/>
+												{/if}
+											</div>
 										{/each}
 									</div>
 								{/if}
@@ -1081,7 +1158,32 @@
 			{/if}
 			<div class="flex items-end gap-3 bg-white/[0.04] border border-white/[0.07] rounded-2xl px-4 py-3
 						focus-within:border-indigo-500/35 focus-within:bg-indigo-500/[0.04] transition-all duration-200">
+				<!-- Bouton emoji picker (Layer 3) — insère à la position du curseur -->
+				<div class="relative shrink-0">
+					<button
+						type="button"
+						onclick={(e) => { e.stopPropagation(); composerEmojiOpen = !composerEmojiOpen }}
+						class="dm-composer-emoji-btn w-8 h-8 rounded-xl flex items-center justify-center
+						       text-gray-500 hover:text-gray-200 hover:bg-white/[0.06]
+						       transition-all duration-150"
+						title={tFn('common.add_emoji') ?? 'Insérer un emoji'}
+						aria-label="Insérer un emoji"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+							<circle cx="12" cy="12" r="9"/>
+							<path stroke-linecap="round" d="M8 14s1.5 2 4 2 4-2 4-2"/>
+							<line x1="9" y1="9" x2="9.01" y2="9"/>
+							<line x1="15" y1="9" x2="15.01" y2="9"/>
+						</svg>
+					</button>
+					{#if composerEmojiOpen}
+						<div class="dm-composer-emoji-popover">
+							<EmojiPicker onselect={(e) => { insertEmoji(e); composerEmojiOpen = false }} />
+						</div>
+					{/if}
+				</div>
 				<textarea
+					bind:this={messageTextareaEl}
 					bind:value={messageInput}
 					onkeydown={onKeydown}
 					oninput={emitTyping}
@@ -1111,6 +1213,26 @@
 </div>
 
 <style>
+/* ── Composer emoji popover (Layer 3) ─────────────────────────────────────── */
+.dm-composer-emoji-popover {
+	position: absolute;
+	bottom: calc(100% + 8px);
+	left: 0;
+	z-index: 50;
+	background: rgba(15, 15, 22, 0.98);
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 12px;
+	box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+	animation: dm-emoji-pop 0.18s cubic-bezier(.2, .8, .25, 1) both;
+	transform-origin: bottom left;
+}
+@keyframes dm-emoji-pop {
+	from { opacity: 0; transform: translateY(6px) scale(.96); }
+	to   { opacity: 1; transform: translateY(0)    scale(1);   }
+}
+
 /* ── Reaction pills ───────────────────────────────────────────────────────── */
 .dm-reaction-pill {
 	border: 1px solid rgba(255,255,255,.08);

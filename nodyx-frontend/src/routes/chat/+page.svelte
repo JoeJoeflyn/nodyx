@@ -19,7 +19,7 @@
 	import { p2pManager, p2pStatus, p2pPeerCount, p2pFallback } from '$lib/p2p';
 	import MiniProfileCard from '$lib/components/MiniProfileCard.svelte';
 	import { buildNameStyle, buildAnimClass, ensureFontLoaded } from '$lib/nameEffects';
-	import FloatingReactions from '$lib/components/FloatingReactions.svelte';
+	// FloatingReactions : retiré, géré globalement dans +layout.svelte
 	import { t } from '$lib/i18n';
 	import { unreadCountsStore, flashChannelIdStore } from '$lib/unreadStore';
 	import { playMessage, playMention } from '$lib/sounds';
@@ -1525,8 +1525,8 @@
 
 			{/if}<!-- end voice/text branch -->
 
-		<!-- Réactions flottantes — overlay fixe sur toute la page -->
-		<FloatingReactions />
+		<!-- Réactions flottantes : géré globalement dans +layout.svelte (Layer 2),
+		     écoute chat + forum + DM. Plus besoin d'instance locale ici. -->
 
 		{:else}
 			<!-- No channel -->

@@ -1,10 +1,18 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import ReactionTooltip from './ReactionTooltip.svelte';
+
+	interface ReactionUser {
+		username:   string;
+		name_color: string | null;
+		created_at: string;
+	}
 
 	interface ReactionSummary {
-		emoji: string;
-		count: number;
+		emoji:        string;
+		count:        number;
 		user_reacted: boolean;
+		users?:       ReactionUser[];  // top 8, depuis Layer 1 tooltip vivant
 	}
 
 	let {
@@ -28,29 +36,63 @@
 	const EMOJIS = ['👍', '❤️', '🔥', '😂', '😮', '😢'];
 
 	// Local optimistic state
-	let localReactions = $state<ReactionSummary[]>(untrack(() => reactions.map(r => ({ ...r }))));
+	let localReactions = $state<ReactionSummary[]>(untrack(() => reactions.map(r => ({ ...r, users: r.users ? [...r.users] : [] }))));
 	let localThanksCount = $state(untrack(() => thanksCount));
 	let localUserThanked = $state(untrack(() => userThanked));
+
+	// Tooltip : on stocke l'emoji en cours de hover. Delay 350ms pour éviter
+	// le flash si l'utilisateur traverse simplement la zone.
+	let hoveredEmoji = $state<string | null>(null);
+	let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function reactionFor(emoji: string): ReactionSummary | undefined {
 		return localReactions.find(r => r.emoji === emoji);
 	}
 
+	function openTooltip(emoji: string) {
+		if (hoverTimer) clearTimeout(hoverTimer);
+		hoverTimer = setTimeout(() => { hoveredEmoji = emoji; }, 350);
+	}
+	function closeTooltip() {
+		if (hoverTimer) clearTimeout(hoverTimer);
+		hoverTimer = setTimeout(() => { hoveredEmoji = null; }, 120);
+	}
+
+	// Récupère le nom de l'user courant depuis le token JWT (sans le décoder
+	// vraiment — on n'a pas accès au profil ici, le placeholder suffit pour
+	// l'optimistic UI ; le serveur renverra la vraie liste au prochain refresh).
+	function meUsername(): string {
+		return 'toi';
+	}
+
 	function toggleReaction(emoji: string) {
 		const existing = localReactions.find(r => r.emoji === emoji);
+		const nowIso   = new Date().toISOString();
 		if (existing) {
 			if (existing.user_reacted) {
+				// Retire la réaction
 				existing.count = Math.max(0, existing.count - 1);
 				existing.user_reacted = false;
+				if (existing.users) {
+					existing.users = existing.users.filter(u => u.username !== meUsername());
+				}
 				if (existing.count === 0) {
 					localReactions = localReactions.filter(r => r.emoji !== emoji);
 				}
 			} else {
 				existing.count += 1;
 				existing.user_reacted = true;
+				if (existing.users) {
+					existing.users = [{ username: meUsername(), name_color: null, created_at: nowIso }, ...existing.users];
+				}
 			}
 		} else {
-			localReactions = [...localReactions, { emoji, count: 1, user_reacted: true }];
+			localReactions = [...localReactions, {
+				emoji,
+				count: 1,
+				user_reacted: true,
+				users: [{ username: meUsername(), name_color: null, created_at: nowIso }],
+			}];
 		}
 		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 		if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -79,27 +121,43 @@
 	<!-- Emoji reactions -->
 	{#each EMOJIS as emoji}
 		{@const r = reactionFor(emoji)}
-		{#if isLoggedIn}
-			<button
-				type="button"
-				onclick={() => toggleReaction(emoji)}
-				class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border transition-colors
-				{r?.user_reacted
-					? 'border-indigo-600 bg-indigo-900/40 text-indigo-300'
-					: 'border-gray-700 bg-gray-800/40 text-gray-400 hover:border-gray-600 hover:text-gray-300'}"
-				title="{emoji}"
-			>
-				<span>{emoji}</span>
-				{#if r && r.count > 0}
+		{@const hasReaction = r && r.count > 0}
+		<div class="relative inline-block"
+		     onmouseenter={() => hasReaction && openTooltip(emoji)}
+		     onmouseleave={closeTooltip}
+		     role="presentation">
+			{#if isLoggedIn}
+				<button
+					type="button"
+					onclick={() => toggleReaction(emoji)}
+					onfocus={() => hasReaction && openTooltip(emoji)}
+					onblur={closeTooltip}
+					class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border transition-colors
+					{r?.user_reacted
+						? 'border-indigo-600 bg-indigo-900/40 text-indigo-300'
+						: 'border-gray-700 bg-gray-800/40 text-gray-400 hover:border-gray-600 hover:text-gray-300'}"
+					title=""
+				>
+					<span>{emoji}</span>
+					{#if r && r.count > 0}
+						<span>{r.count}</span>
+					{/if}
+				</button>
+			{:else if r && r.count > 0}
+				<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-gray-700 bg-gray-800/40 text-gray-400">
+					<span>{emoji}</span>
 					<span>{r.count}</span>
-				{/if}
-			</button>
-		{:else if r && r.count > 0}
-			<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs border border-gray-700 bg-gray-800/40 text-gray-400">
-				<span>{emoji}</span>
-				<span>{r.count}</span>
-			</span>
-		{/if}
+				</span>
+			{/if}
+			{#if hoveredEmoji === emoji && hasReaction && r && r.users && r.users.length > 0}
+				<ReactionTooltip
+					users={r.users}
+					total={r.count}
+					{emoji}
+					anchor="top"
+				/>
+			{/if}
+		</div>
 	{/each}
 
 	<!-- Thanks button -->

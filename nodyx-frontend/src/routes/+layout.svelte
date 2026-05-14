@@ -16,6 +16,7 @@
 	import MemberScreenPreview from '$lib/components/MemberScreenPreview.svelte';
 	import MaintenanceBanner from '$lib/components/MaintenanceBanner.svelte';
 	import NodyxVersionBadge from '$lib/components/NodyxVersionBadge.svelte';
+	import FloatingReactions from '$lib/components/FloatingReactions.svelte';
 	import { get } from 'svelte/store';
 	import { voiceStore, voiceChannelMembersStore, voiceEventsStore, screenShareStore, remoteScreenStore } from '$lib/voice';
 	import { locale, t } from '$lib/i18n';
@@ -1538,6 +1539,12 @@
 		{/each}
 	</div>
 {/if}
+
+<!-- ── Floating Reactions overlay (Layer 2) ──────────────────────────────────
+     Écoute les 3 events socket (chat, forum, DM) et fait monter l'emoji
+     avec le nom de l'auteur. Le composant est pointer-events:none donc il
+     ne bloque jamais un clic. -->
+<FloatingReactions />
 
 <!-- ── Command Palette ────────────────────────────────────────────────────── -->
 <CommandPalette

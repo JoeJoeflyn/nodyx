@@ -867,6 +867,21 @@ export function registerSocketIO(server: Server): void {
             reactions,
           })
         }
+
+        // Layer 2 — floating reaction : si la réaction vient d'être AJOUTÉE
+        // (pas retirée), on diffuse un float pour que les participants voient
+        // l'emoji monter en temps réel. Position aléatoire pour éviter
+        // l'effet "colonne" si plusieurs réactions arrivent en rafale.
+        if (!existing) {
+          const x = 0.2 + Math.random() * 0.6
+          for (const p of participants) {
+            server.to(`user:${p.user_id}`).emit('dm:float_reaction', {
+              emoji,
+              username,
+              x,
+            })
+          }
+        }
       } catch (err) {
         console.error('[dm:react] Error:', err)
       }

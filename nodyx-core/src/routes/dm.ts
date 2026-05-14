@@ -226,16 +226,25 @@ export default async function dmRoutes(app: FastifyInstance) {
             'emoji',     r.emoji,
             'count',     r.cnt,
             'userIds',   r.user_ids,
-            'usernames', r.usernames
+            'usernames', r.usernames,
+            'users',     r.users
           ) ORDER BY r.first_at)
           FROM (
             SELECT dr.emoji,
                    COUNT(*)::int                                       AS cnt,
                    array_agg(dr.user_id::text ORDER BY dr.created_at) AS user_ids,
                    array_agg(u.username       ORDER BY dr.created_at) AS usernames,
+                   -- Nouveau shape (Layer 1 tooltip vivant) : objet par user
+                   -- avec name_color + timestamp pour rendu temporel coloré.
+                   json_agg(json_build_object(
+                     'username',   u.username,
+                     'name_color', up.name_color,
+                     'created_at', dr.created_at
+                   ) ORDER BY dr.created_at DESC)                      AS users,
                    MIN(dr.created_at)                                  AS first_at
             FROM dm_reactions dr
             JOIN users u ON u.id = dr.user_id
+            LEFT JOIN user_profiles up ON up.user_id = dr.user_id
             WHERE dr.message_id = m.id
             GROUP BY dr.emoji
           ) r

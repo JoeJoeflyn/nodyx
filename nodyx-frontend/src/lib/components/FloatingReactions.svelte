@@ -46,6 +46,9 @@
 	}
 
 	// ── Socket listener (reactive to socket store) ────────────────────────────
+	// On écoute les 3 sources de floating reactions : chat global (legacy),
+	// forum (Layer 2), DM (Layer 2). Tous les events partagent le même shape
+	// { emoji, x, username } et la même logique de combo / position.
 	$effect(() => {
 		const sock = $socket
 		if (!sock) return
@@ -54,8 +57,14 @@
 			addReaction(data.emoji, data.username, data.x ?? 0.5)
 		}
 
-		sock.on('chat:float_reaction', onEvent)
-		return () => { sock.off('chat:float_reaction', onEvent) }
+		sock.on('chat:float_reaction',  onEvent)
+		sock.on('forum:float_reaction', onEvent)
+		sock.on('dm:float_reaction',    onEvent)
+		return () => {
+			sock.off('chat:float_reaction',  onEvent)
+			sock.off('forum:float_reaction', onEvent)
+			sock.off('dm:float_reaction',    onEvent)
+		}
 	})
 </script>
 

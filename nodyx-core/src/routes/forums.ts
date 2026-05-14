@@ -559,6 +559,25 @@ app.get('/threads', {
     }
 
     const result = await ReactionModel.toggleReaction(id, userId, emoji)
+
+    // Layer 2 — floating reactions : si la réaction vient d'être AJOUTÉE
+    // (pas retirée), on diffuse un event socket pour que les utilisateurs
+    // connectés voient l'emoji monter en temps réel sur leur écran. On
+    // récupère le username pour étiqueter le float ; pas besoin de cacher.
+    if (result.added && io) {
+      try {
+        const { rows: [u] } = await db.query<{ username: string }>(
+          `SELECT username FROM users WHERE id = $1`,
+          [userId],
+        )
+        if (u?.username) {
+          // x ∈ [0.2, 0.8] : on évite les bords pour ne pas couper les emoji
+          const x = 0.2 + Math.random() * 0.6
+          io.emit('forum:float_reaction', { emoji, username: u.username, x })
+        }
+      } catch { /* best-effort, ne bloque pas la réaction */ }
+    }
+
     return reply.send(result)
   })
 
