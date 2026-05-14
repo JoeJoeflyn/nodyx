@@ -10,6 +10,7 @@
 	} from '$lib/e2e'
 	import ReactionTooltip from '$lib/components/ReactionTooltip.svelte'
 	import EmojiPicker from '$lib/components/EmojiPicker.svelte'
+	import MessageBody from '$lib/components/MessageBody.svelte'
 
 	const tFn = $derived($t)
 
@@ -1059,7 +1060,7 @@
 										<button onclick={cancelEdit} class="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.06] hover:bg-white/[0.10] text-gray-400 transition-colors">Échap</button>
 									</div>
 								{:else}
-									{displayContent(msg)}
+									<MessageBody text={displayContent(msg)} />
 
 									<!-- Lock badge si message chiffré -->
 									{#if msg.is_encrypted && !msg._decryptFailed}

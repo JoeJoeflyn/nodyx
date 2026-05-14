@@ -53,3 +53,60 @@ export function linkifyText(content: string): Segment[] {
   if (last < content.length) segments.push({ type: 'text', value: content.slice(last) })
   return segments.length ? segments : [{ type: 'text', value: content }]
 }
+
+// ── Version enrichie avec @mentions (utilisée par MessageBody) ───────────────
+// Strip trailing punctuation et détecte les mentions @username Nodyx en
+// plus des URLs. Le segment 'url' embarque maintenant un `href` distinct du
+// `value` (qui est ce qu'on affiche, identique au href pour les URLs nues).
+
+export type ExtSegment =
+  | { type: 'text';    value: string }
+  | { type: 'url';     value: string; href: string }
+  | { type: 'mention'; value: string; username: string }
+
+const URL_RE_TRIMMED  = /\bhttps?:\/\/[^\s<>"']+/gi
+const TRAILING_PUNCT  = /[.,;:!?)\]}»>"']+$/
+const MENTION_RE      = /(?:^|\s)@([a-zA-Z0-9_-]{2,32})/g
+
+export function linkify(text: string): ExtSegment[] {
+  if (!text) return []
+  const out: ExtSegment[] = []
+  // Pass 1 : URLs (avec strip de la ponctuation finale)
+  let lastIndex = 0
+  for (const m of text.matchAll(URL_RE_TRIMMED)) {
+    const start = m.index ?? 0
+    let url = m[0]
+    while (TRAILING_PUNCT.test(url)) url = url.replace(TRAILING_PUNCT, '')
+    if (start > lastIndex) {
+      out.push({ type: 'text', value: text.slice(lastIndex, start) })
+    }
+    out.push({ type: 'url', value: url, href: url })
+    lastIndex = start + url.length
+  }
+  if (lastIndex < text.length) {
+    out.push({ type: 'text', value: text.slice(lastIndex) })
+  }
+  // Pass 2 : mentions à l'intérieur des segments text
+  const final: ExtSegment[] = []
+  for (const seg of out) {
+    if (seg.type !== 'text') { final.push(seg); continue }
+    const t = seg.value
+    let li = 0
+    for (const mm of t.matchAll(MENTION_RE)) {
+      const idx = mm.index ?? 0
+      const fullMatch = mm[0]
+      const username  = mm[1]
+      const leadingWs = fullMatch.startsWith('@') ? '' : fullMatch[0]
+      const mentionStart = idx + leadingWs.length
+      if (mentionStart > li) {
+        final.push({ type: 'text', value: t.slice(li, mentionStart) })
+      }
+      final.push({ type: 'mention', value: '@' + username, username })
+      li = mentionStart + (fullMatch.length - leadingWs.length)
+    }
+    if (li < t.length) {
+      final.push({ type: 'text', value: t.slice(li) })
+    }
+  }
+  return final
+}
