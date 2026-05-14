@@ -44,6 +44,7 @@ export const load: LayoutServerLoad = async ({ fetch, cookies, request, url }) =
 	const memberCount: number        = infoJson?.member_count ?? 0;
 	const currentSlug: string        = infoJson?.slug ?? '';
 	const demoMode: boolean          = infoJson?.demo_mode   ?? false;
+	const nodyxVersion: string       = infoJson?.version     ?? 'unknown';
 
 	// Toutes les instances du réseau (directory), filtre l'instance courante
 	const directoryJson = (directoryRes?.ok) ? await directoryRes.json().catch(() => null) : null;
@@ -53,7 +54,7 @@ export const load: LayoutServerLoad = async ({ fetch, cookies, request, url }) =
 	}> = (directoryJson?.instances ?? []).filter((i: { slug: string }) => i.slug !== currentSlug);
 
 	if (!token || !userRes?.ok) {
-		return { user: null, communityName, communityLogoUrl, communityBannerUrl, memberCount, unreadCount: 0, token: null, networkInstances: [], directoryInstances: allInstances, activeAnnouncement, modules, demoMode };
+		return { user: null, communityName, communityLogoUrl, communityBannerUrl, memberCount, unreadCount: 0, token: null, networkInstances: [], directoryInstances: allInstances, activeAnnouncement, modules, demoMode, nodyxVersion };
 	}
 
 	const { user } = await userRes.json();
@@ -83,5 +84,5 @@ export const load: LayoutServerLoad = async ({ fetch, cookies, request, url }) =
 	const linkedSlugs: string[] = user.linked_instances ?? [];
 	const networkInstances = allInstances.filter(i => linkedSlugs.includes(i.slug));
 
-	return { user, communityName, communityLogoUrl, communityBannerUrl, memberCount, unreadCount, token: token || null, appTheme, networkInstances, directoryInstances: allInstances, activeAnnouncement, modules, demoMode };
+	return { user, communityName, communityLogoUrl, communityBannerUrl, memberCount, unreadCount, token: token || null, appTheme, networkInstances, directoryInstances: allInstances, activeAnnouncement, modules, demoMode, nodyxVersion };
 };

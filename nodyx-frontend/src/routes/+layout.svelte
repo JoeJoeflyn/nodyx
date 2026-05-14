@@ -15,6 +15,7 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import MemberScreenPreview from '$lib/components/MemberScreenPreview.svelte';
 	import MaintenanceBanner from '$lib/components/MaintenanceBanner.svelte';
+	import NodyxVersionBadge from '$lib/components/NodyxVersionBadge.svelte';
 	import { get } from 'svelte/store';
 	import { voiceStore, voiceChannelMembersStore, voiceEventsStore, screenShareStore, remoteScreenStore } from '$lib/voice';
 	import { locale, t } from '$lib/i18n';
@@ -1324,6 +1325,12 @@
 					</div>
 				</a>
 			{/if}
+
+			<!-- Version badge — bas du panneau membres -->
+			<div class="shrink-0 px-3 py-2 mt-auto"
+			     style="border-top: 1px solid rgba(255,255,255,.04); background: rgba(0,0,0,.15)">
+				<NodyxVersionBadge version={data.nodyxVersion ?? 'unknown'} variant="footer" />
+			</div>
 		</aside>
 
 	</div>

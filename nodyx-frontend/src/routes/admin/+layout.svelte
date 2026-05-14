@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores'
 	import type { LayoutData } from './$types'
+	import NodyxVersionBadge from '$lib/components/NodyxVersionBadge.svelte'
 
 	let { children, data }: { children: any; data: LayoutData } = $props()
 
@@ -112,7 +113,7 @@
 		</nav>
 
 		<!-- Footer -->
-		<div class="border-t border-gray-800 p-3">
+		<div class="border-t border-gray-800 p-3 space-y-2">
 			<a
 				href="/"
 				class="flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-gray-500
@@ -121,6 +122,12 @@
 				<span>←</span>
 				<span>Retour au forum</span>
 			</a>
+			<div class="px-2.5 pt-1.5 border-t border-gray-800/60">
+				<NodyxVersionBadge
+					version={data.updateCheck?.current_version ?? (data as any).nodyxVersion ?? 'unknown'}
+					variant="admin"
+				/>
+			</div>
 		</div>
 	</aside>
 
