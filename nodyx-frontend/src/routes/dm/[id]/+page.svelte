@@ -148,9 +148,17 @@
 		e2eStatus = 'unknown'
 
 		sendingVisual = null
+		// Repasser en mode "suivre le bas" automatiquement quand on change de
+		// conversation (on est sur un nouveau contexte, pas la peine de garder
+		// la position de l'ancien).
+		stickBottom = true
 		markRead()
 		dmUnreadStore.set(0)
 		tick().then(async () => {
+			// L'inner el peut avoir changé de référence si le bloc s'est
+			// re-render — on re-setup pour pointer le nouveau.
+			teardownStickyBottom()
+			setupStickyBottom()
 			scrollToBottom()
 			await initE2E()
 		})
@@ -158,6 +166,10 @@
 
 	let messageInput = $state('')
 	let messagesEl: HTMLDivElement | null = $state(null)
+	let messagesInnerEl: HTMLDivElement | null = $state(null)
+	// Suit-on le bas de la conv ? True par défaut → auto-scroll. Devient false
+	// quand l'user remonte de plus de 120px du bas. Repasse true s'il redescend.
+	let stickBottom = $state(true)
 	let typingUsers: Map<string, { timeout: ReturnType<typeof setTimeout>; username: string }> = new Map()
 	let typingLabel = $state('')
 	let typingTimeout: ReturnType<typeof setTimeout> | null = null
@@ -181,6 +193,11 @@
 		markRead()
 		dmUnreadStore.set(0)
 		await tick()
+		// Setup le sticky-bottom : ResizeObserver qui suivra toutes les
+		// croissances du contenu (déchiffrement, images, fonts, etc.) tant
+		// que stickBottom = true. Aussi un scroll initial direct pour le 1er
+		// paint (avant que l'observer ait son baseline).
+		setupStickyBottom()
 		scrollToBottom()
 
 		// Écoute socket DM — attendre que le socket soit prêt si nécessaire
@@ -222,6 +239,7 @@
 			sock.off('dm:message', onDmMessage)
 			sock.off('dm:typing', onDmTyping)
 		}
+		teardownStickyBottom()
 	})
 
 	async function onDmMessage(msg: DmMessage) {
@@ -500,28 +518,37 @@
 		}).catch(() => {})
 	}
 
-	// Scroll fiable : on attend la fin du layout via rAF pour s'assurer que
-	// scrollHeight reflète bien tous les enfants (MessageBody, images, etc.)
-	// déjà rendus. tick() côté Svelte ne suffit pas toujours.
 	function scrollToBottom() {
 		if (!messagesEl) return
-		const el = messagesEl
-		requestAnimationFrame(() => {
-			el.scrollTop = el.scrollHeight
-			// Double rAF : si le 1er frame mesure une hauteur encore en train
-			// de se stabiliser (fonts, images sans dimensions, etc.), le 2e
-			// rattrape sans coût perceptible.
-			requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
-		})
+		messagesEl.scrollTop = messagesEl.scrollHeight
 	}
 
-	// Est-on dans les 120px du bas ? Si oui, on considère que l'user "suit"
-	// le fil et on auto-scroll quand un nouveau message arrive ou quand la
-	// hauteur change (déchiffrement E2E, etc.).
 	function isNearBottom(): boolean {
-		if (!messagesEl) return true  // pas encore monté → on assume en bas
+		if (!messagesEl) return true
 		const dist = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight
 		return dist < 120
+	}
+
+	// ── ResizeObserver : le vrai garde-fou anti-perte-de-position ────────────
+	// À chaque fois que le contenu interne change de taille (mount initial,
+	// déchiffrement E2E qui remplace les '…' par les textes, nouveau message
+	// reçu, images qui se chargent, fonts qui finalisent), on re-scroll en bas
+	// SI stickBottom est vrai. Ce flag bascule à false dès que l'user remonte
+	// volontairement, donc l'auto-scroll respecte sa lecture.
+	let resizeObserver: ResizeObserver | null = null
+	function setupStickyBottom() {
+		if (typeof ResizeObserver === 'undefined') return
+		if (!messagesInnerEl || resizeObserver) return
+		resizeObserver = new ResizeObserver(() => {
+			if (stickBottom && messagesEl) {
+				messagesEl.scrollTop = messagesEl.scrollHeight
+			}
+		})
+		resizeObserver.observe(messagesInnerEl)
+	}
+	function teardownStickyBottom() {
+		resizeObserver?.disconnect()
+		resizeObserver = null
 	}
 
 	async function loadMore() {
@@ -554,6 +581,13 @@
 
 	function onScroll() {
 		if (!messagesEl) return
+		// Met à jour stickBottom selon la position : on suit si dans les 120px
+		// du bas. Au-delà, l'auto-scroll est désactivé jusqu'à ce que l'user
+		// redescende. Le seuil 120px évite le yo-yo si on est à ~2-3 lignes
+		// du bas (typique après auto-scroll d'un message reçu).
+		const dist = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight
+		stickBottom = dist < 120
+
 		if (messagesEl.scrollTop < 80) loadMore()
 	}
 
@@ -976,6 +1010,9 @@
 			class="flex-1 overflow-y-auto px-5 py-4"
 			style="scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.06) transparent"
 		>
+		<!-- Wrapper interne : c'est lui qu'on observe pour le ResizeObserver,
+		     car il reflète la hauteur réelle du contenu (scrollHeight). -->
+		<div bind:this={messagesInnerEl}>
 			{#if loadingMore}
 				<div class="flex justify-center py-4">
 					<div class="w-4 h-4 border-2 border-indigo-400/60 border-t-transparent rounded-full animate-spin"></div>
@@ -1185,6 +1222,7 @@
 					<span class="text-[10px] text-gray-700 mb-1 italic">{typingLabel}</span>
 				</div>
 			{/if}
+		</div>
 		</div>
 
 		<!-- Zone de saisie -->
