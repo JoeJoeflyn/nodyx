@@ -158,6 +158,7 @@
 	let messageInput = $state('')
 	let messagesEl: HTMLDivElement | null = $state(null)
 	let messagesInnerEl: HTMLDivElement | null = $state(null)
+	let dmRootEl: HTMLDivElement | null = $state(null)
 	// Suit-on le bas de la conv ? True par défaut → auto-scroll. Devient false
 	// quand l'user remonte de plus de 120px du bas. Repasse true s'il redescend.
 	let stickBottom = $state(true)
@@ -524,6 +525,33 @@
 	// de vie). Le `if (stickBottom)` à l'intérieur de chaque effet garantit
 	// qu'on ne perturbe jamais un user qui lit le passé.
 
+	// Effet -1 : ajuster la hauteur du DM root au viewport disponible.
+	// On mesure dynamiquement le top du DM root (= sous le header global
+	// Nodyx) et on set height = viewportHeight - top. Comme ça la zone de
+	// saisie ne déborde plus, et le header global reste visible. Recalcul
+	// au resize de la fenêtre (rotation mobile, redimensionnement).
+	$effect(() => {
+		const el = dmRootEl
+		if (!el || typeof window === 'undefined') return
+		function recalc() {
+			if (!el) return
+			const top = el.getBoundingClientRect().top
+			const h   = window.innerHeight - top
+			el.style.height    = `${h}px`
+			el.style.maxHeight = `${h}px`
+		}
+		recalc()
+		window.addEventListener('resize', recalc)
+		// Petite cascade pour absorber les fluctuations layout post-mount
+		// (header global qui charge un asset par exemple).
+		const t1 = setTimeout(recalc, 100)
+		const t2 = setTimeout(recalc, 400)
+		return () => {
+			window.removeEventListener('resize', recalc)
+			clearTimeout(t1); clearTimeout(t2)
+		}
+	})
+
 	// Effet 0 : inhiber le scroll de la fenêtre (body + html) tant que le DM
 	// est monté. Le +layout global a min-h-screen sur sa racine + un <main>
 	// avec h-full overflow-y-auto, ce qui crée une deuxième scrollbar de
@@ -847,10 +875,10 @@
 </svelte:head>
 
 <!-- Layout deux colonnes : sidebar + zone chat -->
-<!-- height: 100dvh en style inline (pas h-full) : on ne dépend plus de la
-     chaîne flex parent qui explose à cause du min-h-screen du +layout global.
-     Le DM page se borne lui-même au viewport, et son scroll interne marche. -->
-<div class="flex bg-gray-950/20 min-h-0" style="height: 100dvh; max-height: 100dvh">
+<!-- height ajusté dynamiquement via $effect : viewport - top du DM root, pour
+     que le header global Nodyx reste visible et que la zone de saisie ne
+     déborde pas par le bas. -->
+<div bind:this={dmRootEl} class="flex bg-gray-950/20 min-h-0">
 
 	<!-- ── Sidebar conversations ──────────────────────────────────────────── -->
 	<aside class="hidden sm:flex flex-col w-72 shrink-0 border-r border-white/[0.06] bg-gray-950/60">
