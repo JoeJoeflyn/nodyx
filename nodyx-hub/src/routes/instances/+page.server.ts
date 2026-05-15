@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
-import { getAllInstances, archiveInactiveInstances, unarchiveInstance } from '$lib/server/pg.js';
+import { getAllInstances, archiveInactiveInstances, unarchiveInstance, pingInstance } from '$lib/server/pg.js';
 import { blockInstance, unblockInstance } from '$lib/server/pg.js';
 import { fail } from '@sveltejs/kit';
 
@@ -45,5 +45,17 @@ export const actions: Actions = {
     if (!id) return fail(400, { error: 'ID manquant' });
     await unarchiveInstance(id);
     return { success: true, action: 'unarchive' };
+  },
+
+  // Ping manuel : Olympus contacte l'instance et update last_seen si elle
+  // répond. Utile quand le scheduler de l'instance ne ping plus (vieille
+  // version, scheduler planté), mais qu'elle est techniquement vivante.
+  ping: async ({ request }) => {
+    const form = await request.formData();
+    const id   = Number(form.get('id'));
+    if (!id) return fail(400, { error: 'ID manquant' });
+    const result = await pingInstance(id);
+    if (!result.ok) return fail(502, { error: `Ping failed: ${result.error}` });
+    return { success: true, action: 'ping', version: result.version, members: result.members, online: result.online };
   },
 };

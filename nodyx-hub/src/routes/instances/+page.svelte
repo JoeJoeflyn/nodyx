@@ -165,7 +165,21 @@
               <td style="padding:0.75rem 1rem;font-family:monospace;font-size:0.75rem;color:#64748b;">{inst.admin_email ?? '—'}</td>
               <!-- Actions -->
               <td style="padding:0.75rem 1rem;">
-                <div style="display:flex;gap:0.375rem;">
+                <div style="display:flex;gap:0.375rem;flex-wrap:wrap;">
+                  <!-- Ping manuel : update last_seen si l'instance répond -->
+                  <form method="POST" action="?/ping" use:enhance>
+                    <input type="hidden" name="id" value={inst.id} />
+                    <button
+                      type="submit"
+                      style="
+                        padding:0.25rem 0.5rem;font-size:0.7rem;cursor:pointer;
+                        border-radius:4px;
+                        background:rgba(59,130,246,0.12);color:#93c5fd;
+                        border:1px solid rgba(59,130,246,0.3);
+                      "
+                      title="Contacter cette instance et mettre à jour 'last_seen' si elle répond"
+                    >🔄 Ping</button>
+                  </form>
                   {#if inst.status !== 'banned'}
                     <button
                       onclick={() => { blockModal = { id: inst.id, name: inst.name }; blockReason = ''; }}

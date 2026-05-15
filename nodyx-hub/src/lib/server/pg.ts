@@ -82,6 +82,40 @@ export async function unarchiveInstance(id: number): Promise<void> {
   );
 }
 
+// Ping actif depuis Olympus vers une instance enregistrée : si elle répond
+// à GET /api/v1/instance/info en 200 avec un JSON valide, on met à jour
+// last_seen + version + members/online. Utile quand le scheduler côté
+// instance ne tourne plus (vieille version, scheduler planté) mais que
+// l'instance elle-même répond aux requêtes.
+export async function pingInstance(id: number): Promise<{ ok: true; version: string | null; members: number; online: number } | { ok: false; error: string }> {
+  const pool = getPool();
+  const { rows: [inst] } = await pool.query<{ url: string }>(
+    `SELECT url FROM directory_instances WHERE id = $1`, [id]
+  );
+  if (!inst) return { ok: false, error: 'Instance introuvable' };
+  try {
+    const res = await fetch(`${inst.url}/api/v1/instance/info`, {
+      signal: AbortSignal.timeout(5000),
+      headers: { 'User-Agent': 'Olympus-Hub/1.0' },
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const data = await res.json() as { version?: string; member_count?: number; online_count?: number };
+    await pool.query(
+      `UPDATE directory_instances
+       SET last_seen = NOW(),
+           version   = COALESCE($2, version),
+           members   = COALESCE($3, members),
+           online    = COALESCE($4, online),
+           archived_at = NULL
+       WHERE id = $1`,
+      [id, data.version ?? null, data.member_count ?? null, data.online_count ?? null]
+    );
+    return { ok: true, version: data.version ?? null, members: data.member_count ?? 0, online: data.online_count ?? 0 };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'unknown' };
+  }
+}
+
 export async function blockInstance(id: number, reason: string): Promise<void> {
   const pool = getPool();
   await pool.query(
