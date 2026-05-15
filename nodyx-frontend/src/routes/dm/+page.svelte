@@ -278,12 +278,48 @@
 				<p class="text-sm text-gray-600 leading-relaxed">{tFn('dm.select_conversation_hint')}</p>
 			</div>
 
-			<!-- Raccourci : taper dans la recherche -->
-			<div class="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs text-gray-600">
-				<svg class="w-3.5 h-3.5 shrink-0 text-gray-700" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-					<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-				</svg>
-				{tFn('dm.search_new_hint')}
+			<!-- Recherche centrale : VRAI input qui partage le state avec la
+			     sidebar — taper ici fait apparaître les résultats sous l'input -->
+			<div class="relative w-full max-w-md">
+				<div class="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] focus-within:border-indigo-500/40 focus-within:bg-indigo-500/5 transition-all">
+					<svg class="w-4 h-4 shrink-0 text-gray-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+						<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+					</svg>
+					<input
+						type="text"
+						bind:value={searchQuery}
+						oninput={onSearchInput}
+						placeholder={tFn('dm.search_new_hint')}
+						class="flex-1 bg-transparent text-sm text-white placeholder-gray-600 outline-none"
+					/>
+					{#if searching}
+						<div class="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+					{/if}
+				</div>
+
+				<!-- Résultats sous l'input central -->
+				{#if searchResults.length > 0}
+					<div class="absolute top-full mt-2 left-0 right-0 bg-gray-900 border border-white/[0.08] rounded-xl shadow-2xl z-20 overflow-hidden">
+						{#each searchResults as u}
+							<button
+								onclick={() => openDM(u.id)}
+								class="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-white/[0.05] transition-colors text-left"
+							>
+								{#if u.avatar}
+									<img src={u.avatar} alt={u.username} class="w-7 h-7 rounded-full object-cover shrink-0"/>
+								{:else}
+									<div class="w-7 h-7 rounded-full bg-indigo-600/25 flex items-center justify-center shrink-0 text-xs font-bold text-indigo-300">
+										{u.username[0].toUpperCase()}
+									</div>
+								{/if}
+								<span class="text-sm text-white font-medium flex-1 truncate">{u.username}</span>
+								<svg class="w-3 h-3 text-indigo-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+								</svg>
+							</button>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>
