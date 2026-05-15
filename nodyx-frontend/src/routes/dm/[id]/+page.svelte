@@ -545,6 +545,8 @@
 	// Effet 1 : ResizeObserver sur le inner. Capte TOUS les changements de
 	// hauteur asynchrones (fonts, images, déchiffrement E2E, nouveaux messages
 	// arrivant via socket). Se ré-attache si messagesInnerEl change de réf.
+	// DEBUG : trace chaque tentative de re-scroll pour identifier la source.
+	let _lastScrollSource = $state('init')
 	$effect(() => {
 		const inner  = messagesInnerEl
 		const outer  = messagesEl
@@ -570,7 +572,7 @@
 				watch: (intervalMs = 500) => {
 					console.log('[__dmDebug] watch démarré, stop avec __dmDebug.stopWatch()')
 					;(window as any).__dmWatchHandle = setInterval(() => {
-						console.log(`stickBottom=${stickBottom} top=${outer.scrollTop} dist=${outer.scrollHeight - outer.scrollTop - outer.clientHeight}`)
+						console.log(`stickBottom=${stickBottom} top=${outer.scrollTop} dist=${outer.scrollHeight - outer.scrollTop - outer.clientHeight} lastSrc=${_lastScrollSource}`)
 					}, intervalMs)
 				},
 				stopWatch: () => {
@@ -613,44 +615,42 @@
 			}
 		}
 		const ro = new ResizeObserver(() => {
-			if (stickBottom) outer.scrollTop = outer.scrollHeight
+			if (stickBottom) {
+				_lastScrollSource = 'resizeObserver'
+				outer.scrollTop = outer.scrollHeight
+			}
 		})
 		ro.observe(inner)
 		return () => ro.disconnect()
 	})
 
-	// Effet 2 : reset stickBottom + scroll à chaque changement de conversation.
-	// Lance plusieurs scrolls successifs en rAF + setTimeout pour absorber les
-	// délais de rendu (mount, hydration, déchiffrement initial).
+	// Effet 2 : scroll initial UNIQUEMENT au changement de conversation.
+	// On le distingue du re-render réactif en stockant le dernier convId
+	// qu'on a "scroll-initialized". Comme ça les changements de messages
+	// (déchiffrement E2E etc.) ne re-déclenchent PAS ce scroll initial.
+	let _initializedConvId = ''
 	$effect(() => {
-		// dépendance explicite sur conversationId : se relance quand on
-		// change de DM via la sidebar (ce qui re-render le contenu).
-		conversationId
+		const cid = conversationId
+		if (cid === _initializedConvId) return  // déjà initialisé pour ce convId
+		_initializedConvId = cid
 		stickBottom = true
 		if (!messagesEl) return
 		const el = messagesEl
-		const stick = () => { if (stickBottom) el.scrollTop = el.scrollHeight }
-		// Cascade de scrolls : immédiat, après 1 rAF, après tick browser, et
-		// 3 tirs de sécurité jusqu'à 400ms pour les late layouts (E2E, images).
-		stick()
-		requestAnimationFrame(stick)
-		const t1 = setTimeout(stick, 50)
-		const t2 = setTimeout(stick, 200)
-		const t3 = setTimeout(stick, 400)
+		const stick = (source: string) => {
+			if (!stickBottom) return
+			_lastScrollSource = source
+			el.scrollTop = el.scrollHeight
+		}
+		stick('init:immediate')
+		requestAnimationFrame(() => stick('init:rAF'))
+		const t1 = setTimeout(() => stick('init:50ms'), 50)
+		const t2 = setTimeout(() => stick('init:200ms'), 200)
+		const t3 = setTimeout(() => stick('init:400ms'), 400)
 		return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
 	})
-
-	// Effet 3 : à chaque ajout/modif de message, si on suit le bas, on scroll.
-	// La dépendance sur messages.length déclenche le re-scroll même si le
-	// ResizeObserver n'a pas encore réagi (sécurité supplémentaire).
-	$effect(() => {
-		messages.length
-		if (!stickBottom || !messagesEl) return
-		const el = messagesEl
-		requestAnimationFrame(() => {
-			if (stickBottom) el.scrollTop = el.scrollHeight
-		})
-	})
+	// (Effet 3 supprimé : redondant avec ResizeObserver, et il pouvait être
+	//  une source de re-scroll non désirée. Le ResizeObserver capte déjà
+	//  TOUS les changements de hauteur — c'est suffisant.)
 
 	async function loadMore() {
 		if (loadingMore || !hasMore || messages.length === 0) return
