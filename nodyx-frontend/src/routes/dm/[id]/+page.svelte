@@ -524,6 +524,45 @@
 	// de vie). Le `if (stickBottom)` à l'intérieur de chaque effet garantit
 	// qu'on ne perturbe jamais un user qui lit le passé.
 
+	// Effet 0 : contraindre la chaîne d'ancêtres à 100dvh. Le +layout.svelte
+	// global utilise min-h-screen (plancher, pas plafond), donc dès que le
+	// contenu déborde, toute la chaîne flex grandit avec lui et le <main>
+	// avec overflow-y-auto ne devient plus un vrai scroll container. C'est
+	// ça qui empêchait notre messagesEl de scroller (scrollH == clientH).
+	// On patch UNIQUEMENT côté DM, sans toucher au layout global qui marche
+	// pour les autres pages (forum, settings, etc.).
+	$effect(() => {
+		if (!messagesEl) return
+		const main      = messagesEl.closest('main') as HTMLElement | null
+		const layoutRoot = main?.closest('.min-h-screen') as HTMLElement | null
+		// Save styles originaux pour les restaurer au unmount
+		const saved: Array<{ el: HTMLElement; height: string; minHeight: string; maxHeight: string; overflow: string }> = []
+		for (const el of [layoutRoot, main].filter(Boolean) as HTMLElement[]) {
+			saved.push({
+				el,
+				height:    el.style.height,
+				minHeight: el.style.minHeight,
+				maxHeight: el.style.maxHeight,
+				overflow:  el.style.overflow,
+			})
+			// Force une hauteur viewport bornée pour que les overflow internes
+			// fonctionnent. 100dvh = dynamic viewport height (gère la barre
+			// d'URL mobile qui se cache/montre).
+			el.style.height    = '100dvh'
+			el.style.minHeight = '100dvh'
+			el.style.maxHeight = '100dvh'
+			el.style.overflow  = 'hidden'
+		}
+		return () => {
+			for (const s of saved) {
+				s.el.style.height    = s.height
+				s.el.style.minHeight = s.minHeight
+				s.el.style.maxHeight = s.maxHeight
+				s.el.style.overflow  = s.overflow
+			}
+		}
+	})
+
 	// Effet 1 : ResizeObserver sur le inner. Capte TOUS les changements de
 	// hauteur asynchrones (fonts, images, déchiffrement E2E, nouveaux messages
 	// arrivant via socket). Se ré-attache si messagesInnerEl change de réf.
@@ -547,6 +586,35 @@
 					stickBottom,
 					msgsLength: messages.length,
 				}),
+				// Remonte tous les parents jusqu'à <html> et affiche leurs
+				// dimensions + display + overflow. C'est ce qui va nous dire
+				// quel ancêtre casse la chaîne d'overflow.
+				parents: () => {
+					const out: Array<Record<string, string>> = []
+					let el: HTMLElement | null = outer
+					while (el && el !== document.documentElement) {
+						const cs = getComputedStyle(el)
+						out.push({
+							tag:        el.tagName.toLowerCase(),
+							cls:        (el.className || '').toString().slice(0, 80),
+							height:     cs.height,
+							minHeight:  cs.minHeight,
+							display:    cs.display,
+							flex:       cs.flex || cs.flexGrow,
+							overflow:   cs.overflowY,
+							scrollH:    String(el.scrollHeight),
+							clientH:    String(el.clientHeight),
+						})
+						el = el.parentElement
+					}
+					// + html et body pour completion
+					const html = document.documentElement
+					const body = document.body
+					out.push({ tag: 'body', cls: '(body)', height: getComputedStyle(body).height, minHeight: getComputedStyle(body).minHeight, display: getComputedStyle(body).display, flex: '', overflow: getComputedStyle(body).overflowY, scrollH: String(body.scrollHeight), clientH: String(body.clientHeight) })
+					out.push({ tag: 'html', cls: '(html)', height: getComputedStyle(html).height, minHeight: getComputedStyle(html).minHeight, display: getComputedStyle(html).display, flex: '', overflow: getComputedStyle(html).overflowY, scrollH: String(html.scrollHeight), clientH: String(html.clientHeight) })
+					console.table(out)
+					return out
+				},
 				forceScroll: () => { outer.scrollTop = outer.scrollHeight; return outer.scrollTop },
 			}
 		}
