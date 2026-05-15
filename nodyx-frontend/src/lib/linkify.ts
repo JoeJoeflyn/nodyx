@@ -64,7 +64,10 @@ export type ExtSegment =
   | { type: 'url';     value: string; href: string }
   | { type: 'mention'; value: string; username: string }
 
-const URL_RE_TRIMMED  = /\bhttps?:\/\/[^\s<>"']+/gi
+// Matche les URLs absolues (https://…) ET les paths internes Nodyx
+// (/uploads/…), pour rendre cliquables/inline-images les fichiers uploadés
+// même quand l'URL est relative.
+const URL_RE_TRIMMED  = /(?:\bhttps?:\/\/[^\s<>"']+|\/uploads\/[^\s<>"']+)/gi
 const TRAILING_PUNCT  = /[.,;:!?)\]}»>"']+$/
 const MENTION_RE      = /(?:^|\s)@([a-zA-Z0-9_-]{2,32})/g
 
