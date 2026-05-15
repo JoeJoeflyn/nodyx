@@ -101,7 +101,13 @@ export async function pingInstance(id: number): Promise<{ ok: true; version: str
       headers: { 'User-Agent': 'Olympus-Hub/1.0' },
     });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-    const data = await res.json() as { version?: string; member_count?: number; online_count?: number };
+    const data = await res.json() as {
+      version?: string; member_count?: number; online_count?: number;
+      // L'instance déclare aussi son country (.env NODYX_COMMUNITY_COUNTRY).
+      // C'est la SEULE source fiable quand l'IP publique est anycast
+      // (Cloudflare proxy = pas de geoloc précise possible).
+      country?: string; language?: string;
+    };
 
     // 2. Geo : DNS lookup du hostname → IP → geoip.
     //    Si le DNS échoue ou geoip ne sait pas, on garde les valeurs DB
@@ -125,6 +131,10 @@ export async function pingInstance(id: number): Promise<{ ok: true; version: str
       }
     } catch { /* DNS échoué : on ne touche pas aux champs geo en DB */ }
 
+    // Country : priorité geoip si on en a un (plus précis), sinon ce que
+    // l'instance déclare elle-même (fiable mais à la maille pays seulement).
+    const finalCountry = geo?.country || data.country || null;
+
     await pool.query(
       `UPDATE directory_instances
        SET last_seen   = NOW(),
@@ -136,13 +146,14 @@ export async function pingInstance(id: number): Promise<{ ok: true; version: str
            lng         = COALESCE($7, lng),
            geo_city    = COALESCE(NULLIF($8, ''), geo_city),
            country     = COALESCE(NULLIF($9, ''), country),
+           language    = COALESCE(NULLIF($10, ''), language),
            archived_at = NULL
        WHERE id = $1`,
       [
         id,
         data.version ?? null, data.member_count ?? null, data.online_count ?? null,
         geo?.ip ?? null, geo?.lat ?? null, geo?.lng ?? null,
-        geo?.city ?? null, geo?.country ?? null,
+        geo?.city ?? null, finalCountry, data.language ?? null,
       ]
     );
     return {
