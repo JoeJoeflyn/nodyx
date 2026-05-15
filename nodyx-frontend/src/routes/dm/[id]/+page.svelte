@@ -547,6 +547,21 @@
 					stickBottom,
 					msgsLength: messages.length,
 				}),
+				// Démarre une surveillance live de stickBottom dans la console
+				// (utile pour confirmer si le state change quand on wheel-up).
+				watch: (intervalMs = 500) => {
+					console.log('[__dmDebug] watch démarré, stop avec __dmDebug.stopWatch()')
+					;(window as any).__dmWatchHandle = setInterval(() => {
+						console.log(`stickBottom=${stickBottom} top=${outer.scrollTop} dist=${outer.scrollHeight - outer.scrollTop - outer.clientHeight}`)
+					}, intervalMs)
+				},
+				stopWatch: () => {
+					if ((window as any).__dmWatchHandle) {
+						clearInterval((window as any).__dmWatchHandle)
+						;(window as any).__dmWatchHandle = null
+						console.log('[__dmDebug] watch arrêté')
+					}
+				},
 				// Remonte tous les parents jusqu'à <html> et affiche leurs
 				// dimensions + display + overflow. C'est ce qui va nous dire
 				// quel ancêtre casse la chaîne d'overflow.
@@ -647,28 +662,35 @@
 		}
 	}
 
+	// Détection robuste user vs programmatique : on compare le scrollTop
+	// précédent au courant. Si ça DIMINUE, c'est l'user qui remonte (peu
+	// importe le moyen : wheel, scrollbar, touch, keyboard PageUp). On
+	// désactive immédiatement le sticky.
+	let lastScrollTop = 0
 	function onScroll() {
 		if (!messagesEl) return
-		// onScroll seulement pour RÉACTIVER le sticky quand on revient
-		// vraiment en bas (< 30px). La désactivation se fait via wheel/touch
-		// qui détectent une action user explicite — ça évite que le scroll
-		// programmatique (notre scrollTop = scrollHeight) ne s'auto-perturbe.
-		const dist = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight
-		if (dist < 30) stickBottom = true
+		const curr = messagesEl.scrollTop
+		const wentUp = curr < lastScrollTop - 1   // marge anti-jitter
+		lastScrollTop = curr
 
-		if (messagesEl.scrollTop < 80) loadMore()
+		if (wentUp) {
+			stickBottom = false
+		} else {
+			// Si l'user revient tout en bas (< 30px du fond), on réactive
+			// le sticky pour suivre les nouveaux messages.
+			const dist = messagesEl.scrollHeight - curr - messagesEl.clientHeight
+			if (dist < 30) stickBottom = true
+		}
+
+		if (curr < 80) loadMore()
 	}
 
-	// Wheel (souris / trackpad) : un scroll vers le haut désactive sticky
-	// immédiatement, même de quelques pixels. C'est plus fiable que mesurer
-	// la position après coup (qui peut être en conflit avec un re-scroll
-	// programmatique provoqué par le ResizeObserver).
+	// Filets de sécurité : wheel et touch — si pour une raison Svelte/runes
+	// le onScroll est en retard sur un re-scroll programmatique, ces handlers
+	// désactivent stickBottom AVANT que le scroll natif n'ait lieu.
 	function onWheel(e: WheelEvent) {
 		if (e.deltaY < 0) stickBottom = false
 	}
-
-	// Touch (mobile) : tout touch-scroll désactive sticky. Le onScroll
-	// le réactivera si l'user redescend tout en bas (< 30px).
 	function onTouchMove() {
 		stickBottom = false
 	}
