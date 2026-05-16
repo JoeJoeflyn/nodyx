@@ -16,6 +16,11 @@
 	let emailTouched      = $state(false);
 	let usernameTouched   = $state(false);
 
+	// Anti-bot couche 2 : timestamp d'affichage du formulaire. Si le submit
+	// arrive en < 2s, le backend rejette (humain met >10s pour remplir).
+	// Calculé une fois au mount, transmis en hidden input.
+	const formMountedAt = Date.now();
+
 	// Username validation
 	const usernameShort = $derived(usernameTouched && username.length > 0 && username.length < 3)
 
@@ -117,6 +122,16 @@
 				}}
 				class="space-y-4"
 			>
+				<!-- Anti-bot couche 1 : honeypot field. Caché hors écran (pas
+				     display:none que certains bots détectent). tabindex=-1 +
+				     autocomplete=off pour ne pas piéger un humain. -->
+				<div style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden" aria-hidden="true">
+					<label for="website-hp">Site web (laisser vide)</label>
+					<input id="website-hp" name="website" type="text" tabindex="-1" autocomplete="off" />
+				</div>
+				<!-- Anti-bot couche 2 : timestamp d'affichage. Backend rejette si submit < 2s. -->
+				<input type="hidden" name="form_t" value={formMountedAt} />
+
 				<div>
 					<label for="username" class="block text-sm text-gray-400 mb-1">{tFn('auth.register.username_label')}</label>
 					<input

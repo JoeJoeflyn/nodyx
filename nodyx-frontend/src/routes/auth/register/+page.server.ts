@@ -9,6 +9,10 @@ export const actions: Actions = {
 		const email          = form.get('email')            as string;
 		const password       = form.get('password')         as string;
 		const confirmPassword = form.get('confirm_password') as string;
+		// Anti-bot : on forward les 2 champs anti-bot vers le backend.
+		const website  = (form.get('website') as string | null) ?? '';
+		const formTRaw = form.get('form_t')   as string | null;
+		const formT    = formTRaw ? Number(formTRaw) : undefined;
 
 		if (password !== confirmPassword) {
 			return fail(400, { error: 'Les mots de passe ne correspondent pas.' });
@@ -16,7 +20,11 @@ export const actions: Actions = {
 
 		const res  = await apiFetch(fetch, '/auth/register', {
 			method: 'POST',
-			body: JSON.stringify({ username, email, password })
+			body: JSON.stringify({
+				username, email, password,
+				...(website ? { website } : {}),
+				...(formT   ? { form_t: formT } : {}),
+			})
 		});
 		const json = await res.json();
 

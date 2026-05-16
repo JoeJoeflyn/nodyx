@@ -111,7 +111,29 @@ const RegisterBody = z.object({
   username: z.string().min(3).max(50),
   email:    z.string().email(),
   password: z.string().min(8).max(100),
+  // Anti-bot couche 1 : honeypot field. Doit être vide (humain ne le voit
+  // pas, bot qui scrape les inputs et fill aveuglément se trahit).
+  // Optional pour ne pas casser les anciens clients qui ne l'envoient pas.
+  website:  z.string().max(200).optional(),
+  // Anti-bot couche 2 : timestamp d'affichage du form (ms epoch). Si le
+  // submit arrive en < 2 secondes, c'est un bot (un humain met >10s pour
+  // remplir 3 champs).
+  form_t:   z.coerce.number().int().positive().optional(),
 })
+
+// Username manifestement bot : 10 caractères strictement [a-z] sans aucun
+// tiret/underscore/chiffre. Aucun humain ne nomme son compte 'dfjqexemtj'.
+// On match strict pour éviter de bloquer 'alicebob42' (chiffres) ou
+// 'jean_doe' (underscore). Si un humain veut vraiment ce pattern, qu'il
+// ajoute juste une lettre majuscule ou un chiffre.
+const BOT_USERNAME_RE = /^[a-z]{10}$/
+
+const ANTI_BOT_REJECT = {
+  code: 'AUTOMATED_SIGNUP_DETECTED',
+  // On reste générique côté message pour ne pas donner d'info à l'attaquant
+  // sur quelle couche a détecté quoi (sinon il itère pour bypass).
+  error: 'Inscription refusée. Si tu es un humain, attends un peu et réessaie.',
+}
 
 const LoginBody = z.object({
   email:    z.string().email(),
@@ -131,7 +153,30 @@ export default async function authRoutes(app: FastifyInstance) {
   app.post('/register', {
     preHandler: [rateLimit, registerRateLimit, validate({ body: RegisterBody })],
   }, async (request, reply) => {
-    const { username, email, password } = request.body as z.infer<typeof RegisterBody>
+    const body = request.body as z.infer<typeof RegisterBody>
+    const { username, email, password, website, form_t } = body
+
+    // ── Anti-bot layered defense ───────────────────────────────────────
+    // Couche 1 : honeypot — si rempli, c'est forcément un bot
+    if (website && website.length > 0) {
+      app.log.warn({ username, email, reason: 'honeypot_filled' }, '[register] bot detected')
+      return reply.code(403).send(ANTI_BOT_REJECT)
+    }
+    // Couche 2 : time-to-fill — < 2s = bot. Si form_t absent, on accepte
+    // (compatible avec les anciens clients). Tolère un décalage horloge
+    // client/serveur ±5s.
+    if (form_t) {
+      const elapsedMs = Date.now() - form_t
+      if (elapsedMs < 2000 && elapsedMs > -5000) {
+        app.log.warn({ username, email, elapsedMs, reason: 'too_fast' }, '[register] bot detected')
+        return reply.code(403).send(ANTI_BOT_REJECT)
+      }
+    }
+    // Couche 5 : pattern username random — 10 chars strict [a-z]
+    if (BOT_USERNAME_RE.test(username)) {
+      app.log.warn({ username, email, reason: 'bot_username_pattern' }, '[register] bot detected')
+      return reply.code(403).send(ANTI_BOT_REJECT)
+    }
 
     const clientIp = request.ip
 
