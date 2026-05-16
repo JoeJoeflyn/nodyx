@@ -987,4 +987,77 @@
     {/if}
   </div>
 
+  <!-- ══ Tentatives de signup bot interceptées ════════════════════════════ -->
+  <div class="glass-card" style="margin-top:1.5rem;padding:1.25rem;">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:1rem;gap:1rem;flex-wrap:wrap;">
+      <div>
+        <h2 style="font-size:0.95rem;font-weight:800;color:#f1f5f9;margin:0;">🤖 Tentatives de signup bot</h2>
+        <p style="font-size:0.7rem;color:#475569;margin:0.25rem 0 0;font-family:monospace;">
+          Inscriptions /auth/register bloquées par la défense en couches (honeypot, timing, pattern username)
+        </p>
+      </div>
+      <div style="display:flex;gap:1rem;font-family:monospace;font-size:0.75rem;">
+        <span style="color:#475569;">Total <strong style="color:#fbbf24;">{data.botSignupStats.total}</strong></span>
+        <span style="color:#475569;">24h <strong style="color:#fbbf24;">{data.botSignupStats.today}</strong></span>
+        <span style="color:#475569;">1h <strong style="color:#fbbf24;">{data.botSignupStats.lastHour}</strong></span>
+        <span style="color:#475569;">IPs 7j <strong style="color:#fbbf24;">{data.botSignupStats.uniqueIps7d}</strong></span>
+      </div>
+    </div>
+
+    {#if data.botSignupByReason && data.botSignupByReason.length > 0}
+      <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
+        {#each data.botSignupByReason as r}
+          <div style="
+            padding:0.35rem 0.7rem;border-radius:6px;
+            background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);
+            font-size:0.7rem;color:#fbbf24;font-family:monospace;
+          ">
+            <span style="opacity:0.7;">{r.reason}</span>
+            <strong style="margin-left:0.5rem;">{r.hits}</strong>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#if data.botSignupRecent && data.botSignupRecent.length > 0}
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.72rem;">
+          <thead style="background:rgba(15,20,40,0.4);border-bottom:1px solid rgba(56,78,180,0.15);">
+            <tr>
+              {#each ['Quand','Reason','Username','Email','IP','Métadonnées'] as col}
+                <th style="padding:0.45rem 0.6rem;text-align:left;color:#64748b;font-weight:600;text-transform:uppercase;font-size:0.62rem;letter-spacing:0.05em;">{col}</th>
+              {/each}
+            </tr>
+          </thead>
+          <tbody>
+            {#each data.botSignupRecent as att}
+              <tr style="border-bottom:1px solid rgba(56,78,180,0.06);">
+                <td style="padding:0.4rem 0.6rem;color:#64748b;font-family:monospace;white-space:nowrap;">
+                  {new Date(att.attempted_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'medium' })}
+                </td>
+                <td style="padding:0.4rem 0.6rem;">
+                  <span style="
+                    padding:0.15rem 0.5rem;border-radius:4px;font-size:0.65rem;font-family:monospace;
+                    background:{att.reason === 'bot_username_pattern' ? 'rgba(239,68,68,0.12)' : att.reason === 'too_fast' ? 'rgba(245,158,11,0.12)' : 'rgba(99,102,241,0.12)'};
+                    color:{att.reason === 'bot_username_pattern' ? '#fca5a5' : att.reason === 'too_fast' ? '#fbbf24' : '#a5b4fc'};
+                  ">{att.reason}</span>
+                </td>
+                <td style="padding:0.4rem 0.6rem;color:#cbd5e1;font-family:monospace;">{att.username ?? '—'}</td>
+                <td style="padding:0.4rem 0.6rem;color:#94a3b8;font-family:monospace;font-size:0.68rem;">{att.email ?? '—'}</td>
+                <td style="padding:0.4rem 0.6rem;color:#64748b;font-family:monospace;font-size:0.68rem;">{att.ip ?? '—'}</td>
+                <td style="padding:0.4rem 0.6rem;color:#475569;font-family:monospace;font-size:0.65rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;">
+                  {Object.keys(att.metadata ?? {}).length ? JSON.stringify(att.metadata) : '—'}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {:else}
+      <div style="padding:1.5rem;text-align:center;color:#475569;font-family:monospace;font-size:0.75rem;">
+        Aucune tentative bot bloquée pour le moment. Bonne nouvelle.
+      </div>
+    {/if}
+  </div>
+
 </div>

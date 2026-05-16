@@ -47,6 +47,9 @@ export const load: PageServerLoad = async () => {
     credentialStatsRow,
     trapStatsRows,
     fingerprintRows,
+    botSignupStatsRow,
+    botSignupByReasonRows,
+    botSignupRecentRows,
   ] = await Promise.all([
 
     // ── Global stats ────────────────────────────────────────────────────────
@@ -286,7 +289,36 @@ export const load: PageServerLoad = async () => {
       ORDER BY visits DESC, last_seen DESC
       LIMIT 50
     `).catch(() => ({ rows: [] })),
+
+    // ── Bot signup attempts (anti-bot layered defense) ──────────────────
+    pool.query(`
+      SELECT
+        COUNT(*)                                                              AS total,
+        COUNT(*) FILTER (WHERE attempted_at > NOW() - INTERVAL '1 day')      AS today,
+        COUNT(*) FILTER (WHERE attempted_at > NOW() - INTERVAL '1 hour')     AS last_hour,
+        COUNT(DISTINCT ip) FILTER (WHERE attempted_at > NOW() - INTERVAL '7 days') AS unique_ips_7d
+      FROM bot_signup_attempts
+    `).catch(() => ({ rows: [{ total: '0', today: '0', last_hour: '0', unique_ips_7d: '0' }] })),
+
+    pool.query(`
+      SELECT reason, COUNT(*) AS hits
+      FROM bot_signup_attempts
+      WHERE attempted_at > NOW() - INTERVAL '7 days'
+      GROUP BY reason
+      ORDER BY hits DESC
+    `).catch(() => ({ rows: [] })),
+
+    pool.query(`
+      SELECT id, attempted_at, reason, username, email, ip::text AS ip,
+             COALESCE(metadata, '{}'::jsonb) AS metadata
+      FROM bot_signup_attempts
+      ORDER BY attempted_at DESC
+      LIMIT 50
+    `).catch(() => ({ rows: [] })),
   ]);
+
+  // Récupère les 3 nouveaux résultats à la fin du destructuring ci-dessus.
+  // (TS connaît la position : Promise.all garantit l'ordre.)
 
   const raw   = statsRow.rows[0] ?? {};
   const stats = {
@@ -346,6 +378,14 @@ export const load: PageServerLoad = async () => {
     today:     parseInt(credRaw.today      ?? '0', 10),
   }
 
+  const botRaw = botSignupStatsRow.rows[0] ?? {}
+  const botSignupStats = {
+    total:        parseInt(botRaw.total         ?? '0', 10),
+    today:        parseInt(botRaw.today         ?? '0', 10),
+    lastHour:     parseInt(botRaw.last_hour     ?? '0', 10),
+    uniqueIps7d:  parseInt(botRaw.unique_ips_7d ?? '0', 10),
+  }
+
   return {
     stats,
     timeline,
@@ -363,6 +403,9 @@ export const load: PageServerLoad = async () => {
     credentialStats,
     trapStats:           trapStatsRows.rows,
     fingerprints:        fingerprintRows.rows,
+    botSignupStats,
+    botSignupByReason:   botSignupByReasonRows.rows,
+    botSignupRecent:     botSignupRecentRows.rows,
     updatedAt:    new Date().toISOString(),
   };
 };

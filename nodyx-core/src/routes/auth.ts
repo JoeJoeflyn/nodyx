@@ -155,11 +155,23 @@ export default async function authRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const body = request.body as z.infer<typeof RegisterBody>
     const { username, email, password, website, form_t } = body
+    const clientIpEarly = request.ip
+    const userAgent = String(request.headers['user-agent'] ?? '').slice(0, 500)
+
+    // Helper : log dans stdout + INSERT en DB pour monitoring Olympus
+    const recordBotAttempt = (reason: string, metadata: Record<string, unknown> = {}) => {
+      app.log.warn({ username, email, reason, ...metadata }, '[register] bot detected')
+      db.query(
+        `INSERT INTO bot_signup_attempts (reason, username, email, ip, user_agent, metadata)
+         VALUES ($1, $2, $3, $4::inet, $5, $6)`,
+        [reason, username ?? null, email ?? null, clientIpEarly, userAgent, JSON.stringify(metadata)]
+      ).catch(err => app.log.error(err, '[register] failed to log bot attempt'))
+    }
 
     // ── Anti-bot layered defense ───────────────────────────────────────
     // Couche 1 : honeypot — si rempli, c'est forcément un bot
     if (website && website.length > 0) {
-      app.log.warn({ username, email, reason: 'honeypot_filled' }, '[register] bot detected')
+      recordBotAttempt('honeypot_filled', { honeypot_value: website.slice(0, 100) })
       return reply.code(403).send(ANTI_BOT_REJECT)
     }
     // Couche 2 : time-to-fill — < 2s = bot. Si form_t absent, on accepte
@@ -168,17 +180,17 @@ export default async function authRoutes(app: FastifyInstance) {
     if (form_t) {
       const elapsedMs = Date.now() - form_t
       if (elapsedMs < 2000 && elapsedMs > -5000) {
-        app.log.warn({ username, email, elapsedMs, reason: 'too_fast' }, '[register] bot detected')
+        recordBotAttempt('too_fast', { elapsedMs })
         return reply.code(403).send(ANTI_BOT_REJECT)
       }
     }
     // Couche 5 : pattern username random — 10 chars strict [a-z]
     if (BOT_USERNAME_RE.test(username)) {
-      app.log.warn({ username, email, reason: 'bot_username_pattern' }, '[register] bot detected')
+      recordBotAttempt('bot_username_pattern', {})
       return reply.code(403).send(ANTI_BOT_REJECT)
     }
 
-    const clientIp = request.ip
+    const clientIp = clientIpEarly
 
     const maxMembers = process.env.NODYX_MAX_MEMBERS ? parseInt(process.env.NODYX_MAX_MEMBERS, 10) : null
 
