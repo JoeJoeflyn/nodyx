@@ -148,6 +148,63 @@ export default async function instanceRoutes(app: FastifyInstance) {
     return reply.send({ members: rows })
   })
 
+  // GET /api/v1/instance/members/full — page publique /members
+  // Liste complète, filtrée des bannis, enrichie (display_name, name_color,
+  // grade, joined_at, points). Tri par défaut : joined_at ASC pour mettre
+  // les anciens en premier. Limite haute 1000 (au-delà on ajoutera de la
+  // pagination).
+  app.get('/members/full', { preHandler: [rateLimit] }, async (_request, reply) => {
+    const communityId = await getCommunityId()
+    if (!communityId) return reply.send({ members: [] })
+
+    const { rows } = await db.query(
+      `SELECT u.id AS user_id, u.username, u.avatar, u.points, u.created_at AS user_created_at,
+              up.display_name, up.name_color, up.bio,
+              cm.role, cm.joined_at, cm.grade_id,
+              cg.name  AS grade_name,
+              cg.color AS grade_color
+       FROM community_members cm
+       JOIN users u ON u.id = cm.user_id
+       LEFT JOIN user_profiles  up ON up.user_id = u.id
+       LEFT JOIN community_grades cg ON cg.id = cm.grade_id
+       WHERE cm.community_id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM community_bans cb
+           WHERE cb.community_id = $1 AND cb.user_id = cm.user_id
+         )
+       ORDER BY cm.joined_at ASC
+       LIMIT 1000`,
+      [communityId]
+    )
+
+    // Présence : list de userIds online via Socket.IO presence room
+    const onlineIds = new Set<string>()
+    if (io) {
+      try {
+        const sockets = await io.in('presence').fetchSockets()
+        for (const s of sockets) if (s.data?.userId) onlineIds.add(s.data.userId)
+      } catch { /* ignore */ }
+    }
+
+    const members = rows.map(r => ({
+      user_id:      r.user_id,
+      username:     r.username,
+      avatar:       r.avatar,
+      display_name: r.display_name,
+      name_color:   r.name_color,
+      bio:          r.bio,
+      role:         r.role,
+      grade_id:     r.grade_id,
+      grade_name:   r.grade_name,
+      grade_color:  r.grade_color,
+      points:       r.points,
+      joined_at:    r.joined_at,
+      is_online:    onlineIds.has(r.user_id),
+    }))
+
+    return reply.send({ members })
+  })
+
   // GET /api/v1/instance/categories
   // Returns the full category tree (recursive, with thread counts)
   app.get('/categories', { preHandler: [rateLimit] }, async (_request, reply) => {
