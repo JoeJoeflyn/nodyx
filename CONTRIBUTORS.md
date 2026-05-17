@@ -53,11 +53,11 @@ One merged PR = one star. Typos count. Translations count. Bug reports that turn
         <sub><b>naranco66</b></sub>
       </a>
       <br/>
-      <sub>🌟 × 3</sub>
+      <sub>🌟 × 4</sub>
       <br/>
-      <sub><a href="https://github.com/Pokled/nodyx/pull/16">PR #16</a> · <a href="https://github.com/Pokled/nodyx/pull/19">PR #19</a> · <a href="https://github.com/Pokled/nodyx/pull/22">PR #22</a></sub>
+      <sub><a href="https://github.com/Pokled/nodyx/pull/16">PR #16</a> · <a href="https://github.com/Pokled/nodyx/pull/19">PR #19</a> · <a href="https://github.com/Pokled/nodyx/pull/22">PR #22</a> · <a href="https://github.com/Pokled/nodyx/pull/28">PR #28</a></sub>
       <br/>
-      <sub><em>Spanish (es) translation + Docker setup fixes</em></sub>
+      <sub><em>Spanish (es) <strong>full translation</strong> + Docker setup fixes</em></sub>
       <br/>
       <sub><strong>First Hispanic contributor 🇪🇸</strong></sub>
     </td>
@@ -142,6 +142,7 @@ Sometimes a contribution isn't a PR. Sometimes it's just being there at exactly 
 
 | Contributor | Contribution | Type | Issue / PR | Fix / polish | Date |
 |---|---|---|---|---|---|
+| [@naranco66](https://github.com/naranco66) | Full Spanish translation of the documentation : 9 documents, ~3000 lines, line-by-line native review (Spain). Includes thoughtful linguistic decisions (`"plataformas herméticas"` over literal `"silos privados"`, gender agreement on `"condenadas"`, sslip.io explanation for a Hispanic audience less familiar with the service). | `docs(es)` | [#28](https://github.com/Pokled/nodyx/pull/28) | [`0a6d74d`](https://github.com/Pokled/nodyx/commit/0a6d74d) | 2026-05-17 |
 | Yannick (nodyx.org member) | Created an account at the worst possible second of the very first prod backup test (between `pg_dump` at 21:00 and `pg_restore` at 21:17). The user row got wiped by the restore, which is what made it visible that `pg_dump` was capturing the system tables themselves (`backups`, `backup_audit_log`, `backup_settings`, `schema_migrations`) — meaning a restore was destroying the safety net created seconds earlier. Account recovered via CLI restore of the pre-restore snapshot. | `bug(backup)` | — | [`87696f6`](https://github.com/Pokled/nodyx/commit/87696f6) | 2026-05-06 |
 | [@lukasMega](https://github.com/lukasMega) | Reported docs search input losing focus on click (had to click twice), second-pass test of [`882099d`](https://github.com/Pokled/nodyx/commit/882099d) which triggered a full slug + UX audit : 108 broken TOC links, 60 leading-dash ids, 11 phantom entries from code-block comments | `bug(docs)` | [#12](https://github.com/Pokled/nodyx/discussions/12) | [`a429fa3`](https://github.com/Pokled/nodyx/commit/a429fa3) | 2026-05-02 |
 | [@lukasMega](https://github.com/lukasMega) | Reported docs search returned no results for `"minimum requirements"` (h3 sections invisible to the index) and asked about Raspberry Pi 4 / 5 + local-IP-no-HTTPS support | `bug(docs)` | [#12](https://github.com/Pokled/nodyx/discussions/12) | [`882099d`](https://github.com/Pokled/nodyx/commit/882099d) | 2026-04-26 |
