@@ -19,6 +19,47 @@ OctoGuard est donc un **outil que l'admin choisit d'activer**, pas une politique
 
 ---
 
+## Responsabilité légale et éthique
+
+Le projet Nodyx (code AGPL-3.0) fournit un outil. **L'usage de cet outil relève de la responsabilité exclusive de l'administrateur de l'instance**, pas du projet, pas de ses contributeurs.
+
+Quelques repères juridiques (non exhaustifs, l'admin doit consulter le droit applicable à sa juridiction) :
+
+- **France** : l'hébergeur est responsable du contenu hébergé dès qu'il en a connaissance et ne le retire pas promptement (LCEN 2004-575, art. 6). Hébergement de contenu pédopornographique, terroriste, ou apologétique de crimes contre l'humanité : peines lourdes, jusqu'à plusieurs années de prison.
+- **Union européenne** : le Digital Services Act (DSA, règlement 2022/2065) impose obligations de modération aux plateformes selon leur taille et leur typologie.
+- **Royaume-Uni** : Online Safety Act 2023.
+- **États-Unis** : Section 230 (CDA) offre une immunité conditionnelle, mais ne couvre ni la propriété intellectuelle ni le contenu illégal fédéral.
+
+OctoGuard, le filtre `contentFilter.ts`, et les autres briques de modération de Nodyx sont des **outils à disposition**. Les activer, les paramétrer, les désactiver, **c'est la décision et la responsabilité de l'admin**. Le projet Nodyx ne peut être tenu responsable de l'usage qui en est fait sur des instances tierces.
+
+**Le projet plaide pour une utilisation humaine, saine, et conforme aux lois en vigueur** dans la juridiction de l'instance. Mais il refuse d'imposer cette vision par le code, car ce serait trahir le principe de liberté self-hosted. La responsabilité éthique du code est de ne pas faciliter le mal ; la responsabilité du contenu reste à l'admin.
+
+Si une instance Nodyx héberge du contenu manifestement illégal ou inhumain, le projet se réserve le droit (**au niveau du directory cross-instance, pas du code de l'instance**) de la déclasser et de refuser de la référencer publiquement. Voir spec 018-directory-moderation à venir.
+
+### Texte exact de la modale de désactivation du filtre haineux
+
+Quand un admin clique sur "Désactiver le filtre de symboles haineux" dans `/admin/octoguard/settings`, l'UI affiche la modale suivante (pas un blocage, juste une friction informée) :
+
+> **⚠ Désactivation du filtre de symboles haineux**
+>
+> Vous êtes sur le point de désactiver le filtre qui bloque automatiquement les symboles nazis (swastika, runes SS, etc.) dans les messages publiés sur votre instance.
+>
+> **En désactivant ce filtre :**
+>
+> - Vous prenez la responsabilité légale du contenu hébergé sur votre instance.
+> - Vous vous exposez à des poursuites pénales si du contenu illégal est publié et non retiré (en France, LCEN art. 6, peines lourdes pour apologie de crimes contre l'humanité).
+> - Votre instance peut être déclassée du directory Nodyx cross-instance si elle est signalée pour contenu inhumain.
+>
+> Le projet Nodyx (AGPL-3.0) ne peut pas être tenu responsable de l'usage que vous faites de votre instance.
+>
+> Si vous désactivez pour des raisons légitimes (tests, contexte académique, plateforme dédiée à la documentation historique modérée par d'autres moyens), nous comprenons. Si c'est pour autre chose, réfléchissez.
+>
+> `[ Annuler ]  [ Je comprends et désactive ]`
+
+Le bouton "Je comprends et désactive" déclenche l'action effective. Aucune autre validation, aucune approbation, aucun blocage. L'admin assume.
+
+---
+
 ## Avant-propos : pourquoi v2.1
 
 La v1.1 créait plusieurs tables et systèmes qui dupliquaient l'existant Nodyx. Cette v2.0 part d'un **audit complet** (cf. discussion #25, fil OctoGuard) et redéfinit OctoGuard comme **une couche au-dessus** de ce qui marche déjà, pas un système parallèle. Bénéfices :
