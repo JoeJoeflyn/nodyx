@@ -12,6 +12,7 @@ import { resolveMentions } from '../utils/mentions'
 import { io } from './io'
 import { sendPushToUser } from '../routes/notifications'
 import { checkHtmlContent } from '../services/contentFilter'
+import { runPipeline, isOctoGuardEnabled, isUserMuted, tryHandleCommand } from '../services/octoguard'
 
 interface JwtPayload {
   userId:   string
@@ -408,12 +409,12 @@ export function registerSocketIO(server: Server): void {
       // Contrôle d'accès : le socket doit avoir rejoint ce canal via chat:join (qui vérifie membership)
       // Double-check DB pour éviter les races après expulsion de la communauté
       if (!socket.rooms.has(`channel:${channelId}`)) return
-      const { rows: memberCheck } = await db.query<{ role: string; is_system_managed: boolean }>(
-        `SELECT cm.role, c.is_system_managed FROM channels c
+      const { rows: memberCheck } = await db.query<{ role: string; is_system_managed: boolean; grade_id: string | null }>(
+        `SELECT cm.role, c.is_system_managed, cm.grade_id FROM channels c
          JOIN community_members cm ON c.community_id = cm.community_id
          WHERE c.id = $1 AND cm.user_id = $2 LIMIT 1`,
         [channelId, userId]
-      ).catch(() => ({ rows: [] as { role: string; is_system_managed: boolean }[] }))
+      ).catch(() => ({ rows: [] as { role: string; is_system_managed: boolean; grade_id: string | null }[] }))
       if (!memberCheck.length) return
 
       // Channel system-managed (ex: #streamer-events auto-créé) : seuls
@@ -443,6 +444,64 @@ export function registerSocketIO(server: Server): void {
           [userId, channelId]
         )
         if (banCheck.length > 0) return
+
+        // ▼ OCTOGUARD HOOK (Sessions B + C, cf docs/specs/016-Octoguard/)
+        if (isOctoGuardEnabled()) {
+          // 1. Check mute (Module 6, Session C) AVANT le pipeline auto-mod.
+          //    Un user muté ne doit pas matcher de règles ni polluer les logs.
+          const muteState = await isUserMuted(userId, channelId)
+          if (muteState.muted) {
+            socket.emit('chat:blocked', {
+              reason:    'muted',
+              octoguard: {
+                i18n_key:    'octoguard.mute.active',
+                expires_at:  muteState.expires_at ?? null,
+                reason_text: muteState.reason ?? null,
+                channel_id:  muteState.channel_id ?? null,
+              },
+            })
+            return
+          }
+
+          // 2. Détection de commandes custom (Module 3, Session C).
+          //    Si "!cmd" en début de message → on poste la réponse bot et
+          //    on supprime le message original. Si commande inconnue ou
+          //    pas une commande, le pipeline continue normalement.
+          const cmdOutcome = await tryHandleCommand({
+            content:    sanitized,
+            userId,
+            username:   socket.data.username,
+            userRole:   memberCheck[0].role,
+            channelId,
+          })
+          if (cmdOutcome.handled && cmdOutcome.blocked) {
+            // Le message d'origine du user est supprimé silencieusement
+            // (la réponse bot a déjà été broadcastée par tryHandleCommand).
+            return
+          }
+
+          // 3. Pipeline auto-mod (Module 1, Session B).
+          const og = await runPipeline({
+            content:   sanitized,
+            userCtx:   {
+              userId,
+              role:     memberCheck[0].role,
+              gradeIds: memberCheck[0].grade_id ? [memberCheck[0].grade_id] : [],
+            },
+            channelId,
+          })
+          if (og.blocked) {
+            socket.emit('chat:blocked', {
+              reason:    og.reason ?? 'octoguard',
+              octoguard: {
+                i18n_key: og.i18n_key,
+                event_id: og.event_id,
+              },
+            })
+            return
+          }
+        }
+        // ▲ FIN OCTOGUARD HOOK
 
         const message = await ChannelModel.addMessage({
           channel_id:   channelId,
