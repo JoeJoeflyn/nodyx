@@ -17,6 +17,7 @@ export type { PipelineInput } from './pipeline'
 export { reloadRules, getRules, clearRules, isLoaded } from './cache'
 export { hasRE2, compileSafeRegex, assessPatternSafety } from './matchers'
 export type { PatternAssessment } from './matchers'
+export { logOctoGuardAction } from './logger'
 export {
   isUserMuted, applyMute, removeMute, purgeExpiredMutes,
   invalidateMuteCache, clearMuteCache,
@@ -28,12 +29,19 @@ export { tryHandleCommand, extractCommand } from './commands'
 export type { CommandContext, CommandOutcome } from './commands'
 export { migrateEnvPatternsToDB } from './envMigration'
 export type { MigrationResult as EnvMigrationResult } from './envMigration'
+export {
+  triggerWebhook, getWebhookConfig, setWebhookConfig,
+  invalidateWebhookConfig, startWebhookWorker, stopWebhookWorker,
+  buildWebhookPayload,
+} from './webhook'
+export type { WebhookPayload } from './webhook'
 
 import { reloadRules, getRules } from './cache'
 import { hasRE2 } from './matchers'
 import { startMutePurgeWorker } from './mutes'
 import { ensureOctoGuardBotUser } from './welcome'
 import { migrateEnvPatternsToDB } from './envMigration'
+import { startWebhookWorker } from './webhook'
 
 /** Vrai si OctoGuard est activé via env. Par défaut false. */
 export function isOctoGuardEnabled(): boolean {
@@ -90,4 +98,8 @@ export async function initOctoGuard(): Promise<void> {
   await ensureOctoGuardBotUser().catch(err =>
     console.warn('[octoguard] ensureOctoGuardBotUser at boot failed (non-fatal):', err)
   )
+
+  // Démarrer le worker webhook out (Module 5). Tick toutes les 5s,
+  // batch jusqu'à 20 events/tick, fire-and-forget POST signé HMAC.
+  startWebhookWorker()
 }

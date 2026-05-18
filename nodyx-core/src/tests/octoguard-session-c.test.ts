@@ -179,12 +179,16 @@ describe('mutes.applyMute + isUserMuted', () => {
       reason: 'test', applied_by: null,
       applied_at: '2026-01-01', expires_at: null,
     }
-    // 1er appel : INSERT chat_mutes
-    dbQueryMock.mockResolvedValueOnce({ rows: [muteRow] })
-    // 2e appel : INSERT admin_audit_log (logger)
-    dbQueryMock.mockResolvedValueOnce({ rows: [] })
-    // 3e appel : SELECT chat_mutes (par isUserMuted)
-    dbQueryMock.mockResolvedValueOnce({ rows: [muteRow] })
+    // Logger fire-and-forget + webhook trigger ajoutent des queries DB async
+    // dont l'ordre n'est pas garanti. On utilise une implementation flexible
+    // qui retourne le mute INSERT et le SELECT mutes, et autorise N+ autres queries
+    let callCount = 0
+    dbQueryMock.mockImplementation((sql: string) => {
+      callCount++
+      if (sql.includes('INSERT INTO chat_mutes')) return Promise.resolve({ rows: [muteRow] })
+      if (sql.includes('FROM chat_mutes'))        return Promise.resolve({ rows: [muteRow] })
+      return Promise.resolve({ rows: [] })  // logger, webhook, etc.
+    })
 
     const r1 = await applyMute({ userId: 'user-1', reason: 'test' })
     expect(r1?.id).toBe('mute-1')
@@ -192,6 +196,7 @@ describe('mutes.applyMute + isUserMuted', () => {
     const r2 = await isUserMuted('user-1', 'ch-1')
     expect(r2.muted).toBe(true)
     expect(r2.reason).toBe('test')
+    void callCount  // suppress unused
   })
 
   it('isUserMuted fail-open en cas d\'erreur DB', async () => {

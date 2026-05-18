@@ -14,6 +14,7 @@
  */
 
 import { db } from '../../config/database'
+import { triggerWebhook, buildWebhookPayload } from './webhook'
 import type { ActionLogEntry } from './types'
 
 /**
@@ -53,4 +54,14 @@ export function logOctoGuardAction(entry: ActionLogEntry): void {
       // ne pas throw : le pipeline continue
     }
   })()
+
+  // Webhook out (Module 5) : fire-and-forget, push dans queue Redis.
+  // Si le webhook est désactivé en config, c'est un no-op silencieux.
+  triggerWebhook(buildWebhookPayload({
+    action:       entry.action,
+    target_type:  entry.target_type,
+    target_id:    entry.target_id,
+    target_label: entry.target_label,
+    metadata:     entry.metadata,
+  }))
 }

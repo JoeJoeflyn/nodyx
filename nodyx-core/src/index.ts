@@ -41,6 +41,7 @@ import { setIO }              from './socket/io'
 import { registerSocketIO } from './socket/index'
 import { runMigrations }    from './scripts/migrate'
 import { initOctoGuard }    from './services/octoguard'
+import { octoguardAdminPlugin, reportsPublicPlugin } from './routes/octoguard'
 import { startScheduler }  from './scheduler'
 
 const server = Fastify({ logger: true, trustProxy: true })
@@ -138,6 +139,8 @@ server.addHook('onRequest', maintenanceGuard)
 
 server.register(authRoutes,      { prefix: '/api/v1/auth' })
 server.register(adminRoutes,     { prefix: '/api/v1/admin' })
+server.register(octoguardAdminPlugin, { prefix: '/api/v1/admin/octoguard' })
+server.register(reportsPublicPlugin,  { prefix: '/api/v1/reports' })
 server.register(communityRoutes, { prefix: '/api/v1/communities' })
 server.register(forumRoutes,     { prefix: '/api/v1/forums' })
 server.register(instanceRoutes,  { prefix: '/api/v1/instance' })

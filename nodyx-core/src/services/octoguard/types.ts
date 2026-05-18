@@ -195,7 +195,7 @@ export interface PipelineUserCtx {
  */
 export interface ActionLogEntry {
   action:       string                            // ex: 'octoguard.delete_message'
-  target_type:  'message' | 'user' | 'channel' | null
+  target_type:  'message' | 'user' | 'channel' | 'thread' | 'post' | 'dm_message' | 'rule' | 'report' | 'log' | 'welcome' | 'command' | null
   target_id:    string | null
   target_label: string | null
   metadata: {
