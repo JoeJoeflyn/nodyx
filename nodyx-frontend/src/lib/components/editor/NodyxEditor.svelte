@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte'
+	import { page } from '$app/stores'
+	import { apiFetch } from '$lib/api'
 	import { t } from '$lib/i18n'
 
 	let {
@@ -19,6 +21,9 @@
 	// ── i18n ─────────────────────────────────────────────────────────────────
 	const tFn = $derived($t)
 
+	// ── Auth token (used for authenticated uploads) ─────────────────────────
+	const token = $derived(($page.data as any)?.token as string | undefined)
+
 	// ── Placeholder (i18n fallback) ─────────────────────────────────────────
 	const resolvedPlaceholder = $derived(placeholder || tFn('editor.default_placeholder'))
 
@@ -37,6 +42,7 @@
 	let showLink    = $state(false)
 	let showImage   = $state(false)
 	let showVideo   = $state(false)
+	let showAudio   = $state(false)
 	let showTable   = $state(false)
 
 	let linkUrl     = $state('')
@@ -44,6 +50,20 @@
 	let imageAlt    = $state('')
 	let imageAlign  = $state<'left'|'center'|'right'|'full'>('center')
 	let videoUrl    = $state('')
+
+	// Audio upload state
+	let audioFileEl       = $state<HTMLInputElement | undefined>(undefined)
+	let audioCoverFileEl  = $state<HTMLInputElement | undefined>(undefined)
+	let audioUploading    = $state(false)
+	let audioError        = $state('')
+	let audioUrlExternal  = $state('')
+	let audioPickedFile   = $state<File | null>(null)
+	let audioTitle        = $state('')
+	let audioArtist       = $state('')
+	let audioAllowDownload= $state(false)
+	let audioCoverFile    = $state<File | null>(null)
+	let audioCoverPreview = $state<string | null>(null)  // blob: URL for popup preview
+	let audioCoverDetected= $state<{ mime: string; bytes: Uint8Array } | null>(null)
 
 	// ── Media picker ──────────────────────────────────────────────────────────
 	let showMediaPicker = $state(false)
@@ -168,6 +188,46 @@
 			},
 		})
 
+		// ── Audio node (mp3 / ogg / wav / m4a / webm) ────────────────────────
+		// Renders as <nodyx-audio-player> (custom element with FFT visualizer).
+		// Legacy <audio[src]> tags in older posts still parse into the same node.
+		const NodyxAudio = Node.create({
+			name: 'nodyxAudio',
+			group: 'block',
+			atom: true,
+			selectable: true,
+			draggable: true,
+			addAttributes() {
+				const passthrough = (name: string) => ({
+					default: null as any,
+					parseHTML: (el: HTMLElement) => el.getAttribute(name),
+					renderHTML: (attrs: Record<string, any>) => attrs[name] ? { [name]: attrs[name] } : {},
+				})
+				return {
+					src:           passthrough('src'),
+					'track-title': passthrough('track-title'),
+					artist:        passthrough('artist'),
+					cover:         passthrough('cover'),
+					download:      passthrough('download'),
+				}
+			},
+			parseHTML() {
+				return [
+					{ tag: 'nodyx-audio-player[src]' },
+					{ tag: 'audio[src]' },
+				]
+			},
+			renderHTML({ HTMLAttributes }) {
+				return ['nodyx-audio-player', mergeAttributes(HTMLAttributes)]
+			},
+			addCommands(): any {
+				return {
+					setNodyxAudio: (attrs: Record<string, string>) => ({ commands }: any) =>
+						commands.insertContent({ type: 'nodyxAudio', attrs }),
+				}
+			},
+		})
+
 		editor = new Editor({
 			element: editorEl!,
 			extensions: [
@@ -184,6 +244,7 @@
 				CharacterCount,
 				CodeBlockLowlight.configure({ lowlight }),
 				NodyxTwoCols, NodyxColumn,
+				NodyxAudio,
 			],
 			content: initialContent,
 			onTransaction() { syncActive() },
@@ -200,7 +261,7 @@
 	// ── Close popups when clicking outside the editor ─────────────────────────
 	function onDocClick(e: MouseEvent) {
 		if (wrapperEl && !wrapperEl.contains(e.target as Node)) {
-			showColor = showEmoji = showLink = showImage = showVideo = showTable = false
+			showColor = showEmoji = showLink = showImage = showVideo = showAudio = showTable = false
 		}
 	}
 
@@ -247,7 +308,7 @@
 	onDestroy(() => editor?.destroy())
 
 	// ── Toolbar commands (shortcuts to editor chain) ──────────────────────────
-	const run = (fn: () => void) => { fn(); showColor = showEmoji = showLink = showImage = showVideo = showTable = false }
+	const run = (fn: () => void) => { fn(); showColor = showEmoji = showLink = showImage = showVideo = showAudio = showTable = false }
 
 	function insertLink() {
 		if (!linkUrl.trim()) return
@@ -266,6 +327,158 @@
 		if (!videoUrl.trim()) return
 		editor?.chain().focus().setYoutubeVideo({ src: videoUrl }).run()
 		videoUrl = ''; showVideo = false
+	}
+
+	function resetAudioForm() {
+		audioPickedFile = null
+		audioTitle = ''
+		audioArtist = ''
+		audioAllowDownload = false
+		audioCoverFile = null
+		audioCoverDetected = null
+		if (audioCoverPreview) { try { URL.revokeObjectURL(audioCoverPreview) } catch {} }
+		audioCoverPreview = null
+		audioError = ''
+		audioUrlExternal = ''
+		if (audioFileEl) audioFileEl.value = ''
+		if (audioCoverFileEl) audioCoverFileEl.value = ''
+	}
+
+	async function uploadBlobToPosts(blob: Blob, filename: string): Promise<string | null> {
+		const fd = new FormData()
+		fd.append('file', new File([blob], filename, { type: blob.type }))
+		const res = await apiFetch(fetch, '/social/upload', {
+			method:  'POST',
+			headers: { Authorization: `Bearer ${token}` },
+			body:    fd,
+		})
+		if (!res.ok) {
+			const j = await res.json().catch(() => ({}))
+			audioError = j.error ?? `Erreur upload (${res.status})`
+			return null
+		}
+		return (await res.json()).url as string
+	}
+
+	async function onAudioFileChange(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0]
+		if (!file) return
+		audioError = ''
+		if (!file.type.startsWith('audio/')) {
+			audioError = 'Format non supporté (mp3, ogg, wav, m4a, webm).'
+			audioPickedFile = null
+			return
+		}
+		if (file.size > 8 * 1024 * 1024) {
+			audioError = 'Fichier trop lourd (max 8 Mo).'
+			audioPickedFile = null
+			return
+		}
+		audioPickedFile = file
+		// Default title = filename without extension
+		if (!audioTitle) audioTitle = file.name.replace(/\.[^.]+$/, '')
+
+		// Best-effort ID3 parse — only meaningful for mp3, gracefully no-op for others
+		try {
+			const { parseAudioMetadata } = await import('$lib/components/audio/id3')
+			const meta = await parseAudioMetadata(file)
+			if (meta.title  && !audioArtist) audioTitle  = meta.title
+			if (meta.artist) audioArtist = meta.artist
+			if (meta.cover && !audioCoverFile) {
+				audioCoverDetected = meta.cover
+				const blob = new Blob([meta.cover.bytes as BlobPart], { type: meta.cover.mime })
+				if (audioCoverPreview) { try { URL.revokeObjectURL(audioCoverPreview) } catch {} }
+				audioCoverPreview = URL.createObjectURL(blob)
+			}
+		} catch (err) {
+			// Silent: metadata extraction is best-effort, not a hard requirement
+			console.warn('[nodyx-audio] ID3 parse failed', err)
+		}
+	}
+
+	function onCoverFileChange(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0]
+		if (!file) return
+		if (!file.type.startsWith('image/')) {
+			audioError = 'Cover : formats acceptés jpg, png, webp, gif.'
+			return
+		}
+		if (file.size > 8 * 1024 * 1024) {
+			audioError = 'Cover trop lourde (max 8 Mo).'
+			return
+		}
+		audioCoverFile = file
+		audioCoverDetected = null  // manual file overrides detected
+		if (audioCoverPreview) { try { URL.revokeObjectURL(audioCoverPreview) } catch {} }
+		audioCoverPreview = URL.createObjectURL(file)
+	}
+
+	function clearCover() {
+		audioCoverFile = null
+		audioCoverDetected = null
+		if (audioCoverPreview) { try { URL.revokeObjectURL(audioCoverPreview) } catch {} }
+		audioCoverPreview = null
+		if (audioCoverFileEl) audioCoverFileEl.value = ''
+	}
+
+	async function submitAudio() {
+		audioError = ''
+		if (!audioPickedFile) {
+			audioError = 'Choisis un fichier audio.'
+			return
+		}
+		if (!token) {
+			audioError = 'Session expirée, recharge la page.'
+			return
+		}
+		audioUploading = true
+		try {
+			// Upload audio
+			const audioUrl = await uploadBlobToPosts(audioPickedFile, audioPickedFile.name)
+			if (!audioUrl) return
+
+			// Upload cover if provided (manual file wins over detected bytes)
+			let coverUrl = ''
+			if (audioCoverFile) {
+				const u = await uploadBlobToPosts(audioCoverFile, audioCoverFile.name)
+				if (u) coverUrl = u
+			} else if (audioCoverDetected) {
+				const ext = audioCoverDetected.mime === 'image/png' ? 'png' : 'jpg'
+				const blob = new Blob([audioCoverDetected.bytes as BlobPart], { type: audioCoverDetected.mime })
+				const u = await uploadBlobToPosts(blob, `cover.${ext}`)
+				if (u) coverUrl = u
+			}
+
+			const attrs: Record<string, string> = { src: audioUrl }
+			if (audioTitle.trim())     attrs['track-title'] = audioTitle.trim()
+			if (audioArtist.trim())    attrs.artist         = audioArtist.trim()
+			if (coverUrl)              attrs.cover          = coverUrl
+			if (audioAllowDownload)    attrs.download       = '1'
+
+			;(editor?.chain().focus() as any).setNodyxAudio(attrs).run()
+			showAudio = false
+			resetAudioForm()
+		} catch (err) {
+			audioError = 'Erreur réseau pendant l’upload.'
+		} finally {
+			audioUploading = false
+		}
+	}
+
+	function insertAudioFromUrl() {
+		const src = audioUrlExternal.trim()
+		if (!src) return
+		if (!src.startsWith('/uploads/')) {
+			audioError = 'Seuls les fichiers hébergés sur cette instance sont acceptés (uploade-le via le bouton ci-dessus).'
+			return
+		}
+		const attrs: Record<string, string> = { src }
+		if (audioTitle.trim())  attrs['track-title'] = audioTitle.trim()
+		if (audioArtist.trim()) attrs.artist        = audioArtist.trim()
+		if (audioAllowDownload) attrs.download      = '1'
+		;(editor?.chain().focus() as any).setNodyxAudio(attrs).run()
+		showAudio = false
+		resetAudioForm()
 	}
 
 	function insertEmoji(e: string) {
@@ -426,7 +639,7 @@
 
 		<!-- Couleur texte -->
 		<div class="relative">
-			<button type="button" onclick={() => { showColor = !showColor; showEmoji = showLink = showImage = showVideo = showTable = false }} class="tb-btn" title={tFn('editor.text_color')}>
+			<button type="button" onclick={() => { showColor = !showColor; showEmoji = showLink = showImage = showVideo = showAudio = showTable = false }} class="tb-btn" title={tFn('editor.text_color')}>
 				<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-width="2" d="M7 20h10M12 4l5 12H7L12 4z"/></svg>
 			</button>
 			{#if showColor}
@@ -443,7 +656,7 @@
 
 		<!-- Lien -->
 		<div class="relative">
-			<button type="button" onclick={() => { showLink = !showLink; showColor = showEmoji = showImage = showVideo = showTable = false }} class="tb-btn {a.link ? 'active' : ''}" title={tFn('editor.insert_link')}>
+			<button type="button" onclick={() => { showLink = !showLink; showColor = showEmoji = showImage = showVideo = showAudio = showTable = false }} class="tb-btn {a.link ? 'active' : ''}" title={tFn('editor.insert_link')}>
 				<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
 			</button>
 			{#if showLink}
@@ -459,7 +672,7 @@
 
 		<!-- Image -->
 		<div class="relative">
-			<button type="button" onclick={() => { showImage = !showImage; showColor = showEmoji = showLink = showVideo = showTable = false }} class="tb-btn" title={tFn('editor.insert_image')}>
+			<button type="button" onclick={() => { showImage = !showImage; showColor = showEmoji = showLink = showVideo = showAudio = showTable = false }} class="tb-btn" title={tFn('editor.insert_image')}>
 				<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15l-5-5L5 21"/></svg>
 			</button>
 			{#if showImage}
@@ -494,7 +707,7 @@
 
 		<!-- Vidéo YouTube -->
 		<div class="relative">
-			<button type="button" onclick={() => { showVideo = !showVideo; showColor = showEmoji = showLink = showImage = showTable = false }} class="tb-btn" title={tFn('editor.insert_video')}>
+			<button type="button" onclick={() => { showVideo = !showVideo; showColor = showEmoji = showLink = showImage = showAudio = showTable = false }} class="tb-btn" title={tFn('editor.insert_video')}>
 				<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
 			</button>
 			{#if showVideo}
@@ -506,9 +719,73 @@
 			{/if}
 		</div>
 
+		<!-- Audio (mp3 / ogg / wav / m4a / webm) -->
+		<div class="relative">
+			<button type="button" onclick={() => { showAudio = !showAudio; showColor = showEmoji = showLink = showImage = showVideo = showTable = false }} class="tb-btn" title="Insérer un fichier audio">
+				<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19a3 3 0 11-6 0 3 3 0 016 0zm12-3a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+			</button>
+			{#if showAudio}
+			<div class="popup w-96 flex flex-col gap-2 p-3" use:autoFlip>
+				<p class="text-xs text-gray-500">Fichier audio (mp3, ogg, wav, m4a, webm) — max 8 Mo. Les métadonnées (titre, artiste, pochette) sont lues automatiquement pour les mp3.</p>
+				<input
+					bind:this={audioFileEl}
+					type="file"
+					accept="audio/mpeg,audio/mp3,audio/ogg,audio/wav,audio/mp4,audio/webm,.mp3,.ogg,.wav,.m4a,.webm"
+					disabled={audioUploading}
+					onchange={onAudioFileChange}
+					class="popup-input text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-indigo-700 file:text-white file:cursor-pointer disabled:opacity-50"
+				/>
+
+				{#if audioPickedFile}
+					<div class="flex gap-3 items-start mt-1">
+						<div class="shrink-0">
+							{#if audioCoverPreview}
+								<img src={audioCoverPreview} alt="Pochette" class="w-16 h-16 rounded object-cover border border-indigo-700/40" />
+							{:else}
+								<div class="w-16 h-16 rounded border border-dashed border-gray-700 flex items-center justify-center text-gray-600 text-xs">aucune</div>
+							{/if}
+							<div class="flex gap-1 mt-1">
+								<button type="button" onclick={() => audioCoverFileEl?.click()} class="flex-1 text-[10px] px-1.5 py-0.5 rounded border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-300 transition-colors">choisir</button>
+								{#if audioCoverPreview}
+									<button type="button" onclick={clearCover} class="text-[10px] px-1.5 py-0.5 rounded border border-gray-700 text-red-400 hover:border-red-500 transition-colors" title="Retirer la pochette">×</button>
+								{/if}
+							</div>
+							<input bind:this={audioCoverFileEl} type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" onchange={onCoverFileChange} />
+						</div>
+						<div class="flex-1 flex flex-col gap-1.5 min-w-0">
+							<input type="text" bind:value={audioTitle}  placeholder="Titre" class="popup-input" />
+							<input type="text" bind:value={audioArtist} placeholder="Artiste / auteur" class="popup-input" />
+						</div>
+					</div>
+
+					<label class="flex items-center gap-2 text-xs text-gray-400 mt-1 cursor-pointer select-none">
+						<input type="checkbox" bind:checked={audioAllowDownload} class="accent-indigo-500" />
+						<span>Autoriser le téléchargement (bouton ⬇ visible sur le lecteur)</span>
+					</label>
+
+					<button type="button" onclick={submitAudio} class="popup-btn-primary mt-1" disabled={audioUploading}>
+						{audioUploading ? 'Upload en cours…' : 'Insérer le morceau'}
+					</button>
+				{/if}
+
+				{#if audioError}
+					<p class="text-xs text-red-400">{audioError}</p>
+				{/if}
+
+				<div class="flex items-center gap-2 text-gray-600 mt-1">
+					<span class="flex-1 h-px bg-gray-800"></span>
+					<span class="text-[10px]">ou URL /uploads/…</span>
+					<span class="flex-1 h-px bg-gray-800"></span>
+				</div>
+				<input type="text" bind:value={audioUrlExternal} placeholder="/uploads/posts/xxx.mp3" class="popup-input" onkeydown={e => e.key === 'Enter' && insertAudioFromUrl()} />
+				<button type="button" onclick={insertAudioFromUrl} class="popup-btn-primary" disabled={audioUploading || !audioUrlExternal.trim()}>Insérer depuis l'URL</button>
+			</div>
+			{/if}
+		</div>
+
 		<!-- Emoji -->
 		<div class="relative">
-			<button type="button" onclick={() => { showEmoji = !showEmoji; showColor = showLink = showImage = showVideo = showTable = false }} class="tb-btn text-base" title={tFn('editor.insert_emoji')}>😊</button>
+			<button type="button" onclick={() => { showEmoji = !showEmoji; showColor = showLink = showImage = showVideo = showAudio = showTable = false }} class="tb-btn text-base" title={tFn('editor.insert_emoji')}>😊</button>
 			{#if showEmoji}
 			<div class="popup w-72 p-2 grid grid-cols-10 gap-0.5 max-h-48 overflow-y-auto" use:autoFlip>
 				{#each EMOJIS as e}
@@ -529,7 +806,7 @@
 
 		<!-- Table -->
 		<div class="relative">
-			<button type="button" onclick={() => { showTable = !showTable; showColor = showEmoji = showLink = showImage = showVideo = false }} class="tb-btn {a.table ? 'active' : ''}" title={tFn('editor.table')}>
+			<button type="button" onclick={() => { showTable = !showTable; showColor = showEmoji = showLink = showImage = showVideo = showAudio = false }} class="tb-btn {a.table ? 'active' : ''}" title={tFn('editor.table')}>
 				<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/><path stroke-width="1.5" d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
 			</button>
 			{#if showTable}

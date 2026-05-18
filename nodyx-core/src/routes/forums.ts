@@ -61,6 +61,8 @@ const ALLOWED_TAGS = [
   'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
   'div', 'span',
   'iframe',
+  'audio',
+  'nodyx-audio-player',
 ]
 
 const ALLOWED_ATTRS: sanitizeHtml.IOptions['allowedAttributes'] = {
@@ -70,6 +72,8 @@ const ALLOWED_ATTRS: sanitizeHtml.IOptions['allowedAttributes'] = {
   'a':      ['href', 'target', 'rel'],
   'img':    ['src', 'alt', 'width', 'height'],
   'iframe': ['src', 'width', 'height', 'frameborder', 'allowfullscreen', 'allow'],
+  'audio':              ['src', 'controls', 'preload'],
+  'nodyx-audio-player': ['src', 'track-title', 'artist', 'cover', 'download'],
   'th':     ['rowspan', 'colspan'],
   'td':     ['rowspan', 'colspan'],
 }
@@ -92,6 +96,13 @@ function isAllowedImgSrcForum(src: string): boolean {
   }
 }
 
+// Audio: only files served by our own /uploads/ (mp3, m4a, ogg, wav, webm).
+// No external host, no data: URLs.
+function isAllowedAudioSrcForum(src: string): boolean {
+  if (!src) return false
+  return src.startsWith('/uploads/')
+}
+
 const _envBlockedForum = (process.env.BLOCKED_LINK_DOMAINS ?? '')
   .split(',').map(d => d.trim().toLowerCase()).filter(Boolean)
 
@@ -107,8 +118,21 @@ function sanitize(raw: string): string {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: ALLOWED_ATTRS,
     allowedIframeHostnames: ['www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com', 'player.vimeo.com', 'vimeo.com'],
+    transformTags: {
+      'nodyx-audio-player': (tagName, attribs) => {
+        // Cover URL must pass the same allowlist as <img> src
+        if (attribs.cover && !isAllowedImgSrcForum(attribs.cover)) {
+          const cleaned: Record<string, string> = { ...attribs }
+          delete cleaned.cover
+          return { tagName, attribs: cleaned }
+        }
+        return { tagName, attribs }
+      },
+    },
     exclusiveFilter: (frame) => {
-      if (frame.tag === 'img') return !isAllowedImgSrcForum(frame.attribs?.src ?? '')
+      if (frame.tag === 'img')                 return !isAllowedImgSrcForum(frame.attribs?.src ?? '')
+      if (frame.tag === 'audio')               return !isAllowedAudioSrcForum(frame.attribs?.src ?? '')
+      if (frame.tag === 'nodyx-audio-player')  return !isAllowedAudioSrcForum(frame.attribs?.src ?? '')
       if (frame.tag === 'a') {
         const href = frame.attribs?.href ?? ''
         try {

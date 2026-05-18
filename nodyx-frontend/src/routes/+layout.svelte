@@ -122,6 +122,10 @@
 
 	onMount(async () => {
 		locale.init()
+
+		// Register <nodyx-audio-player> custom element (idempotent)
+		import('$lib/components/audio/nodyx-audio-player').then(m => m.defineNodyxAudioPlayer())
+
 		if (data.user && data.token && !data.user.is_banned) {
 			// SSR provided a valid session — use it directly (skip if banned)
 			initSocket(data.token, data.unreadCount ?? 0)
