@@ -7,7 +7,7 @@
 ### *"The network is the people."*
 
 **The self-hosted community platform you actually own.**  
-Forum + Chat + Voice + P2P + Canvas + Homepage Builder + Widget SDK — one server, one community, forever.
+Forum + Chat + Voice + P2P + Canvas + Homepage Builder + Widget SDK, one server, one community, forever.
 
 [![Version](https://img.shields.io/badge/version-v2.4.0-7c3aed)](CHANGELOG.md)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
@@ -15,12 +15,13 @@ Forum + Chat + Voice + P2P + Canvas + Homepage Builder + Widget SDK — one serv
 [![Stack](https://img.shields.io/badge/stack-Fastify%20%2B%20SvelteKit%20%2B%20PostgreSQL%20%2B%20Rust-green)](docs/en/ARCHITECTURE.md)
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/Pokled)
 
-<sub>⭐ If Nodyx resonates with you, a star helps others find it — and keeps us going.</sub>
+<sub>⭐ If Nodyx resonates with you, a star helps others find it, and keeps us going.</sub>
 
 </div>
 
 <div align="center">
 
+**[🌐 Discover → start.nodyx.org](https://start.nodyx.org)** &nbsp;·&nbsp;
 **[📖 Documentation → nodyx.dev](https://nodyx.dev)** &nbsp;·&nbsp;
 **[🚀 Live demo → nodyx.org](https://nodyx.org)** &nbsp;·&nbsp;
 <a href="README.md"><img src="https://flagcdn.com/16x12/gb.png" alt="EN"> English</a> · <a href="docs/fr/README.md"><img src="https://flagcdn.com/16x12/fr.png" alt="FR"> Français</a>
@@ -54,7 +55,7 @@ Forum + Chat + Voice + P2P + Canvas + Homepage Builder + Widget SDK — one serv
 </details>
 
 <div align="center">
-  <img src="docs/img/nodyx_home_page.png" alt="Nodyx — Homepage Builder" width="860"/>
+  <img src="docs/img/nodyx_home_page.png" alt="Nodyx, Homepage Builder" width="860"/>
 </div>
 
 ---
@@ -63,7 +64,7 @@ Forum + Chat + Voice + P2P + Canvas + Homepage Builder + Widget SDK — one serv
 
 - **Most communities don't own where they live.** Years of history, knowledge, and memories sit on platforms that can change rules, ban accounts, or disappear. That's not malice, that's how closed systems work by default.
 - **Self-hosting today is fragmented.** Forum, real-time chat, voice, and a public homepage usually mean stitching five separate tools together.
-- **Nodyx ships them in one install** so a community can fully own its presence — text, voice, and homepage — on hardware its admins control.
+- **Nodyx ships them in one install** so a community can fully own its presence, text, voice, and homepage, on hardware its admins control.
 
 One command. Your server. Forever.
 
@@ -71,15 +72,15 @@ One command. Your server. Forever.
 
 | Layer | Technology |
 |---|---|
-| Backend API | **TypeScript** + **Fastify v5** + Socket.IO — `nodyx-core/` |
-| Frontend | **SvelteKit 5** + Tailwind v4 + TipTap editor — `nodyx-frontend/` |
+| Backend API | **TypeScript** + **Fastify v5** + Socket.IO, `nodyx-core/` |
+| Frontend | **SvelteKit 5** + Tailwind v4 + TipTap editor, `nodyx-frontend/` |
 | Database | **PostgreSQL 16** (FTS, migrations) + **Redis 7** (sessions, presence) |
-| Voice relay | **nodyx-turn** — Rust STUN/TURN (replaces coturn, 2.9 MB binary) |
-| P2P tunneling | **nodyx-relay** — Rust TCP tunnel (home server, no open ports) |
+| Voice relay | **nodyx-turn**, Rust STUN/TURN (replaces coturn, 2.9 MB binary) |
+| P2P tunneling | **nodyx-relay**, Rust TCP tunnel (home server, no open ports) |
 | Real-time | WebRTC P2P mesh + Socket.IO fallback |
-| Auth (optional) | **Nodyx Signet** — ECDSA P-256 passwordless PWA — `nodyx-authenticator/` |
+| Auth (optional) | **Nodyx Signet**, ECDSA P-256 passwordless PWA, `nodyx-authenticator/` |
 | Process manager | **PM2** under a dedicated `nodyx` system user |
-| Reverse proxy | **Caddy** — automatic Let's Encrypt TLS |
+| Reverse proxy | **Caddy**, automatic Let's Encrypt TLS |
 
 > **No Docker required.** The installer deploys Node.js + PostgreSQL + Redis + Caddy + PM2 natively. `docker-compose.yml` is provided for local development only.
 
@@ -87,7 +88,7 @@ One command. Your server. Forever.
 
 ## The internet broke something.
 
-Closed platforms ended up holding more conversations than the open web ever did. Not by malice — by default. They were free, easy, and everyone was already there.
+Closed platforms ended up holding more conversations than the open web ever did. Not by malice, by default. They were free, easy, and everyone was already there.
 
 But ten years of discussions, tutorials, and collective knowledge now sit behind login walls. Invisible to search engines. Bound to terms of service written in a Delaware courtroom. Gone when the platform decides.
 
@@ -97,7 +98,7 @@ But ten years of discussions, tutorials, and collective knowledge now sit behind
 
 ## Nodyx gives it back.
 
-One command. Your server. Your rules. Your community — permanently.
+One command. Your server. Your rules. Your community, permanently.
 
 ```bash
 curl -fsSL https://nodyx.org/install.sh | bash
@@ -122,7 +123,7 @@ The community-tools landscape isn't a battle. Each project optimizes for differe
 | **Lemmy** | Federated, Reddit-style threaded forums | If you want a fediverse-native presence |
 | **Nodyx** | Forum + chat + voice + canvas + homepage builder, in one self-hosted install with a P2P relay for home servers | If you want to fully own a multi-format community on your own hardware |
 
-> Nodyx is **the only project** combining all of those formats in a single install — but if you only need one or two, another tool above may fit you better.
+> Nodyx is **the only project** combining all of those formats in a single install, but if you only need one or two, another tool above may fit you better.
 >
 > [Read our honest take, including the alternatives we respect →](https://nodyx.dev/why-nodyx)
 
@@ -130,26 +131,26 @@ The community-tools landscape isn't a battle. Each project optimizes for differe
 
 - Indexed forum (canonical URLs, JSON-LD, sitemap, Google-friendly)
 - Real-time chat with replies, pins, reactions, unfurls
-- P2P voice channels — zero Big Tech relay
+- P2P voice channels, zero Big Tech relay
 - Collaborative P2P canvas (whiteboard)
 - WebRTC DataChannels for instant typing/reactions
-- Home server support — no port forwarding, no domain required
+- Home server support, no port forwarding, no domain required
 - Federated community directory + cross-instance global search
 - Asset library (frames, badges, banners, profile themes)
 - Ephemeral whisper rooms
-- Passwordless login (ECDSA P-256 PWA — Nodyx Signet)
+- Passwordless login (ECDSA P-256 PWA, Nodyx Signet)
 - Collaborative jukebox (YouTube queue)
 - Event calendar (OSM maps, RSVP, SEO)
 - **Homepage Builder** with 11 layout zones, drag & drop
-- **Widget Store** — install external widgets via .zip
-- **Widget SDK** — build custom widgets, no framework needed
-- **OctoGuard** — native auto-mod (regex/word/link/emoji-flood, ReDoS-safe via Google `re2`), welcome bot, custom commands, mutes, signed webhook — all admin-tunable, off by default
+- **Widget Store**, install external widgets via .zip
+- **Widget SDK**, build custom widgets, no framework needed
+- **OctoGuard**, native auto-mod (regex/word/link/emoji-flood, ReDoS-safe via Google `re2`), welcome bot, custom commands, mutes, signed webhook, all admin-tunable, off by default
 
 ---
 
 ## Homepage Builder + Widget SDK
 
-Nodyx ships with a **drag-and-drop Homepage Builder** and a complete **Widget SDK** — two features that no other self-hosted community platform offers.
+Nodyx ships with a **drag-and-drop Homepage Builder** and a complete **Widget SDK**, two features that no other self-hosted community platform offers.
 
 ### 11 layout zones
 
@@ -176,19 +177,19 @@ footer-bar      → full-width footer strip
 | **Join Card** | CTA card for guests, hidden for logged-in members |
 | **Announcement Banner** | Closeable info/warning/error strip with icon |
 
-### Widget Store — install in one click
+### Widget Store, install in one click
 
 Any developer can package a widget as a `.zip` and install it on any Nodyx instance:
 
 ```
 my-widget-1.0.0.zip
 ├── manifest.json     ← id, label, version, schema (config fields)
-└── widget.iife.js    ← Web Component — Shadow DOM isolated
+└── widget.iife.js    ← Web Component, Shadow DOM isolated
 ```
 
 The admin panel handles upload, validation, extraction and activation. No rebuild, no deploy.
 
-### Widget SDK — build your own, zero build tools
+### Widget SDK, build your own, zero build tools
 
 Widgets are standard **Custom Elements** (Web Components). Plain JavaScript, no React, no Vue, no npm.
 
@@ -209,25 +210,25 @@ customElements.define('nodyx-widget-my-widget', MyWidget)
 
 ---
 
-## The P2P Stack — 100% handwritten Rust
+## The P2P Stack, 100% handwritten Rust
 
 This is where Nodyx goes further than anyone else.
 
-### nodyx-turn — Rust STUN/TURN server *(replaces coturn)*
+### nodyx-turn, Rust STUN/TURN server *(replaces coturn)*
 
-coturn is the industry standard — a mature C server used by Signal, Jitsi, Matrix.
+coturn is the industry standard, a mature C server used by Signal, Jitsi, Matrix.
 We replaced it with a **2.9MB Rust binary** that does exactly what Nodyx needs. Nothing more.
 
 ```
 RFC 5389 (STUN) + RFC 5766 (TURN) + RFC 6062 (TURN-over-TCP)
 HMAC-SHA1 time-based credentials (username={expires}:{userId})
-MESSAGE-INTEGRITY on all responses (RFC 5389 §10.3) — Firefox/Chrome compliant
+MESSAGE-INTEGRITY on all responses (RFC 5389 §10.3), Firefox/Chrome compliant
 Rate limiting + allocation quotas (MAX_LIFETIME=300s) + ban map
-tokio async runtime — UDP:3478 + TCP:3478 (VPN/firewall bypass)
+tokio async runtime, UDP:3478 + TCP:3478 (VPN/firewall bypass)
 Zero coturn dependency on production
 ```
 
-### nodyx-relay — Rust P2P TCP tunnel *(no domain, no open ports)*
+### nodyx-relay, Rust P2P TCP tunnel *(no domain, no open ports)*
 
 A Raspberry Pi under your desk. No domain. No router port forwarding. No Cloudflare account.
 Run Nodyx anyway.
@@ -242,22 +243,22 @@ nodyx-relay client  →  persistent TCP tunnel → exposes local port 80
 - Routing by slug: `yourclub.nodyx.org` → proxied to the Pi behind your router
 - Validated on a real Raspberry Pi 4 with zero open ports ✅
 
-### WebRTC DataChannels — P2P without the server
+### WebRTC DataChannels, P2P without the server
 
 Messages between peers that never touch the server.
 
-- **Instant typing indicators** — < 5ms local latency (vs 80–200ms via server)
-- **Optimistic emoji reactions** — appear instantly, server confirms in background
-- **P2P file transfer** — assets shared directly between peers
-- **Graceful fallback** — if DataChannel unavailable (strict NAT), Socket.IO takes over transparently
+- **Instant typing indicators**, < 5ms local latency (vs 80-200ms via server)
+- **Optimistic emoji reactions**, appear instantly, server confirms in background
+- **P2P file transfer**, assets shared directly between peers
+- **Graceful fallback**, if DataChannel unavailable (strict NAT), Socket.IO takes over transparently
 
-### NodyxCanvas — Collaborative whiteboard (v2.2)
+### NodyxCanvas, Collaborative whiteboard (v2.2)
 
 <div align="center">
-  <img src="docs/img/Nodyx_canvas_alternative_Mural.png" alt="NodyxCanvas — collaborative whiteboard" width="860"/>
+  <img src="docs/img/Nodyx_canvas_alternative_Mural.png" alt="NodyxCanvas, collaborative whiteboard" width="860"/>
 </div>
 
-Draw, annotate, and build together in real time — directly inside voice channels.
+Draw, annotate, and build together in real time, directly inside voice channels.
 Synced via Socket.IO CRDT. Every op is persistent (PostgreSQL JSONB snapshot).
 
 ```
@@ -273,47 +274,47 @@ Board-scoped chat (independent from the voice channel chat)
 | Tool | Key | Description |
 |---|---|---|
 | Select | V | Move + resize with 8 handles (corners + midpoints) |
-| Pen | P | Freehand drawing — color, width, opacity |
-| Text | T | Rich inline text — bold/italic/underline/strike, align, font, size |
-| Sticky | N | Post-it note — 8 colors, multiline |
+| Pen | P | Freehand drawing, color, width, opacity |
+| Text | T | Rich inline text, bold/italic/underline/strike, align, font, size |
+| Sticky | N | Post-it note, 8 colors, multiline |
 | Rect / Circle | R / C | Fill + stroke with independent colors and width |
-| Shape | S | Advanced shapes — triangle, diamond, star, hexagon, cloud |
-| Arrow | A | Styled arrows — solid/dashed/dotted, 3 cap types |
-| Connector | X | Smart connectors — straight/bezier/elbow, independent start+end caps |
+| Shape | S | Advanced shapes, triangle, diamond, star, hexagon, cloud |
+| Arrow | A | Styled arrows, solid/dashed/dotted, 3 cap types |
+| Connector | X | Smart connectors, straight/bezier/elbow, independent start+end caps |
 | Image | I | Drag & drop or file picker → uploaded to `/assets`, rendered on canvas |
-| Frame | F | Named section — label + dashed border, groups elements visually |
+| Frame | F | Named section, label + dashed border, groups elements visually |
 | Eraser | E | Point eraser |
 
 **Canvas features:**
-- Undo / Redo — 50-op stack per session, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z
-- Snap to grid — 28px world grid, toggleable (G)
-- Zoom — Ctrl+Scroll, pinch, or toolbar buttons (5% → 1000%)
-- Pan — Space+drag or middle-click drag
-- Minibar bottom — zoom %, grid toggle, snap toggle
-- Export PNG — downloads full canvas, posts recap to chat channel
+- Undo / Redo, 50-op stack per session, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z
+- Snap to grid, 28px world grid, toggleable (G)
+- Zoom, Ctrl+Scroll, pinch, or toolbar buttons (5% → 1000%)
+- Pan, Space+drag or middle-click drag
+- Minibar bottom, zoom %, grid toggle, snap toggle
+- Export PNG, downloads full canvas, posts recap to chat channel
 
 ---
 
 ## Screenshots
 
-<div align="center"><sub>Community · Builder · Admin · Features — all running on a single install</sub></div>
+<div align="center"><sub>Community · Builder · Admin · Features, all running on a single install</sub></div>
 
 <br/>
 
-<div align="center"><b>— Community Experience —</b></div>
+<div align="center"><b>,  Community Experience , </b></div>
 
 <table>
   <tr>
-    <td align="center"><b>Homepage — Grid Builder</b></td>
+    <td align="center"><b>Homepage, Grid Builder</b></td>
     <td align="center"><b>Forum</b></td>
   </tr>
   <tr>
     <td><img src="docs/img/nodyx_home_page.png" alt="Homepage with Grid Builder widgets" width="460"/></td>
-    <td><img src="docs/img/Nodyx_Forum.png" alt="Forum — categories, threads, rich editor" width="460"/></td>
+    <td><img src="docs/img/Nodyx_Forum.png" alt="Forum, categories, threads, rich editor" width="460"/></td>
   </tr>
   <tr>
     <td align="center"><b>Real-time Chat</b></td>
-    <td align="center"><b>Voice Channels — P2P WebRTC</b></td>
+    <td align="center"><b>Voice Channels, P2P WebRTC</b></td>
   </tr>
   <tr>
     <td><img src="docs/img/Nodyx_chat.png" alt="Real-time text chat" width="460"/></td>
@@ -325,11 +326,11 @@ Board-scoped chat (independent from the voice channel chat)
 
 <div align="center">
 
-<b>— Homepage Builder —</b>
+<b>,  Homepage Builder , </b>
 
-<img src="docs/img/Nodyx_grid_builder_home_page_website.png" alt="Homepage Builder — drag & drop, 11 zones, live preview" width="940"/>
+<img src="docs/img/Nodyx_grid_builder_home_page_website.png" alt="Homepage Builder, drag & drop, 11 zones, live preview" width="940"/>
 
-<sub>Drag-and-drop grid editor — 11 layout zones, live preview, per-widget audience rules and scheduling</sub>
+<sub>Drag-and-drop grid editor, 11 layout zones, live preview, per-widget audience rules and scheduling</sub>
 
 </div>
 
@@ -337,23 +338,23 @@ Board-scoped chat (independent from the voice channel chat)
 
 <table>
   <tr>
-    <td align="center"><b>Widget Store — install via .zip</b></td>
+    <td align="center"><b>Widget Store, install via .zip</b></td>
     <td align="center"><b>Module Management</b></td>
   </tr>
   <tr>
-    <td><img src="docs/img/widget_store_nodyx.png" alt="Widget Store — one-click .zip install" width="460"/></td>
-    <td><img src="docs/img/Nodyx_gestion_des_modules.png" alt="Module management — 26 activatable modules" width="460"/></td>
+    <td><img src="docs/img/widget_store_nodyx.png" alt="Widget Store, one-click .zip install" width="460"/></td>
+    <td><img src="docs/img/Nodyx_gestion_des_modules.png" alt="Module management, 26 activatable modules" width="460"/></td>
   </tr>
 </table>
 
 <br/>
 
-<div align="center"><b>— Features —</b></div>
+<div align="center"><b>,  Features , </b></div>
 
 <table>
   <tr>
     <td align="center"><b>Cross-Instance Search</b></td>
-    <td align="center"><b>Polls — Forum & Chat</b></td>
+    <td align="center"><b>Polls, Forum & Chat</b></td>
   </tr>
   <tr>
     <td><img src="docs/img/Nodyx_Moteur_de_recherche_inter_reseau.png" alt="Cross-instance federated search engine" width="460"/></td>
@@ -365,7 +366,7 @@ Board-scoped chat (independent from the voice channel chat)
   </tr>
   <tr>
     <td><img src="docs/img/Nodyx_wiki.png" alt="Community wiki" width="460"/></td>
-    <td><img src="docs/img/Asset_nodyx.png" alt="Asset library — frames, badges, banners" width="460"/></td>
+    <td><img src="docs/img/Asset_nodyx.png" alt="Asset library, frames, badges, banners" width="460"/></td>
   </tr>
 </table>
 
@@ -387,7 +388,7 @@ apt-get install -y git curl
 | Total RAM | nodyx-core | nodyx-frontend | Auto-swap | Works on |
 |---|---|---|---|---|
 | < 1.5 GB | 256 MB | 192 MB | 2 GB created | Raspberry Pi 1 GB |
-| 1.5 – 3 GB | 384 MB | 256 MB | 1 GB if needed | RPi 4 / small VPS |
+| 1.5 - 3 GB | 384 MB | 256 MB | 1 GB if needed | RPi 4 / small VPS |
 | ≥ 3 GB | 512 MB | 512 MB | 1 GB if needed | Standard VPS ⭐ |
 
 > Raspberry Pi: use a **64-bit OS** (Raspberry Pi OS 64-bit or Ubuntu ARM64). 32-bit is not supported.
@@ -408,11 +409,11 @@ The installer offers **three network modes**:
 
 | Mode | Requirements | Result |
 |---|---|---|
-| **Nodyx Relay** ⭐ | Nothing — outbound TCP only | `yourclub.nodyx.org` in minutes |
+| **Nodyx Relay** ⭐ | Nothing, outbound TCP only | `yourclub.nodyx.org` in minutes |
 | **Open ports** | Ports 80 + 443, domain or IP | Let's Encrypt HTTPS, full control |
 | **Cloudflare Tunnel** | CF account + own domain | Your custom domain, no open ports |
 
-> **Nodyx Relay** is the recommended default — works on a Raspberry Pi behind a home router.
+> **Nodyx Relay** is the recommended default, works on a Raspberry Pi behind a home router.
 > No domain. No port forwarding. No cloud account. Just run the script.
 
 Installs automatically: **Node.js 20, PostgreSQL 16, Redis 7, Caddy (HTTPS), PM2, nodyx-turn** (Rust STUN/TURN).  
@@ -431,7 +432,7 @@ cd /var/www/nexus && git pull && \
   cd ../nodyx-frontend && npm run build && sudo -u nodyx pm2 restart nodyx-frontend
 ```
 
-Database migrations are applied automatically on startup — no manual SQL needed.
+Database migrations are applied automatically on startup, no manual SQL needed.
 
 ---
 
@@ -444,18 +445,18 @@ nodyx/
 ├── nodyx-core/          → Fastify v5 + TypeScript REST API, Socket.IO, DB migrations
 ├── nodyx-frontend/      → SvelteKit 5 + Tailwind v4 SPA (SSR + client hydration)
 ├── nodyx-p2p/           → Rust workspace: nodyx-relay (TCP tunnel) + nexus-turn (STUN/TURN)
-├── nodyx-authenticator/ → Nodyx Signet — ECDSA P-256 passwordless auth PWA (SvelteKit 5)
-├── nodyx-hub/           → Olympus Hub — internal admin dashboard (SvelteKit 5)
+├── nodyx-authenticator/ → Nodyx Signet, ECDSA P-256 passwordless auth PWA (SvelteKit 5)
+├── nodyx-hub/           → Olympus Hub, internal admin dashboard (SvelteKit 5)
 ├── nodyx-docs/          → nodyx.dev documentation site (SvelteKit 5)
-├── docs/                → Markdown docs (EN + FR) — served by nodyx-docs
+├── docs/                → Markdown docs (EN + FR), served by nodyx-docs
 ├── install.sh           → One-click installer (Node + PG + Redis + Caddy + PM2, no Docker)
 ├── ecosystem.config.js  → PM2 process config (production)
-└── docker-compose.yml   → Local development only — not used in production installs
+└── docker-compose.yml   → Local development only, not used in production installs
 ```
 
-### Federation — how it works
+### Federation, how it works
 
-Each Nodyx instance runs a **Gossip Protocol** scheduler that periodically pings the central directory (`nodyx.org/api/directory`). Instances share their public metadata (name, slug, URL, member count) and are discoverable via the `/discover` page on any instance. Events (calendar) federate across instances through the same gossip mechanism. There is no dependency on ActivityPub — the protocol is intentionally minimal and self-contained.
+Each Nodyx instance runs a **Gossip Protocol** scheduler that periodically pings the central directory (`nodyx.org/api/directory`). Instances share their public metadata (name, slug, URL, member count) and are discoverable via the `/discover` page on any instance. Events (calendar) federate across instances through the same gossip mechanism. There is no dependency on ActivityPub, the protocol is intentionally minimal and self-contained.
 
 ### Runtime diagram
 
@@ -480,27 +481,27 @@ Each Nodyx instance runs a **Gossip Protocol** scheduler that periodically pings
 
 | Layer | Technology |
 |---|---|
-| API | TypeScript + Fastify v5 — `nodyx-core/` |
-| Database | PostgreSQL 16 · 53 migrations — automatic on startup |
-| Cache / Sessions | Redis 7 — JWT sessions, presence, rate-limiting |
-| Full-text search | PostgreSQL FTS (tsvector + GIN) — cross-instance via Gossip |
-| Frontend | SvelteKit 5 + Tailwind v4 — `nodyx-frontend/` |
+| API | TypeScript + Fastify v5, `nodyx-core/` |
+| Database | PostgreSQL 16 · 53 migrations, automatic on startup |
+| Cache / Sessions | Redis 7, JWT sessions, presence, rate-limiting |
+| Full-text search | PostgreSQL FTS (tsvector + GIN), cross-instance via Gossip |
+| Frontend | SvelteKit 5 + Tailwind v4, `nodyx-frontend/` |
 | Editor | TipTap (WYSIWYG) |
 | Real-time | Socket.IO (polling-first, WebSocket upgrade) |
-| Voice | WebRTC P2P mesh — no central audio relay |
-| TURN relay | **nodyx-turn** — Rust 2.9 MB, replaces coturn |
-| P2P relay | **nodyx-relay** — Rust TCP tunnel, runs on home servers |
-| Collaborative canvas | **NodyxCanvas** — CRDT LWW, Socket.IO sync, 11 tools, resize handles, undo/redo |
-| Homepage | **Homepage Builder** — 11 zones, drag & drop, visibility rules |
-| Widgets | **Widget Store** — .zip install + **Widget SDK** (Web Components) |
-| Passwordless auth | **Nodyx Signet** — ECDSA P-256 PWA — `nodyx-authenticator/` |
+| Voice | WebRTC P2P mesh, no central audio relay |
+| TURN relay | **nodyx-turn**, Rust 2.9 MB, replaces coturn |
+| P2P relay | **nodyx-relay**, Rust TCP tunnel, runs on home servers |
+| Collaborative canvas | **NodyxCanvas**, CRDT LWW, Socket.IO sync, 11 tools, resize handles, undo/redo |
+| Homepage | **Homepage Builder**, 11 zones, drag & drop, visibility rules |
+| Widgets | **Widget Store**, .zip install + **Widget SDK** (Web Components) |
+| Passwordless auth | **Nodyx Signet**, ECDSA P-256 PWA, `nodyx-authenticator/` |
 
 ---
 
 ## What's built. What's coming.
 
 <details>
-<summary><b>v0.1 → v1.3 — Foundation</b></summary>
+<summary><b>v0.1 → v1.3, Foundation</b></summary>
 
 | Feature | Version |
 |---|---|
@@ -513,169 +514,169 @@ Each Nodyx instance runs a **Gossip Protocol** scheduler that periodically pings
 | SEO (sitemap, RSS, JSON-LD) | v0.3 |
 | One-click installer | v0.4 |
 | Instance directory + auto DNS | v0.5 |
-| nodyx-relay — Rust P2P TCP tunnel | v0.5 |
+| nodyx-relay, Rust P2P TCP tunnel | v0.5 |
 | Community asset library (frames, banners, badges) | v0.6 |
-| Feature Garden — community voting | v0.6 |
+| Feature Garden, community voting | v0.6 |
 | Federated asset directory (cross-instance sharing) | v0.7 |
-| Whispers — ephemeral encrypted chat rooms (1h TTL) | v0.7 |
-| P2P DataChannels — instant typing, optimistic reactions | v0.8 |
-| nodyx-turn — Rust STUN/TURN replacing coturn | v0.9 |
-| NodyxCanvas — collaborative P2P whiteboard | v0.9 |
-| Profile theme system — 6 presets, per-user app-wide CSS engine | v1.0 |
+| Whispers, ephemeral encrypted chat rooms (1h TTL) | v0.7 |
+| P2P DataChannels, instant typing, optimistic reactions | v0.8 |
+| nodyx-turn, Rust STUN/TURN replacing coturn | v0.9 |
+| NodyxCanvas, collaborative P2P whiteboard | v0.9 |
+| Profile theme system, 6 presets, per-user app-wide CSS engine | v1.0 |
 | Mobile-responsive UI | v1.0 |
-| Chat — Reply/quote, pinned messages, link previews, @mention badge | v1.1 |
-| Presence — Custom status + offline members list | v1.1 |
-| Direct Messages (DMs) — private 1:1 conversations | v1.2 |
-| Polls — in chat and forum, 3 types, real-time results | v1.2 |
-| Ban system — IP ban, email ban, multi-layer enforcement | v1.2 |
-| nodyx-turn — TURN-over-TCP (RFC 6062) | v1.3 |
-| Voice — Relay failover + Opus tuning | v1.3 |
+| Chat, Reply/quote, pinned messages, link previews, @mention badge | v1.1 |
+| Presence, Custom status + offline members list | v1.1 |
+| Direct Messages (DMs), private 1:1 conversations | v1.2 |
+| Polls, in chat and forum, 3 types, real-time results | v1.2 |
+| Ban system, IP ban, email ban, multi-layer enforcement | v1.2 |
+| nodyx-turn, TURN-over-TCP (RFC 6062) | v1.3 |
+| Voice, Relay failover + Opus tuning | v1.3 |
 
 </details>
 
 <details>
-<summary><b>v1.4 → v1.9 — Security & Polish</b></summary>
+<summary><b>v1.4 → v1.9, Security & Polish</b></summary>
 
 | Feature | Version |
 |---|---|
 | Thread slug URLs + full SEO (canonical, OG, JSON-LD, sitemap) | v1.4 |
 | Category slugs + subcategories | v1.5 |
-| Global Search — cross-instance FTS index, /discover UI | v1.5 |
-| Event Calendar — CRUD, RSVP, OSM maps, cover image, rich snippets | v1.6 |
-| Gossip Protocol — event federation across instances | v1.6 |
-| Nodyx Signet — passwordless ECDSA P-256 auth PWA | v1.7 |
+| Global Search, cross-instance FTS index, /discover UI | v1.5 |
+| Event Calendar, CRUD, RSVP, OSM maps, cover image, rich snippets | v1.6 |
+| Gossip Protocol, event federation across instances | v1.6 |
+| Nodyx Signet, passwordless ECDSA P-256 auth PWA | v1.7 |
 | QR enrollment + Optimistic UI + Notification center | v1.7 |
-| Tasks / Kanban — per-community boards, drag & drop, deadlines | v1.8 |
+| Tasks / Kanban, per-community boards, drag & drop, deadlines | v1.8 |
 | Update alert + Instance version display | v1.8 |
-| Full paranoid security audit — 38 vulnerabilities fixed | v1.8.2 |
-| Honeypot — 25+ scanner paths trapped; tarpit; geolocation; DB logging | v1.9.0 |
-| fail2ban — 5 jails: SSH, brute force, honeypot (7d), permanent blacklist | v1.9.0 |
-| Argon2id — OWASP 2026 password hashing | v1.9.0 |
+| Full paranoid security audit, 38 vulnerabilities fixed | v1.8.2 |
+| Honeypot, 25+ scanner paths trapped; tarpit; geolocation; DB logging | v1.9.0 |
+| fail2ban, 5 jails: SSH, brute force, honeypot (7d), permanent blacklist | v1.9.0 |
+| Argon2id, OWASP 2026 password hashing | v1.9.0 |
 | 2FA TOTP (RFC 6238) + 2FA via Nodyx Signet | v1.9.1 |
 | Credential harvesting traps + Canary files + Canvas fingerprint | v1.9.2 |
-| Slowloris inverse — byte-by-byte streaming burns attacker threads 45–90s | v1.9.2 |
+| Slowloris inverse, byte-by-byte streaming burns attacker threads 45-90s | v1.9.2 |
 | Olympus Hub security dashboard | v1.9.2 |
-| Process isolation — all processes under `nodyx` system user | v1.9.4 |
+| Process isolation, all processes under `nodyx` system user | v1.9.4 |
 | 181 Node.js tests + 18 Rust unit tests + CI pipeline | v1.9.4 |
-| Living Profile — Generative banner (Lissajous/FNV-1a), Reputation rings (SVG animated), Activity heatmap | v1.9.5 |
+| Living Profile, Generative banner (Lissajous/FNV-1a), Reputation rings (SVG animated), Activity heatmap | v1.9.5 |
 | Parallax hero, rotating avatar arcs, Timeline, `/reputation` transparent formulas | v1.9.5 |
-| Forum redesign — flat design, zero radius, full-width content | v1.9.5 |
+| Forum redesign, flat design, zero radius, full-width content | v1.9.5 |
 
 </details>
 
 <details>
-<summary><b>v2.0 — Private & Sovereign Communications 🔒</b></summary>
+<summary><b>v2.0, Private & Sovereign Communications 🔒</b></summary>
 
 | Feature | Version |
 |---|---|
-| **DM E2E encryption** — ECDH P-256 + AES-256-GCM, private key never leaves the browser (IndexedDB non-extractable) | v2.0 |
-| **ESY Barbare layer** — per-instance byte-permutation obfuscation on top of AES-GCM, server sees only opaque ciphertext | v2.0 |
-| **E2E shield** — live indicator in DM header (green pulse = active, orange = partial), ESY fingerprint tooltip | v2.0 |
-| **Barbarize animation** — sender sees obfuscated text during encryption, receiver sees it decipher in real-time | v2.0 |
-| **DM message edit** — inline edit with re-encryption for E2E messages, real-time propagation via socket | v2.0 |
-| **DM message delete** — real-time soft-delete propagated to all participants instantly | v2.0 |
-| **DM full-width redesign** — split layout, glassmorphism sidebar, iMessage-style bubbles, grouped messages | v2.0 |
-| **AudioContext shared** — single context for all peer VAD (Chrome 6-context limit fix) | v2.0 |
+| **DM E2E encryption**, ECDH P-256 + AES-256-GCM, private key never leaves the browser (IndexedDB non-extractable) | v2.0 |
+| **ESY Barbare layer**, per-instance byte-permutation obfuscation on top of AES-GCM, server sees only opaque ciphertext | v2.0 |
+| **E2E shield**, live indicator in DM header (green pulse = active, orange = partial), ESY fingerprint tooltip | v2.0 |
+| **Barbarize animation**, sender sees obfuscated text during encryption, receiver sees it decipher in real-time | v2.0 |
+| **DM message edit**, inline edit with re-encryption for E2E messages, real-time propagation via socket | v2.0 |
+| **DM message delete**, real-time soft-delete propagated to all participants instantly | v2.0 |
+| **DM full-width redesign**, split layout, glassmorphism sidebar, iMessage-style bubbles, grouped messages | v2.0 |
+| **AudioContext shared**, single context for all peer VAD (Chrome 6-context limit fix) | v2.0 |
 
 </details>
 
 <details open>
-<summary><b>v2.6 — OctoGuard Phase 1: native auto-moderation 🐙</b></summary>
+<summary><b>v2.6, OctoGuard Phase 1: native auto-moderation 🐙</b></summary>
 
 | Feature | Version |
 |---|---|
-| **OctoGuard auto-mod pipeline** — 50 ms fail-open, 5 matcher types: substring, word-boundary, regex, link allow/blocklist, emoji-flood. ReDoS-safe via Google `re2` linear-time engine (84 s native vs 0 ms `re2` confirmed in bench) plus `safe-regex` heuristic on pattern admission | v2.6 |
-| **6 actions** — `delete`, `warn`, `mute_timed`, `kick`, `ban` (with optional `community_bans.expires_at` for temporary bans), `report_only` dry-run | v2.6 |
-| **Welcome flow** — ghost `OctoGuard` bot user (`users.is_system=true`, login refused), public message with `{user}` / `{userMention}` / `{communityName}` variables, optional auto-grade on join. DM system message reserved for spec 019 | v2.6 |
-| **Custom commands** — `!règles`, `!discord`, ... in markdown, Redis-backed per-channel cooldown (SET NX EX), allowed channels and roles configurable per command | v2.6 |
-| **Chat mutes** — new `chat_mutes` table, global or per-channel scope, free-form duration (`15m`, `2h`, `1w`, permanent), Redis-cached 60 s, background purge worker | v2.6 |
-| **Reports queue** — member-driven, anti-abuse rate limit per reporter + cooldown per target via Redis, admin inbox with mute/delete/dismiss actions | v2.6 |
-| **HMAC-SHA256 webhook** — outbound POST signed with `X-Octoguard-Signature: sha256=hex`, queued in Redis, worker fires async with 10 s timeout. The chat pipeline never pays the webhook latency | v2.6 |
-| **Audit log** — every action persisted to `admin_audit_log` with `event_id`, action type, target, metadata. Logger is fire-and-forget IIFE (caught by pre-emptive bench: p95 dropped from 13 ms to 0.2 ms after switching from `await` to fire-and-forget) | v2.6 |
-| **Admin UI** — `/admin/octoguard` with 8 tabs: overview, automod, welcome, commands, mutes, reports, logs, webhook. All CRUD with optimistic `enhance` forms | v2.6 |
-| **Kill-switch** — `OCTOGUARD_ENABLED=false` bypasses the entire pipeline. Rules table empty equals zero impact even when enabled — progressive rollout pattern | v2.6 |
-| **69 vitest tests** — `octoguard-matchers`, `octoguard-commands`, `octoguard-session-c` covering matchers, `assessPatternSafety`, `durationToExpiresAt`, `substituteVariables`, mutes, env migration | v2.6 |
-| **`bench.ts`** — dedicated performance benchmark proves p95 < 1 ms under load, caught the logger bottleneck before activation | v2.6 |
+| **OctoGuard auto-mod pipeline**, 50 ms fail-open, 5 matcher types: substring, word-boundary, regex, link allow/blocklist, emoji-flood. ReDoS-safe via Google `re2` linear-time engine (84 s native vs 0 ms `re2` confirmed in bench) plus `safe-regex` heuristic on pattern admission | v2.6 |
+| **6 actions**, `delete`, `warn`, `mute_timed`, `kick`, `ban` (with optional `community_bans.expires_at` for temporary bans), `report_only` dry-run | v2.6 |
+| **Welcome flow**, ghost `OctoGuard` bot user (`users.is_system=true`, login refused), public message with `{user}` / `{userMention}` / `{communityName}` variables, optional auto-grade on join. DM system message reserved for spec 019 | v2.6 |
+| **Custom commands**, `!règles`, `!discord`, ... in markdown, Redis-backed per-channel cooldown (SET NX EX), allowed channels and roles configurable per command | v2.6 |
+| **Chat mutes**, new `chat_mutes` table, global or per-channel scope, free-form duration (`15m`, `2h`, `1w`, permanent), Redis-cached 60 s, background purge worker | v2.6 |
+| **Reports queue**, member-driven, anti-abuse rate limit per reporter + cooldown per target via Redis, admin inbox with mute/delete/dismiss actions | v2.6 |
+| **HMAC-SHA256 webhook**, outbound POST signed with `X-Octoguard-Signature: sha256=hex`, queued in Redis, worker fires async with 10 s timeout. The chat pipeline never pays the webhook latency | v2.6 |
+| **Audit log**, every action persisted to `admin_audit_log` with `event_id`, action type, target, metadata. Logger is fire-and-forget IIFE (caught by pre-emptive bench: p95 dropped from 13 ms to 0.2 ms after switching from `await` to fire-and-forget) | v2.6 |
+| **Admin UI**, `/admin/octoguard` with 8 tabs: overview, automod, welcome, commands, mutes, reports, logs, webhook. All CRUD with optimistic `enhance` forms | v2.6 |
+| **Kill-switch**, `OCTOGUARD_ENABLED=false` bypasses the entire pipeline. Rules table empty equals zero impact even when enabled, progressive rollout pattern | v2.6 |
+| **69 vitest tests**, `octoguard-matchers`, `octoguard-commands`, `octoguard-session-c` covering matchers, `assessPatternSafety`, `durationToExpiresAt`, `substituteVariables`, mutes, env migration | v2.6 |
+| **`bench.ts`**, dedicated performance benchmark proves p95 < 1 ms under load, caught the logger bottleneck before activation | v2.6 |
 
 </details>
 
 <details>
-<summary><b>v2.4 — Backup System + Live Maintenance Mode 💾</b></summary>
+<summary><b>v2.4, Backup System + Live Maintenance Mode 💾</b></summary>
 
 | Feature | Version |
 |---|---|
-| **Backup admin UI** — `/admin/backups` page with storage indicator, table of archives, per-row Download / Verify / Restore / Delete actions, sidebar shortcut 💾 | v2.4 |
-| **Create backup** — `pg_dump --format=custom --compress=9` + `tar -czf`, SHA-256 checksum, manifest with stats. Toggle to include or exclude uploaded files | v2.4 |
-| **Restore with safety net** — atomic `pg_restore --single-transaction --clean --if-exists`, automatic pre-restore snapshot protected for 24h (rollback in one click), type-to-confirm slug + 5s countdown, ordered list of steps shown in the modal | v2.4 |
-| **Dry-run** — verify checksum + format-version compat + tar structure without touching DB or filesystem. Result inline (✓ restorable / ✗ exact error). Audited as `metadata.dry_run = true` | v2.4 |
-| **Verify** — recompute SHA-256 + check archive structure on demand, badge visible on the row | v2.4 |
-| **Audit log** — every sensitive action (create / restore / download / delete / verify / settings) logged with user + IP + user-agent. Standalone `/admin/backups/audit` page, indexed for post-compromise forensics | v2.4 |
-| **Reindex** — `POST /admin/backups/reindex` scans the directory, parses each `.tar.gz` manifest in-memory, INSERTs missing rows. Recovery for orphan archives | v2.4 |
-| **Live Maintenance Mode** — Redis flag `nodyx:maintenance:meta` set during create/restore. Global `onRequest` hook returns 503 on writes (registration, posts, uploads) with a structured payload. Reads, admin endpoints and Socket.IO stay open. Auto-clear with safety belt (30 min create, 60 min restore) | v2.4 |
-| **Maintenance banner** — sticky amber banner at the top of every page when active, polled every 15 s. *"🛠️ Sauvegarde en cours, les nouvelles inscriptions et publications sont temporairement désactivées"* | v2.4 |
-| **System tables excluded from dump** — `backups`, `backup_audit_log`, `backup_settings`, `schema_migrations` are never inside an archive, so a restore can't wipe its own safety net. Discovered live during the first prod test (see [The Yannick Story](CHANGELOG.md#the-yannick-story) in CHANGELOG) | v2.4 |
-| **Redis lock with Lua release** — `backup:lock` (NX EX 3600) prevents concurrent backups or backup-during-restore. Released atomically via Lua so a process can never delete a lock owned by someone else | v2.4 |
-| **`path.basename()` on download** — defuses path traversal attempts on the filename param | v2.4 |
-| **13 vitest tests** — service-level invariants (path traversal, retention clamps, format-version refusal, protected-bypass), 194 total, 0 regression | v2.4 |
+| **Backup admin UI**, `/admin/backups` page with storage indicator, table of archives, per-row Download / Verify / Restore / Delete actions, sidebar shortcut 💾 | v2.4 |
+| **Create backup**, `pg_dump --format=custom --compress=9` + `tar -czf`, SHA-256 checksum, manifest with stats. Toggle to include or exclude uploaded files | v2.4 |
+| **Restore with safety net**, atomic `pg_restore --single-transaction --clean --if-exists`, automatic pre-restore snapshot protected for 24h (rollback in one click), type-to-confirm slug + 5s countdown, ordered list of steps shown in the modal | v2.4 |
+| **Dry-run**, verify checksum + format-version compat + tar structure without touching DB or filesystem. Result inline (✓ restorable / ✗ exact error). Audited as `metadata.dry_run = true` | v2.4 |
+| **Verify**, recompute SHA-256 + check archive structure on demand, badge visible on the row | v2.4 |
+| **Audit log**, every sensitive action (create / restore / download / delete / verify / settings) logged with user + IP + user-agent. Standalone `/admin/backups/audit` page, indexed for post-compromise forensics | v2.4 |
+| **Reindex**, `POST /admin/backups/reindex` scans the directory, parses each `.tar.gz` manifest in-memory, INSERTs missing rows. Recovery for orphan archives | v2.4 |
+| **Live Maintenance Mode**, Redis flag `nodyx:maintenance:meta` set during create/restore. Global `onRequest` hook returns 503 on writes (registration, posts, uploads) with a structured payload. Reads, admin endpoints and Socket.IO stay open. Auto-clear with safety belt (30 min create, 60 min restore) | v2.4 |
+| **Maintenance banner**, sticky amber banner at the top of every page when active, polled every 15 s. *"🛠️ Sauvegarde en cours, les nouvelles inscriptions et publications sont temporairement désactivées"* | v2.4 |
+| **System tables excluded from dump**, `backups`, `backup_audit_log`, `backup_settings`, `schema_migrations` are never inside an archive, so a restore can't wipe its own safety net. Discovered live during the first prod test (see [The Yannick Story](CHANGELOG.md#the-yannick-story) in CHANGELOG) | v2.4 |
+| **Redis lock with Lua release**, `backup:lock` (NX EX 3600) prevents concurrent backups or backup-during-restore. Released atomically via Lua so a process can never delete a lock owned by someone else | v2.4 |
+| **`path.basename()` on download**, defuses path traversal attempts on the filename param | v2.4 |
+| **13 vitest tests**, service-level invariants (path traversal, retention clamps, format-version refusal, protected-bypass), 194 total, 0 regression | v2.4 |
 | **Spec promoted** to `docs/specs/014-backup-system/SPEC.MD`, indexed by nodyx.dev | v2.4 |
 
 </details>
 
 <details>
-<summary><b>v2.3 — Universal Media Player + Builder Catalog Fusion 🎬</b></summary>
+<summary><b>v2.3, Universal Media Player + Builder Catalog Fusion 🎬</b></summary>
 
 | Feature | Version |
 |---|---|
-| **Universal Media Player** — auto-detects YouTube, Vimeo, Dailymotion, Twitch (live / VOD / clip), SoundCloud, Spotify, plus direct `.mp4` / `.webm` / `.mp3` hosted files. Single URL field, platform inferred at render time | v2.3 |
-| **Builder catalog fusion** — installed widgets now appear in the Grid Builder picker next to native plugins. New `CatalogEntry` aggregation layer with `checkbox → boolean` field type canonicalization | v2.3 |
-| **Tunnel installer hardening (#23)** — 12 fixes for Pangolin mode: Caddy site-address `:80 { bind ... }` rewrite (Host filter root cause), atomic Caddyfile regen on `--repair`, UFW RFC1918 rules, doctor false-positive gate | v2.3 |
-| **nodyx-doctor** — Method A (`--network host`) no longer triggers a misleading "LAN IP not bound" warning | v2.3 |
-| **nodyx-relay v0.1.4** — TCP keepalive + read deadline to detect dead sessions | v2.3 |
-| **Doc search rewrite** — heading-aware index with deep-link anchors, scrollspy TOC sidebar, slug correctness pass (108 broken TOC links + 60 leading-dash ids cleaned) | v2.3 |
-| **Why-Nodyx posture** — new positioning page listing alternative platforms (Matrix, Stoat, Fluxer, Haven, ...), README aligned, "silos vs liberty, not Nodyx vs X" framing | v2.3 |
-| **i18n** — German (`de.json`) + Spanish (`es.json`) translations, native review for both | v2.3 |
-| **Homepage Builder polish** — Twitch stream + Articles showcase widgets, clickable `(?)` info panel on field labels | v2.3 |
-| **Voice kick** — owners, admins and moderators can remove a user from a voice channel | v2.3 |
-| **Community Pulse** — co-presence trail and wave visualization page | v2.3 |
-| **Nodyx Stars** — proper recognition system for external contributors with public CONTRIBUTORS.md, avatar block in README, polish-trail transparency | v2.3 |
+| **Universal Media Player**, auto-detects YouTube, Vimeo, Dailymotion, Twitch (live / VOD / clip), SoundCloud, Spotify, plus direct `.mp4` / `.webm` / `.mp3` hosted files. Single URL field, platform inferred at render time | v2.3 |
+| **Builder catalog fusion**, installed widgets now appear in the Grid Builder picker next to native plugins. New `CatalogEntry` aggregation layer with `checkbox → boolean` field type canonicalization | v2.3 |
+| **Tunnel installer hardening (#23)**, 12 fixes for Pangolin mode: Caddy site-address `:80 { bind ... }` rewrite (Host filter root cause), atomic Caddyfile regen on `--repair`, UFW RFC1918 rules, doctor false-positive gate | v2.3 |
+| **nodyx-doctor**, Method A (`--network host`) no longer triggers a misleading "LAN IP not bound" warning | v2.3 |
+| **nodyx-relay v0.1.4**, TCP keepalive + read deadline to detect dead sessions | v2.3 |
+| **Doc search rewrite**, heading-aware index with deep-link anchors, scrollspy TOC sidebar, slug correctness pass (108 broken TOC links + 60 leading-dash ids cleaned) | v2.3 |
+| **Why-Nodyx posture**, new positioning page listing alternative platforms (Matrix, Stoat, Fluxer, Haven, ...), README aligned, "silos vs liberty, not Nodyx vs X" framing | v2.3 |
+| **i18n**, German (`de.json`) + Spanish (`es.json`) translations, native review for both | v2.3 |
+| **Homepage Builder polish**, Twitch stream + Articles showcase widgets, clickable `(?)` info panel on field labels | v2.3 |
+| **Voice kick**, owners, admins and moderators can remove a user from a voice channel | v2.3 |
+| **Community Pulse**, co-presence trail and wave visualization page | v2.3 |
+| **Nodyx Stars**, proper recognition system for external contributors with public CONTRIBUTORS.md, avatar block in README, polish-trail transparency | v2.3 |
 
 </details>
 
 <details>
-<summary><b>v2.2 — NodyxCanvas major upgrade 🎨</b></summary>
+<summary><b>v2.2, NodyxCanvas major upgrade 🎨</b></summary>
 
 | Feature | Version |
 |---|---|
-| **Canvas UI refactor** — 4 dedicated components: CanvasLeftToolbar, CanvasTopBar (contextual per tool), CanvasBottomBar, CanvasRightPanel | v2.2 |
-| **Undo / Redo** — 50-op stack, Ctrl+Z/Y/Shift+Z, buttons with active/disabled state. Fixed CRDT LWW timestamp so undo always applies | v2.2 |
-| **Snap to grid** — 28px world grid, toggle (G key), visual grid overlay | v2.2 |
-| **Rich text** — bold, italic, underline, strikethrough, alignment (left/center/right), 3 font families (sans/serif/mono), 12 font sizes | v2.2 |
-| **Advanced shapes** — triangle, diamond (losange), star, hexagon, cloud — rendered via Path2D, fill + stroke + label | v2.2 |
-| **Connectors** — straight / bezier / elbow lines, independent start & end caps (arrow/dot/none), solid/dashed/dotted style, 2-click creation | v2.2 |
-| **Frames / Sections** — named rectangular regions with dashed border, label rendered above, inline name input on creation | v2.2 |
-| **Image insertion** — drag & drop from desktop or file picker, uploaded to `/api/v1/assets`, cached and rendered on canvas, proportional sizing | v2.2 |
-| **Resize handles** — 8 handles (corners + midpoints) on selected rect/circle/shape/frame/image/sticky elements, live preview, snap-aware | v2.2 |
-| **Real user avatars** — participant panel shows real user avatars (with initials fallback) and their active tool | v2.2 |
-| **Board chat** — real-time chat scoped to the canvas board, independent from the voice channel chat | v2.2 |
-| **Full keyboard shortcuts** — V P T N R C S A X I F E (tools) + G (grid) + Ctrl+Z/Y/Shift+Z (undo/redo) + Delete + Escape | v2.2 |
-| **Portal rendering** — canvas mounted on `document.body` via portal action, bypasses CSS `transform` ancestors that break `position:fixed` | v2.2 |
+| **Canvas UI refactor**, 4 dedicated components: CanvasLeftToolbar, CanvasTopBar (contextual per tool), CanvasBottomBar, CanvasRightPanel | v2.2 |
+| **Undo / Redo**, 50-op stack, Ctrl+Z/Y/Shift+Z, buttons with active/disabled state. Fixed CRDT LWW timestamp so undo always applies | v2.2 |
+| **Snap to grid**, 28px world grid, toggle (G key), visual grid overlay | v2.2 |
+| **Rich text**, bold, italic, underline, strikethrough, alignment (left/center/right), 3 font families (sans/serif/mono), 12 font sizes | v2.2 |
+| **Advanced shapes**, triangle, diamond (losange), star, hexagon, cloud, rendered via Path2D, fill + stroke + label | v2.2 |
+| **Connectors**, straight / bezier / elbow lines, independent start & end caps (arrow/dot/none), solid/dashed/dotted style, 2-click creation | v2.2 |
+| **Frames / Sections**, named rectangular regions with dashed border, label rendered above, inline name input on creation | v2.2 |
+| **Image insertion**, drag & drop from desktop or file picker, uploaded to `/api/v1/assets`, cached and rendered on canvas, proportional sizing | v2.2 |
+| **Resize handles**, 8 handles (corners + midpoints) on selected rect/circle/shape/frame/image/sticky elements, live preview, snap-aware | v2.2 |
+| **Real user avatars**, participant panel shows real user avatars (with initials fallback) and their active tool | v2.2 |
+| **Board chat**, real-time chat scoped to the canvas board, independent from the voice channel chat | v2.2 |
+| **Full keyboard shortcuts**, V P T N R C S A X I F E (tools) + G (grid) + Ctrl+Z/Y/Shift+Z (undo/redo) + Delete + Escape | v2.2 |
+| **Portal rendering**, canvas mounted on `document.body` via portal action, bypasses CSS `transform` ancestors that break `position:fixed` | v2.2 |
 
 </details>
 
 <details>
-<summary><b>v2.1 — Homepage Builder + Widget SDK 🧩</b></summary>
+<summary><b>v2.1, Homepage Builder + Widget SDK 🧩</b></summary>
 
 | Feature | Version |
 |---|---|
-| **Homepage Builder** — drag-and-drop admin, 11 layout zones (banner, hero, stats-bar, main, sidebar, half ×2, trio ×3, footer ×4) | v2.1 |
-| **Plugin registry** — each native widget is a self-contained file, zero core changes to add new ones | v2.1 |
-| **4 native widgets Phase 1** — Hero Banner (live/event/night variants), Stats Bar (animated counters), Join Card, Announcement Banner | v2.1 |
-| **Visibility rules** — per-widget audience (all / guests / members) + scheduled start/end dates | v2.1 |
-| **Widget Store** — install external widgets via `.zip` upload (XHR progress bar, 4-step validation, extraction whitelist) | v2.1 |
-| **Dynamic Widget Loader** — Web Components loaded at runtime, no rebuild, no deploy | v2.1 |
-| **Widget SDK** — plain JS Custom Elements (Shadow DOM), `manifest.json` schema → auto-generated config fields in builder | v2.1 |
-| **Demo widget: Video Player** — YouTube / Vimeo / MP4 with live preview, source viewer, one-click install | v2.1 |
-| **nodyx.dev/create-widget** — step-by-step guide for non-developers (7 steps, EN) | v2.1 |
+| **Homepage Builder**, drag-and-drop admin, 11 layout zones (banner, hero, stats-bar, main, sidebar, half ×2, trio ×3, footer ×4) | v2.1 |
+| **Plugin registry**, each native widget is a self-contained file, zero core changes to add new ones | v2.1 |
+| **4 native widgets Phase 1**, Hero Banner (live/event/night variants), Stats Bar (animated counters), Join Card, Announcement Banner | v2.1 |
+| **Visibility rules**, per-widget audience (all / guests / members) + scheduled start/end dates | v2.1 |
+| **Widget Store**, install external widgets via `.zip` upload (XHR progress bar, 4-step validation, extraction whitelist) | v2.1 |
+| **Dynamic Widget Loader**, Web Components loaded at runtime, no rebuild, no deploy | v2.1 |
+| **Widget SDK**, plain JS Custom Elements (Shadow DOM), `manifest.json` schema → auto-generated config fields in builder | v2.1 |
+| **Demo widget: Video Player**, YouTube / Vimeo / MP4 with live preview, source viewer, one-click install | v2.1 |
+| **nodyx.dev/create-widget**, step-by-step guide for non-developers (7 steps, EN) | v2.1 |
 
 </details>
 
@@ -683,17 +684,17 @@ Each Nodyx instance runs a **Gossip Protocol** scheduler that periodically pings
 
 | Feature | Notes |
 |---|---|
-| **Canvas — Ghost Mode** — anonymous brainstorming: contributions appear under random pseudonyms, author revealed at end | Sprint D |
-| **Canvas — Audio Stickies** — voice note recorded directly on the canvas, waveform rendered as post-it | Sprint D |
-| **Canvas — Contextual Chat** — threaded discussion anchored to a canvas zone, spatially indexed | Sprint D |
-| **More native widgets** — Countdown, Leaderboard, Latest Threads, Featured Events, Jukebox Player | Phase 2 |
-| **Widget marketplace** — community-published widgets, ratings, one-click install from directory | — |
-| **Nodes** — durable structured knowledge, community-validated via Garden | [SPEC 013](docs/en/specs/013-node/SPEC.md) |
-| **Module system** — 26 activatable modules from admin panel (Joomla-style CMS) | [Spec](.claude/ideas/MODULE_SYSTEM.md) |
-| **DM reactions** — emoji reactions on private messages | — |
-| **Discord import** — bulk import channels, threads, reactions, avatars | — |
-| Mobile (Capacitor) / Desktop (Tauri) | — |
-| Rust migration — nodyx-server (Axum) replacing nodyx-core progressively | — |
+| **Canvas, Ghost Mode**, anonymous brainstorming: contributions appear under random pseudonyms, author revealed at end | Sprint D |
+| **Canvas, Audio Stickies**, voice note recorded directly on the canvas, waveform rendered as post-it | Sprint D |
+| **Canvas, Contextual Chat**, threaded discussion anchored to a canvas zone, spatially indexed | Sprint D |
+| **More native widgets**, Countdown, Leaderboard, Latest Threads, Featured Events, Jukebox Player | Phase 2 |
+| **Widget marketplace**, community-published widgets, ratings, one-click install from directory |, |
+| **Nodes**, durable structured knowledge, community-validated via Garden | [SPEC 013](docs/en/specs/013-node/SPEC.md) |
+| **Module system**, 26 activatable modules from admin panel (Joomla-style CMS) | [Spec](.claude/ideas/MODULE_SYSTEM.md) |
+| **DM reactions**, emoji reactions on private messages |, |
+| **Discord import**, bulk import channels, threads, reactions, avatars |, |
+| Mobile (Capacitor) / Desktop (Tauri) |, |
+| Rust migration, nodyx-server (Axum) replacing nodyx-core progressively |, |
 
 ---
 
@@ -706,15 +707,15 @@ It is a different answer to a different question.
 Discord asked: *"How do we grow fast and capture communities?"*  
 Nodyx asks: *"How do we give communities sovereignty over their own existence?"*
 
-Every Nodyx instance is a sovereign node. It runs where you run it — a VPS, a Pi, a spare laptop. It stores what you choose to store. It shares what you choose to share. It shuts down when you decide — not when a company pivots.
+Every Nodyx instance is a sovereign node. It runs where you run it, a VPS, a Pi, a spare laptop. It stores what you choose to store. It shares what you choose to share. It shuts down when you decide, not when a company pivots.
 
-The internet was decentralized by design. SMTP, IRC, NNTP — anyone could run a server and talk to anyone else's server. That was the promise. Big Tech centralized it into silos over two decades.
+The internet was decentralized by design. SMTP, IRC, NNTP, anyone could run a server and talk to anyone else's server. That was the promise. Big Tech centralized it into silos over two decades.
 
 **Nodyx is the promise, kept.**
 
 And it spreads the same way. Each instance that goes live exposes others to the idea. Each public event indexed by Google brings in someone new. Each community that chooses sovereignty inspires another.
 
-> *"Fork us if we betray you."* — AGPL-3.0
+> *"Fork us if we betray you."*, AGPL-3.0
 
 ---
 
@@ -727,14 +728,14 @@ And it spreads the same way. Each instance that goes live exposes others to the 
 | <img src="https://flagcdn.com/16x12/es.png" alt="ES"> Español | *coming soon* |
 | <img src="https://flagcdn.com/16x12/de.png" alt="DE"> Deutsch | *coming soon* |
 
-- [**nodyx.dev**](https://nodyx.dev) — Full documentation wiki
-- [**Create a Widget**](https://nodyx.dev/create-widget) — Step-by-step Widget SDK guide
-- [Manifesto](docs/en/MANIFESTO.md) — Why Nodyx exists
-- [Architecture](docs/en/ARCHITECTURE.md) — How it's built
-- [Roadmap](docs/en/ROADMAP.md) — Where we're going
-- [Audio Engine](docs/en/AUDIO.md) — Broadcast EQ, RNNoise, full audio chain
-- [Neural Engine](docs/en/NEURAL-ENGINE.md) — Local AI with Ollama
-- [**NODYX-ETHER**](docs/ideas/NODYX-ETHER.md) — The physical layer vision (LoRa / HF radio / ionosphere)
+- [**nodyx.dev**](https://nodyx.dev), Full documentation wiki
+- [**Create a Widget**](https://nodyx.dev/create-widget), Step-by-step Widget SDK guide
+- [Manifesto](docs/en/MANIFESTO.md), Why Nodyx exists
+- [Architecture](docs/en/ARCHITECTURE.md), How it's built
+- [Roadmap](docs/en/ROADMAP.md), Where we're going
+- [Audio Engine](docs/en/AUDIO.md), Broadcast EQ, RNNoise, full audio chain
+- [Neural Engine](docs/en/NEURAL-ENGINE.md), Local AI with Ollama
+- [**NODYX-ETHER**](docs/ideas/NODYX-ETHER.md), The physical layer vision (LoRa / HF radio / ionosphere)
 
 ---
 
@@ -746,20 +747,20 @@ Nodyx belongs to its community.
 2. Read [CONTRIBUTING.md](docs/en/CONTRIBUTING.md) before opening a PR
 3. Commits follow [Conventional Commits](https://www.conventionalcommits.org/), written in English
 
-Contribute freely — no prior validation required:
+Contribute freely, no prior validation required:
 
 ```
 docs/        →  improve or translate documentation
 docs/ideas/  →  design thinking, UX proposals, new ideas
 ```
 
-The core (`nodyx-core/src/`) requires discussion first — open an Issue.
+The core (`nodyx-core/src/`) requires discussion first, open an Issue.
 
 ---
 
-## 🌟 Nodyx Stars — Contributors
+## 🌟 Nodyx Stars, Contributors
 
-Every external contribution earns a star. Every Star goes on [our Hall of Fame](CONTRIBUTORS.md) — with avatar, profile link, and rank.
+Every external contribution earns a star. Every Star goes on [our Hall of Fame](CONTRIBUTORS.md), with avatar, profile link, and rank.
 
 **Recognition is not optional here.** Open source without recognition is just free labor, and that's not how we roll.
 
@@ -829,7 +830,7 @@ Your support helps cover server costs and keeps Nodyx 100% free and open-source.
 
 ## License
 
-**AGPL-3.0** — The strongest open source license for networked software.
+**AGPL-3.0**, The strongest open source license for networked software.
 
 If you use Nodyx, even over a network, your modifications must be open source.
 If Nodyx ever betrays its principles, this license lets anyone fork it and continue in the spirit of the [Manifesto](docs/en/MANIFESTO.md).
