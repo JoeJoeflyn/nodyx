@@ -48,6 +48,13 @@ export const nav: NavSection[] = [
     ],
   },
   {
+    title: 'Admin Modules',
+    icon:  'wrench',
+    items: [
+      { title: 'Streamer Hub (Twitch)', slug: 'streamer-hub', badge: 'v2.5' },
+    ],
+  },
+  {
     title: 'Community',
     icon:  'users',
     items: [

@@ -605,7 +605,7 @@
 					</ul>
 				</div>
 				<div class="flex flex-wrap gap-3 pt-2 border-t border-slate-700/40">
-					<a href="https://nodyx.dev/admin/streamer-hub" class="text-xs text-cyan-300 hover:text-cyan-200 inline-flex items-center gap-1">
+					<a href="https://nodyx.dev/streamer-hub" target="_blank" rel="noopener" class="text-xs text-cyan-300 hover:text-cyan-200 inline-flex items-center gap-1">
 						Documentation complète
 						<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
 					</a>
