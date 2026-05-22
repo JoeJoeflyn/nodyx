@@ -25,6 +25,28 @@ interface CanvasElement {
   deleted?: boolean
 }
 
+// ── Access control ────────────────────────────────────────────────────────────
+// A user may operate on a board if they own it, or if they are a member of the
+// community that owns the channel the board is attached to. Without this check
+// any authenticated socket could join any board and receive its snapshot + live
+// ops simply by guessing the UUID.
+async function canAccessCanvasBoard(boardId: string, userId: string): Promise<boolean> {
+	const { rows: [board] } = await db.query<{ created_by: string; channel_id: string | null }>(
+		`SELECT created_by, channel_id FROM canvas_boards WHERE id = $1`,
+		[boardId]
+	).catch(() => ({ rows: [] as any[] }))
+	if (!board) return false
+	if (board.created_by === userId) return true
+	if (!board.channel_id) return false
+	const { rowCount } = await db.query(
+		`SELECT 1 FROM channels c
+		 JOIN community_members cm ON cm.community_id = c.community_id
+		 WHERE c.id = $1 AND cm.user_id = $2 LIMIT 1`,
+		[board.channel_id, userId]
+	).catch(() => ({ rowCount: 0 }))
+	return (rowCount ?? 0) > 0
+}
+
 // ── In-memory state ───────────────────────────────────────────────────────────
 
 // boardId → Map<elementId, CanvasElement>  (LWW per element)
@@ -134,6 +156,12 @@ export function registerCanvasHandlers(io: Server, socket: Socket): void {
     const { boardId } = payload as Record<string, unknown>
     if (!isUuid(boardId)) return
 
+    // Access control before sharing any board content with the socket
+    if (!await canAccessCanvasBoard(boardId as string, userId)) {
+      socket.emit('canvas:error', { boardId, error: 'Accès refusé.' })
+      return
+    }
+
     // Load or reuse snapshot
     let map = snapshots.get(boardId)
     if (!map) {
@@ -184,6 +212,9 @@ export function registerCanvasHandlers(io: Server, socket: Socket): void {
     const { boardId, op } = payload as Record<string, unknown>
     if (!isUuid(boardId) || !isValidOp(op)) return
 
+    // Must have joined the board first (canvas:join enforces access control)
+    if (!socket.rooms.has(roomName(boardId as string))) return
+
     // Security: force author to the authenticated user
     const safeOp: CanvasElement = { ...(op as CanvasElement), author: userId }
 
@@ -211,6 +242,7 @@ export function registerCanvasHandlers(io: Server, socket: Socket): void {
     if (!payload || typeof payload !== 'object') return
     const { boardId, ts } = payload as Record<string, unknown>
     if (!isUuid(boardId) || typeof ts !== 'number') return
+    if (!socket.rooms.has(roomName(boardId as string))) return
 
     let map = snapshots.get(boardId)
     if (!map) {
@@ -234,6 +266,7 @@ export function registerCanvasHandlers(io: Server, socket: Socket): void {
     const { boardId, x, y, speaking } = payload as Record<string, unknown>
     if (!isUuid(boardId)) return
     if (typeof x !== 'number' || typeof y !== 'number') return
+    if (!socket.rooms.has(roomName(boardId as string))) return
 
     socket.to(roomName(boardId)).emit('canvas:cursor', {
       boardId,
@@ -250,6 +283,7 @@ export function registerCanvasHandlers(io: Server, socket: Socket): void {
     if (!payload || typeof payload !== 'object') return
     const { boardId } = payload as Record<string, unknown>
     if (!isUuid(boardId)) return
+    if (!socket.rooms.has(roomName(boardId as string))) return
     await flushNow(boardId)
     socket.emit('canvas:saved', { boardId })
   })

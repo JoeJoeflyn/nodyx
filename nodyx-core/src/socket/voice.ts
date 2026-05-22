@@ -127,6 +127,13 @@ export function registerVoiceHandlers(socket: Socket, server: Server): void {
   socket.on('voice:join', async (channelId: string) => {
     if (!isUuid(channelId)) return
 
+    // Access control: only members of the community owning this channel can join.
+    // Without this check any authenticated socket could squat any voice channel
+    // by guessing the channelId, receive the ICE servers + peer list, and
+    // participate in WebRTC signaling.
+    const accessRole = await getCommunityRoleForChannel(channelId, userId)
+    if (!accessRole) return
+
     const room = voiceRoom(channelId)
 
     // Évacue les anciens sockets du même userId (page refresh, reconnexion rapide)
@@ -267,6 +274,9 @@ export function registerVoiceHandlers(socket: Socket, server: Server): void {
   // ── voice:speaking — VAD indicator ───────────────────────────────────────
   socket.on('voice:speaking', ({ channelId, speaking }: { channelId: string; speaking: boolean }) => {
     if (checkRateLimit(userId, 'voice:speaking')) return
+    if (!isUuid(channelId)) return
+    // Must be in the voice room to broadcast speaking state to its members.
+    if (!socket.rooms.has(voiceRoom(channelId))) return
     socket.to(voiceRoom(channelId)).emit('voice:speaking', { socketId: socket.id, userId, speaking })
   })
 
