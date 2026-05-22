@@ -377,6 +377,186 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
     }
   })
 
+  // GET /setup-status  — admin only — diagnostic granulaire du Hub
+  // Chaque check est indépendant : le streamer voit exactement quel point
+  // bloque et quel anchor de la doc consulter. Statuts : ok | warning | down.
+  server.get('/setup-status', { preHandler: adminOnly }, async () => {
+    type CheckStatus = 'ok' | 'warning' | 'down'
+    interface Check {
+      id:        string
+      label:     string
+      status:    CheckStatus
+      summary:   string
+      fix:       string | null
+      docAnchor: string | null
+    }
+
+    const checks: Check[] = []
+
+    // ── Group 1: env vars ──
+    const env = process.env
+    const clientId     = (env.TWITCH_CLIENT_ID         ?? '').trim()
+    const clientSecret = (env.TWITCH_CLIENT_SECRET     ?? '').trim()
+    const oauthKey     = (env.STREAMER_OAUTH_KEY       ?? '').trim()
+    const publicBase   = (env.STREAMER_PUBLIC_BASE     ?? '').trim()
+    const redirectUri  = (env.STREAMER_OAUTH_REDIRECT_URI ?? '').trim()
+
+    checks.push({
+      id:        'env-client-id',
+      label:     'TWITCH_CLIENT_ID configuré',
+      status:    clientId ? 'ok' : 'down',
+      summary:   clientId ? 'Client ID Twitch détecté dans .env' : 'Variable absente du fichier nodyx-core/.env',
+      fix:       clientId ? null : 'Crée une application sur dev.twitch.tv/console/apps puis copie le "Client ID" dans nodyx-core/.env sous TWITCH_CLIENT_ID',
+      docAnchor: 'prerequisites',
+    })
+
+    checks.push({
+      id:        'env-client-secret',
+      label:     'TWITCH_CLIENT_SECRET configuré',
+      status:    clientSecret ? 'ok' : 'down',
+      summary:   clientSecret ? 'Client Secret Twitch détecté' : 'Variable absente du fichier nodyx-core/.env',
+      fix:       clientSecret ? null : 'Dans la même app Twitch (dev.twitch.tv/console/apps), clique "New Secret" et copie la valeur dans TWITCH_CLIENT_SECRET',
+      docAnchor: 'prerequisites',
+    })
+
+    const oauthKeyOk = /^[0-9a-fA-F]{64}$/.test(oauthKey)
+    checks.push({
+      id:        'env-oauth-key',
+      label:     'STREAMER_OAUTH_KEY au bon format (64 hex)',
+      status:    !oauthKey ? 'down' : oauthKeyOk ? 'ok' : 'warning',
+      summary:   !oauthKey     ? 'Clé de chiffrement AES-256-GCM absente' :
+                  oauthKeyOk    ? 'Clé maître présente, 32 octets hex' :
+                                  `Format invalide (${oauthKey.length} caractères, attendu 64)`,
+      fix:       oauthKeyOk ? null : 'Génère une clé : node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" puis colle-la dans STREAMER_OAUTH_KEY',
+      docAnchor: 'prerequisites',
+    })
+
+    let publicBaseOk = false
+    let publicBaseProto = ''
+    try {
+      const u = new URL(publicBase)
+      publicBaseProto = u.protocol
+      publicBaseOk = u.protocol === 'https:'
+    } catch { /* invalid URL */ }
+    checks.push({
+      id:        'env-public-base',
+      label:     'STREAMER_PUBLIC_BASE en HTTPS',
+      status:    !publicBase ? 'down' : publicBaseOk ? 'ok' : 'down',
+      summary:   !publicBase   ? 'Variable absente' :
+                  publicBaseOk  ? `URL publique HTTPS détectée : ${publicBase}` :
+                                  `Protocole "${publicBaseProto || 'inconnu'}" non supporté (Twitch livre uniquement sur HTTPS)`,
+      fix:       publicBaseOk ? null : 'Définis STREAMER_PUBLIC_BASE=https://ton-instance.nodyx.org dans .env (HTTPS obligatoire, Twitch refuse HTTP pour EventSub)',
+      docAnchor: 'prerequisites',
+    })
+
+    const redirectExpected = publicBase ? `${publicBase.replace(/\/+$/, '')}/api/v1/streamer/twitch/callback` : ''
+    const redirectMatches  = !!redirectUri && !!redirectExpected && redirectUri === redirectExpected
+    checks.push({
+      id:        'env-redirect-uri',
+      label:     'STREAMER_OAUTH_REDIRECT_URI cohérent',
+      status:    !redirectUri ? 'down' : redirectMatches ? 'ok' : 'warning',
+      summary:   !redirectUri    ? 'Variable absente' :
+                  redirectMatches ? 'Match exact avec STREAMER_PUBLIC_BASE + path callback' :
+                                    `Mismatch détecté : attendu "${redirectExpected || '?'}", obtenu "${redirectUri}"`,
+      fix:       redirectMatches ? null : `Définis STREAMER_OAUTH_REDIRECT_URI=${redirectExpected || 'https://ton-instance.nodyx.org/api/v1/streamer/twitch/callback'} et reporte-la EXACTEMENT dans dev.twitch.tv/console/apps → "OAuth Redirect URLs"`,
+      docAnchor: 'prerequisites',
+    })
+
+    // ── Group 2: connection ──
+    const streamers = await listStreamers('twitch').catch(() => [])
+    const primary = streamers[0] ?? null
+    checks.push({
+      id:        'oauth-connected',
+      label:     'Compte Twitch lié',
+      status:    primary ? 'ok' : 'warning',
+      summary:   primary ? `Connecté en tant que ${primary.externalLogin}` : 'Aucun streamer connecté',
+      fix:       primary ? null : 'Une fois tous les checks env verts, clique "Connecter Twitch" en haut de cette page',
+      docAnchor: 'connecting-your-account',
+    })
+
+    // Token expiry
+    if (primary) {
+      const expiresInMs = new Date(primary.expiresAt).getTime() - Date.now()
+      const expired = expiresInMs < 0
+      const expiringSoon = expiresInMs >= 0 && expiresInMs < 30 * 60 * 1000
+      checks.push({
+        id:        'tokens-valid',
+        label:     'Access token Twitch valide',
+        status:    expired ? 'down' : expiringSoon ? 'warning' : 'ok',
+        summary:   expired       ? 'Token expiré, refresh nécessaire' :
+                    expiringSoon  ? 'Token expire dans moins de 30 min (refresh auto imminent)' :
+                                    `Token valide, expire dans ${Math.round(expiresInMs / 60000)} min`,
+        fix:       expired ? 'Clique "Refresh tokens" dans la carte streamer pour forcer un renouvellement immédiat' : null,
+        docAnchor: 'when-to-use-which-action',
+      })
+    }
+
+    // ── Group 3: EventSub ──
+    if (primary) {
+      const subsStatus = await listEventSubStatus('twitch').catch(() => ({ subscriptions: [] as Array<{ status: string }> }))
+      const subs       = subsStatus.subscriptions ?? []
+      const enabled    = subs.filter(s => s.status === 'enabled').length
+      const failed     = subs.filter(s => s.status === 'failed').length
+      const pending    = subs.filter(s => s.status === 'pending').length
+
+      checks.push({
+        id:        'eventsub-subscribed',
+        label:     'EventSub : au moins une subscription active',
+        status:    enabled > 0 ? 'ok' : subs.length === 0 ? 'down' : 'warning',
+        summary:   enabled > 0
+          ? `${enabled} subscription${enabled > 1 ? 's' : ''} active${enabled > 1 ? 's' : ''} sur ${subs.length}`
+          : subs.length === 0
+            ? 'Aucune subscription côté Twitch'
+            : `${pending} en attente, aucune active pour l'instant`,
+        fix:       enabled > 0 ? null : 'Clique "Synchroniser EventSub" dans la carte streamer pour (re)créer les subscriptions',
+        docAnchor: 'when-to-use-which-action',
+      })
+
+      checks.push({
+        id:        'eventsub-no-failed',
+        label:     'EventSub : aucune subscription en échec',
+        status:    failed === 0 ? 'ok' : 'down',
+        summary:   failed === 0
+          ? 'Aucune subscription failed'
+          : `${failed} subscription${failed > 1 ? 's' : ''} en échec (Twitch n'a pas pu joindre ton webhook)`,
+        fix:       failed === 0 ? null : 'Vérifie 1) que ton domaine répond en HTTPS depuis l\'internet public, 2) que ton reverse-proxy ne modifie pas le body du POST EventSub (Caddy par défaut OK), puis clique "Synchroniser EventSub"',
+        docAnchor: 'troubleshooting',
+      })
+    }
+
+    // ── Group 4: activity ──
+    const lastEventRow = primary
+      ? await db.query<{ occurred_at: string }>(
+          `SELECT occurred_at FROM streamer_events WHERE provider = 'twitch' ORDER BY occurred_at DESC LIMIT 1`
+        ).then(r => r.rows[0] ?? null).catch(() => null)
+      : null
+    if (primary) {
+      const lastMs = lastEventRow ? Date.now() - new Date(lastEventRow.occurred_at).getTime() : null
+      const STALE  = 7 * 24 * 60 * 60 * 1000  // 7 days
+      checks.push({
+        id:        'recent-activity',
+        label:     'Pipeline actif (au moins 1 event reçu récemment)',
+        status:    lastMs === null ? 'warning' : lastMs < STALE ? 'ok' : 'warning',
+        summary:   lastMs === null
+          ? 'Aucun event reçu depuis la connexion. Normal si tu viens de te connecter.'
+          : lastMs < STALE
+            ? `Dernier event il y a ${lastMs < 3600_000 ? Math.round(lastMs/60_000) + ' min' : lastMs < 86400_000 ? Math.round(lastMs/3_600_000) + ' h' : Math.round(lastMs/86_400_000) + ' j'}`
+            : `Plus aucun event depuis ${Math.round(lastMs / 86_400_000)} jours. Le webhook EventSub est peut-être cassé.`,
+        fix:       lastMs !== null && lastMs >= STALE
+          ? 'Lance un test : choisis un type d\'event dans "Tester le pipeline" et clique "Injecter l\'event". Si l\'event apparaît dans le feed, le pipeline marche et c\'est Twitch qui ne pousse plus (synchronise EventSub).'
+          : null,
+        docAnchor: 'troubleshooting',
+      })
+    }
+
+    // ── Overall ──
+    const downCount    = checks.filter(c => c.status === 'down').length
+    const warningCount = checks.filter(c => c.status === 'warning').length
+    const overall: CheckStatus = downCount > 0 ? 'down' : warningCount > 0 ? 'warning' : 'ok'
+
+    return { overall, checks, downCount, warningCount }
+  })
+
   // POST /test-event  — admin only — injecte un faux event EventSub dans le
   // pipeline pour valider end-to-end (persistence + dispatch chat) sans avoir
   // à attendre un vrai follow. N'envoie RIEN à Twitch, c'est purement local.

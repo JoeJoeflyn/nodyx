@@ -41,11 +41,27 @@
 		currentSession:     { id: string; startedAt: string; endedAt?: string; live: boolean } | null
 	}
 
+	type SetupCheck = {
+		id:        string
+		label:     string
+		status:    'ok' | 'warning' | 'down'
+		summary:   string
+		fix:       string | null
+		docAnchor: string | null
+	}
+	type SetupPayload = {
+		overall:      'ok' | 'warning' | 'down'
+		checks:       SetupCheck[]
+		downCount:    number
+		warningCount: number
+	}
+
 	let connecting     = $state(false)
 	let refreshing     = $state(false)
 	let disconnecting  = $state(false)
 	let syncing        = $state(false)
 	let helpOpen       = $state(false)
+	let setupOpen      = $state(false)  // collapsed by default, auto-opens below if not OK
 	let toast          = $state<{ text: string; ok: boolean } | null>(null)
 	let testEventType  = $state('channel.follow')
 	let sendingTest    = $state(false)
@@ -58,6 +74,12 @@
 	const pendingCount  = $derived(subs.filter(s => s.status === 'pending').length)
 	const events        = $derived<RecentEvent[]>(data.recentEvents ?? [])
 	const health        = $derived<HealthPayload | null>(data.health ?? null)
+	const setup         = $derived<SetupPayload | null>((data as { setup?: SetupPayload | null }).setup ?? null)
+
+	// Auto-expand the checklist when something needs attention
+	$effect(() => {
+		if (setup && setup.overall !== 'ok') setupOpen = true
+	})
 	const liveNow       = $derived(health?.currentSession?.live === true)
 	// Prefer the health endpoint timestamp (DB MAX) over the in-memory list head
 	const lastEvent     = $derived(
@@ -315,6 +337,83 @@
 			</span>
 		</div>
 	</header>
+
+	<!-- ── Setup checklist (diagnostic visuel point par point) ─────────────── -->
+	{#if setup}
+		{@const tone =
+			setup.overall === 'ok'      ? 'border-emerald-500/30 bg-emerald-500/5' :
+			setup.overall === 'warning' ? 'border-amber-500/30  bg-amber-500/5'   :
+			                              'border-rose-500/30   bg-rose-500/5'}
+		{@const dot =
+			setup.overall === 'ok'      ? 'bg-emerald-400' :
+			setup.overall === 'warning' ? 'bg-amber-400'   :
+			                              'bg-rose-400'}
+		{@const overallLabel =
+			setup.overall === 'ok'      ? `${setup.checks.length} checks passés` :
+			setup.overall === 'warning' ? `${setup.warningCount} avertissement${setup.warningCount > 1 ? 's' : ''}` :
+			                              `${setup.downCount} bloquant${setup.downCount > 1 ? 's' : ''}`}
+		<section class="rounded-xl border {tone} overflow-hidden">
+			<button type="button" onclick={() => setupOpen = !setupOpen}
+				class="w-full px-5 py-3 flex items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors text-left">
+				<div class="flex items-center gap-3">
+					<span class="relative flex h-3 w-3">
+						<span class="absolute inline-flex h-full w-full rounded-full {dot} opacity-50 animate-ping"></span>
+						<span class="relative inline-flex rounded-full h-3 w-3 {dot}"></span>
+					</span>
+					<div>
+						<div class="text-sm font-semibold text-white">
+							{setup.overall === 'ok'      ? 'Ton stream est bien lié, tout passe.' :
+							 setup.overall === 'warning' ? 'Connexion fonctionnelle, des points à surveiller.' :
+							                               'Configuration incomplète, voici ce qu\'il manque.'}
+						</div>
+						<div class="text-[11px] text-slate-400 mt-0.5">{overallLabel} · clique pour voir le détail</div>
+					</div>
+				</div>
+				<svg class="w-4 h-4 text-slate-400 transition-transform {setupOpen ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+			</button>
+
+			{#if setupOpen}
+				<ul class="divide-y divide-white/5">
+					{#each setup.checks as c (c.id)}
+						{@const iconColor =
+							c.status === 'ok'      ? 'text-emerald-400' :
+							c.status === 'warning' ? 'text-amber-400'   :
+							                         'text-rose-400'}
+						<li class="px-5 py-3 flex items-start gap-3">
+							<span class="shrink-0 mt-0.5">
+								{#if c.status === 'ok'}
+									<svg class="w-4 h-4 {iconColor}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+								{:else if c.status === 'warning'}
+									<svg class="w-4 h-4 {iconColor}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"/></svg>
+								{:else}
+									<svg class="w-4 h-4 {iconColor}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+								{/if}
+							</span>
+							<div class="flex-1 min-w-0">
+								<div class="flex items-center gap-2 flex-wrap">
+									<span class="text-sm font-medium {c.status === 'ok' ? 'text-slate-300' : 'text-white'}">{c.label}</span>
+								</div>
+								<div class="text-[11px] {c.status === 'ok' ? 'text-slate-500' : 'text-slate-400'} mt-0.5">{c.summary}</div>
+								{#if c.status !== 'ok' && c.fix}
+									<div class="mt-2 rounded-md bg-slate-900/60 border border-slate-700/40 px-3 py-2 text-[11px] text-slate-300 leading-relaxed">
+										<span class="text-[10px] uppercase tracking-wider font-semibold {iconColor} mr-1.5">Comment fixer</span>
+										{c.fix}
+									</div>
+								{/if}
+								{#if c.status !== 'ok' && c.docAnchor}
+									<a href="https://nodyx.dev/streamer-hub#{c.docAnchor}" target="_blank" rel="noopener"
+										class="inline-flex items-center gap-1 text-[11px] text-cyan-300 hover:text-cyan-200 mt-1.5">
+										Voir la section dans la doc
+										<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+									</a>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{/if}
 
 	<!-- ── Live banner ─────────────────────────────────────────────────────── -->
 	{#if liveNow && health?.currentSession}
