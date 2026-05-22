@@ -8,7 +8,7 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { adminOnly } from '../middleware/adminOnly'
 import { requireAuth } from '../middleware/auth'
-import { redis } from '../config/database'
+import { db, redis } from '../config/database'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
 import {
@@ -337,6 +337,77 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
       limit,
     })
     return { events: rows }
+  })
+
+  // GET /health  — admin only — métriques live du Hub pour le dashboard
+  // Compte la queue de chat outbound (Redis sorted set), les viewers Nodyx
+  // liés à un Twitch, la date du dernier event reçu et l'état de la session
+  // live en cours (s'il y en a une). Renvoyé en best-effort : si un metric
+  // échoue, on retourne null sur ce champ plutôt que de casser le payload.
+  server.get('/health', { preHandler: adminOnly }, async () => {
+    const [
+      chatQueueSize,
+      linkedViewers,
+      lastEvent,
+      session,
+    ] = await Promise.all([
+      redis.zcard('streamer:chat:send_queue').catch(() => null),
+      db.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM users WHERE twitch_id IS NOT NULL`
+      ).then(r => r.rows[0]?.count ? parseInt(r.rows[0].count, 10) : 0).catch(() => null),
+      db.query<{ occurred_at: string; event_type: string }>(
+        `SELECT occurred_at, event_type FROM streamer_events
+         WHERE provider = 'twitch' ORDER BY occurred_at DESC LIMIT 1`
+      ).then(r => r.rows[0] ?? null).catch(() => null),
+      db.query<{ id: string; started_at: string; ended_at: string | null }>(
+        `SELECT id, started_at, ended_at FROM streamer_sessions
+         WHERE provider = 'twitch' ORDER BY started_at DESC LIMIT 1`
+      ).then(r => r.rows[0] ?? null).catch(() => null),
+    ])
+
+    return {
+      chatQueueSize,
+      linkedViewersCount: linkedViewers,
+      lastEvent: lastEvent ? { eventType: lastEvent.event_type, occurredAt: lastEvent.occurred_at } : null,
+      currentSession: session && !session.ended_at
+        ? { id: session.id, startedAt: session.started_at, live: true }
+        : session
+          ? { id: session.id, startedAt: session.started_at, endedAt: session.ended_at, live: false }
+          : null,
+    }
+  })
+
+  // POST /test-event  — admin only — injecte un faux event EventSub dans le
+  // pipeline pour valider end-to-end (persistence + dispatch chat) sans avoir
+  // à attendre un vrai follow. N'envoie RIEN à Twitch, c'est purement local.
+  server.post<{ Body?: { eventType?: string } }>('/test-event', { preHandler: adminOnly }, async (request, reply) => {
+    const type = (request.body?.eventType ?? 'channel.follow').trim()
+    const ALLOWED = ['channel.follow', 'channel.subscribe', 'channel.cheer', 'channel.raid', 'stream.online']
+    if (!ALLOWED.includes(type)) {
+      return reply.code(400).send({ ok: false, error: 'unsupported_event_type', allowed: ALLOWED })
+    }
+
+    // Build a minimal-but-plausible payload per event type
+    const ts = new Date().toISOString()
+    const fakeEvent: Record<string, Record<string, unknown>> = {
+      'channel.follow':    { user_id: '0', user_login: 'test_follower',   user_name: 'TestFollower',   followed_at: ts },
+      'channel.subscribe': { user_id: '0', user_login: 'test_subscriber', user_name: 'TestSubscriber', tier: '1000', is_gift: false },
+      'channel.cheer':     { user_id: '0', user_login: 'test_cheerer',    user_name: 'TestCheerer',    is_anonymous: false, message: 'Test cheer', bits: 42 },
+      'channel.raid':      { from_broadcaster_user_id: '0', from_broadcaster_user_name: 'TestRaider', viewers: 17 },
+      'stream.online':     { id: 'test', started_at: ts, type: 'live' },
+    }
+
+    try {
+      await ingestEvent({
+        provider:   'twitch',
+        eventType:  type,
+        payload:    { event: fakeEvent[type], subscription: { type, test: true } },
+        externalId: `test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      })
+      return reply.send({ ok: true, eventType: type, persistedAt: ts })
+    } catch (err) {
+      return reply.code(500).send({ ok: false, error: 'ingest_failed', message: (err as Error).message })
+    }
   })
 }
 

@@ -34,12 +34,21 @@
 		occurredAt: string
 	}
 
-	let connecting    = $state(false)
-	let refreshing    = $state(false)
-	let disconnecting = $state(false)
-	let syncing       = $state(false)
-	let helpOpen      = $state(false)
-	let toast         = $state<{ text: string; ok: boolean } | null>(null)
+	type HealthPayload = {
+		chatQueueSize:      number | null
+		linkedViewersCount: number | null
+		lastEvent:          { eventType: string; occurredAt: string } | null
+		currentSession:     { id: string; startedAt: string; endedAt?: string; live: boolean } | null
+	}
+
+	let connecting     = $state(false)
+	let refreshing     = $state(false)
+	let disconnecting  = $state(false)
+	let syncing        = $state(false)
+	let helpOpen       = $state(false)
+	let toast          = $state<{ text: string; ok: boolean } | null>(null)
+	let testEventType  = $state('channel.follow')
+	let sendingTest    = $state(false)
 
 	const primary       = $derived<StreamerRow | null>(data.primaryStreamer)
 	const isConnected   = $derived(!!primary)
@@ -48,15 +57,13 @@
 	const failedCount   = $derived(subs.filter(s => s.status === 'failed').length)
 	const pendingCount  = $derived(subs.filter(s => s.status === 'pending').length)
 	const events        = $derived<RecentEvent[]>(data.recentEvents ?? [])
-	const lastEvent     = $derived(events[0] ?? null)
-
-	// Token expiry in ms (negative = expired). Used to color the metric card.
-	const tokenExpiresInMs = $derived(primary ? new Date(primary.expiresAt).getTime() - Date.now() : 0)
-	const tokenHealth = $derived(
-		!primary             ? 'idle'    :
-		tokenExpiresInMs < 0 ? 'down'    :
-		tokenExpiresInMs < 30 * 60 * 1000 ? 'warning' : 'ok'
+	const health        = $derived<HealthPayload | null>(data.health ?? null)
+	const liveNow       = $derived(health?.currentSession?.live === true)
+	// Prefer the health endpoint timestamp (DB MAX) over the in-memory list head
+	const lastEvent     = $derived(
+		health?.lastEvent ?? (events[0] ? { eventType: events[0].eventType, occurredAt: events[0].occurredAt } : null)
 	)
+
 	const subsHealth = $derived(
 		!primary           ? 'idle'    :
 		failedCount  > 0   ? 'down'    :
@@ -138,6 +145,30 @@
 			pushToast('Erreur réseau', false)
 		} finally {
 			syncing = false
+		}
+	}
+
+	async function sendTestEvent() {
+		if (sendingTest) return
+		sendingTest = true
+		try {
+			const res = await fetch('/api/v1/streamer/test-event', {
+				method:  'POST',
+				headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+				body:    JSON.stringify({ eventType: testEventType }),
+			})
+			if (res.ok) {
+				const j = await res.json()
+				pushToast(`Event ${j.eventType} injecté dans le pipeline`, true)
+				await invalidateAll()
+			} else {
+				const err = await res.json().catch(() => ({}))
+				pushToast(err.message ?? 'Test event échoué', false)
+			}
+		} catch {
+			pushToast('Erreur réseau', false)
+		} finally {
+			sendingTest = false
 		}
 	}
 
@@ -285,6 +316,21 @@
 		</div>
 	</header>
 
+	<!-- ── Live banner ─────────────────────────────────────────────────────── -->
+	{#if liveNow && health?.currentSession}
+		<div class="rounded-xl border border-rose-500/40 bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent p-4 flex items-center gap-3">
+			<span class="relative flex h-3 w-3">
+				<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-60"></span>
+				<span class="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+			</span>
+			<div class="flex-1">
+				<div class="text-sm font-semibold text-rose-200">Stream live en cours</div>
+				<div class="text-[11px] text-rose-300/80">Démarré {fmtRelative(health.currentSession.startedAt)} · les events EventSub arrivent en temps réel.</div>
+			</div>
+			<span class="text-[10px] font-mono text-rose-400/60">session {shortId(health.currentSession.id)}</span>
+		</div>
+	{/if}
+
 	<!-- ── Health overview ─────────────────────────────────────────────────── -->
 	{#if isConnected && primary}
 		<section class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -310,16 +356,18 @@
 				</div>
 			</div>
 
-			<!-- Tokens -->
-			<div class="rounded-xl border {tokenHealth === 'ok' ? 'border-emerald-500/25 bg-emerald-500/5' : tokenHealth === 'warning' ? 'border-amber-500/25 bg-amber-500/5' : 'border-rose-500/25 bg-rose-500/5'} p-4" title="Refresh auto programmé 30 min avant expiration. Tu peux aussi forcer un refresh manuel.">
+			<!-- Chat bridge -->
+			<div class="rounded-xl border {(health?.chatQueueSize ?? 0) > 50 ? 'border-amber-500/25 bg-amber-500/5' : 'border-emerald-500/25 bg-emerald-500/5'} p-4" title="Queue Redis des messages Nodyx en route vers le chat Twitch. > 50 = surcharge (Twitch rate-limit), Nodyx drop avec audit après 5 tentatives.">
 				<div class="flex items-center justify-between mb-2">
-					<span class="text-[10px] uppercase tracking-widest font-semibold {tokenHealth === 'ok' ? 'text-emerald-400/80' : tokenHealth === 'warning' ? 'text-amber-400/80' : 'text-rose-400/80'}">Access token</span>
-					<span class="w-1.5 h-1.5 rounded-full {tokenHealth === 'ok' ? 'bg-emerald-400' : tokenHealth === 'warning' ? 'bg-amber-400' : 'bg-rose-400'}"></span>
+					<span class="text-[10px] uppercase tracking-widest font-semibold {(health?.chatQueueSize ?? 0) > 50 ? 'text-amber-400/80' : 'text-emerald-400/80'}">Chat bridge</span>
+					<span class="w-1.5 h-1.5 rounded-full {(health?.chatQueueSize ?? 0) > 50 ? 'bg-amber-400' : 'bg-emerald-400'}"></span>
 				</div>
 				<div class="text-base font-semibold text-white">
-					{tokenExpiresInMs < 0 ? 'Expiré' : 'Expire ' + fmtRelative(primary.expiresAt)}
+					{health?.chatQueueSize ?? '—'}<span class="text-slate-500 text-sm font-normal"> en queue</span>
 				</div>
-				<div class="text-[11px] text-slate-500 mt-0.5">Dernière rotation {fmtRelative(primary.rotatedAt)}</div>
+				<div class="text-[11px] text-slate-500 mt-0.5">
+					{health?.linkedViewersCount ?? 0} viewer{(health?.linkedViewersCount ?? 0) > 1 ? 's' : ''} lié{(health?.linkedViewersCount ?? 0) > 1 ? 's' : ''}
+				</div>
 			</div>
 
 			<!-- Activité -->
@@ -419,6 +467,36 @@
 						title="Supprime les tokens chiffrés et révoque la subscription EventSub côté Twitch."
 						class="text-xs bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-50 text-rose-300 border border-rose-500/30 px-3 py-1.5 rounded-lg transition-colors">
 						{disconnecting ? 'Déconnexion…' : 'Déconnecter'}
+					</button>
+				</div>
+			</div>
+		</section>
+
+		<!-- ── Test event tool ────────────────────────────────────────────── -->
+		<section class="rounded-xl border border-slate-700/60 bg-slate-900/30 p-5">
+			<div class="flex items-start gap-4 flex-wrap">
+				<div class="w-10 h-10 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+					<svg class="w-5 h-5 text-amber-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+				</div>
+				<div class="flex-1 min-w-72">
+					<h3 class="text-sm font-semibold text-white">Tester le pipeline</h3>
+					<p class="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+						Injecte un faux événement <strong class="text-slate-300">localement</strong>. Pas d'appel à Twitch, juste du test bout-en-bout (persist en base + dispatch vers <code class="font-mono text-cyan-300">#twitch-chat</code>). Utile pour valider sans attendre un vrai follow.
+					</p>
+				</div>
+				<div class="flex items-center gap-2 shrink-0">
+					<select bind:value={testEventType} disabled={sendingTest}
+						class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-cyan-500">
+						<option value="channel.follow">Follow</option>
+						<option value="channel.subscribe">Sub</option>
+						<option value="channel.cheer">Bits (42)</option>
+						<option value="channel.raid">Raid (17 viewers)</option>
+						<option value="stream.online">Live ON</option>
+					</select>
+					<button type="button" onclick={sendTestEvent} disabled={sendingTest}
+						class="text-xs bg-amber-500/15 hover:bg-amber-500/25 disabled:opacity-50 text-amber-200 border border-amber-500/30 px-3 py-2 rounded-lg transition-colors inline-flex items-center gap-1.5">
+						<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+						{sendingTest ? 'Envoi…' : 'Injecter l\'event'}
 					</button>
 				</div>
 			</div>
