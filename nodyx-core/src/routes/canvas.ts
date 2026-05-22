@@ -169,6 +169,9 @@ export default async function canvasRoutes(app: FastifyInstance) {
   })
 
   // ── PATCH /api/v1/canvas/:boardId — Sauvegarder snapshot ─────────────────
+  // Authorization: the requester must either own the board, or be a member of
+  // the community that owns the channel the board is attached to. Without this
+  // check any authenticated user could overwrite any board by guessing its UUID.
   app.patch<{ Params: { boardId: string } }>('/:boardId', {
     preHandler: [rateLimit, requireAuth],
   }, async (req, reply) => {
@@ -176,9 +179,33 @@ export default async function canvasRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: 'Le module Canvas n\'est pas activé.' })
     }
 
+    const userId = req.user!.userId
+
+    // Resolve board ownership context before letting any UPDATE through
+    const { rows: [board] } = await db.query<{ created_by: string; channel_id: string | null }>(
+      `SELECT created_by, channel_id FROM canvas_boards WHERE id = $1`,
+      [req.params.boardId]
+    )
+    if (!board) return reply.code(404).send({ error: 'Board introuvable.' })
+
+    let allowed = board.created_by === userId
+    if (!allowed && board.channel_id) {
+      const { rowCount } = await db.query(
+        `SELECT 1
+         FROM channels c
+         JOIN community_members cm ON cm.community_id = c.community_id
+         WHERE c.id = $1 AND cm.user_id = $2
+         LIMIT 1`,
+        [board.channel_id, userId]
+      )
+      allowed = (rowCount ?? 0) > 0
+    }
+    if (!allowed) {
+      return reply.code(403).send({ error: 'Accès refusé à ce board.' })
+    }
+
     const { snapshot, name } = req.body as { snapshot?: unknown[]; name?: string }
 
-    // Validate snapshot if provided
     if (snapshot !== undefined) {
       const parsed = SnapshotSchema.safeParse(snapshot)
       if (!parsed.success) {
