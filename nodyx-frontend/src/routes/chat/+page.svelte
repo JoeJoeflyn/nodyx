@@ -1122,7 +1122,7 @@
 								<div class="flex items-baseline gap-2 mb-0.5">
 									<button
 										type="button"
-										class="text-sm font-black cursor-pointer leading-none hover:brightness-125 transition-all {buildAnimClass({ nameAnimation: msg.author_name_animation })}"
+										class="chat-username text-sm font-black cursor-pointer hover:brightness-125 transition-all {buildAnimClass({ nameAnimation: msg.author_name_animation })}"
 										style={buildNameStyle({ nameColor: msg.author_name_color, nameGlow: msg.author_name_glow, nameGlowIntensity: msg.author_name_glow_intensity, nameFontFamily: msg.author_name_font_family }, '#e2e8f0')}
 										onclick={(e) => openProfilePopup(e, msg.author_username)}
 									>
@@ -1617,6 +1617,19 @@
 {/if}
 
 <style>
+
+	/* ── Username in chat ─────────────────────────────────────────────────── */
+	/* Stable vertical rhythm even when an emoji glyph cohabits with a custom
+	   pixel font. Using global so it survives the dynamic className list. */
+	:global(.chat-username) {
+		line-height: 1.4;
+		display: inline-block;
+		vertical-align: baseline;
+		/* Force emoji glyphs to honor the declared font-size where supported. */
+		font-variant-emoji: text;
+		max-height: 1.6em;
+		overflow: hidden;
+	}
 
 	/* ── Scroll to bottom button ──────────────────────────────────────────── */
 	.scroll-bottom-btn {

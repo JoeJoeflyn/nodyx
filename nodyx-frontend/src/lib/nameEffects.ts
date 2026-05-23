@@ -125,7 +125,11 @@ export function buildNameStyle(
   if (fontFamily) {
     // Escape quotes/backslashes to prevent CSS injection in font-family string
     const safeFontFamily = fontFamily.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-    parts.push(`font-family: '${safeFontFamily}', sans-serif`)
+    // Explicitly include the system emoji stack BEFORE the sans-serif fallback,
+    // so emoji glyphs in usernames pick a font that respects font-size rather
+    // than rendering at the OS default emoji size (which often comes out huge
+    // and misaligned next to a small pixel font like "Press Start 2P").
+    parts.push(`font-family: '${safeFontFamily}', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', sans-serif`)
   }
 
   return parts.join('; ')
