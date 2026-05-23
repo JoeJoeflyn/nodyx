@@ -16,6 +16,7 @@ import { createSubscription, listSubscriptions, setExternalSubId } from './event
 import { recordEvent } from './eventService'
 import { pushEventToChat, pushTwitchChatMessage, ensureTwitchChatChannel, getInstanceCommunityId } from './streamerChat'
 import { audit } from './audit'
+import { io } from '../../socket/io'
 import { twitchProvider } from './providers/twitchProvider'
 import type { StreamerProvider, ProviderId } from './providers/_types'
 
@@ -684,6 +685,21 @@ export async function ingestEvent(args: {
     })
   } catch (err) {
     console.error('[streamerHub] pushEventToChat failed', err)
+  }
+
+  // Live broadcast to the admin dashboard. Only admin sockets join the
+  // 'admin:streamer-hub' room (see socket/index.ts handler for the role check),
+  // so this never leaks event data to non-admin users.
+  try {
+    io?.to('admin:streamer-hub').emit('streamer:event', {
+      id:         `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      provider:   args.provider,
+      eventType:  args.eventType,
+      payload:    args.payload,
+      occurredAt: new Date().toISOString(),
+    })
+  } catch (err) {
+    console.error('[streamerHub] live broadcast failed', err)
   }
 }
 

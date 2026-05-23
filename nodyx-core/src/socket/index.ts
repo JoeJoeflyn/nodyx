@@ -343,6 +343,23 @@ export function registerSocketIO(server: Server): void {
     // ── Canvas boards ─────────────────────────────────────────────────────────
     registerCanvasHandlers(server, socket)
 
+    // ── Streamer Hub admin live feed ─────────────────────────────────────────
+    // Admin-only room that receives every EventSub-derived event in real time
+    // (see services/streamer/streamerHubService.ts ingestEvent). The role check
+    // happens once on join so subsequent emits don't need to re-verify.
+    socket.on('streamer-hub:join', async () => {
+      const { rows } = await db.query<{ role: string }>(
+        `SELECT role FROM community_members WHERE user_id = $1 LIMIT 1`,
+        [userId],
+      ).catch(() => ({ rows: [] as { role: string }[] }))
+      const role = rows[0]?.role
+      if (role !== 'owner' && role !== 'admin') return
+      socket.join('admin:streamer-hub')
+    })
+    socket.on('streamer-hub:leave', () => {
+      socket.leave('admin:streamer-hub')
+    })
+
     // ── chat:join ─────────────────────────────────────────────────────────────
     socket.on('chat:join', async (channelId: string) => {
       if (!isUuid(channelId)) return

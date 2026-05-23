@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/stores'
 	import { invalidateAll, replaceState } from '$app/navigation'
-	import { onMount } from 'svelte'
+	import { onMount, onDestroy } from 'svelte'
+	import { fly } from 'svelte/transition'
+	import { getSocket } from '$lib/socket'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -73,7 +75,13 @@
 	const enabledCount  = $derived(subs.filter(s => s.status === 'enabled').length)
 	const failedCount   = $derived(subs.filter(s => s.status === 'failed').length)
 	const pendingCount  = $derived(subs.filter(s => s.status === 'pending').length)
-	const events        = $derived<RecentEvent[]>(data.recentEvents ?? [])
+	// Live events arrive via Socket.IO and are prepended to the server-side list.
+	// The combined list shows fresh events at the top with a slide+fade transition.
+	let liveEvents = $state<RecentEvent[]>([])
+	let liveCounter = $state(0)  // pulse the Activité card on each arrival
+	const events        = $derived<RecentEvent[]>(
+		[...liveEvents, ...(data.recentEvents ?? [])].slice(0, 50)
+	)
 	const health        = $derived<HealthPayload | null>(data.health ?? null)
 	const setup         = $derived<SetupPayload | null>((data as { setup?: SetupPayload | null }).setup ?? null)
 
@@ -108,6 +116,32 @@
 		url.searchParams.delete('reason')
 		replaceState(url.pathname + (url.search ? url.search : ''), {})
 	})
+
+	// ── Live feed via Socket.IO (admin-only room) ─────────────────────────
+	let socketSub: (() => void) | null = null
+	onMount(() => {
+		const sock = getSocket()
+		if (!sock) return
+		sock.emit('streamer-hub:join')
+
+		const onEvent = (evt: RecentEvent) => {
+			// Skip the chat.message firehose, it's noise at this volume
+			if (evt.eventType === 'channel.chat.message') return
+			liveEvents = [evt, ...liveEvents].slice(0, 30)
+			liveCounter++
+			// If the new event is stream.online/offline, refresh the page data
+			// so the Live banner + currentSession reflect the new state.
+			if (evt.eventType === 'stream.online' || evt.eventType === 'stream.offline') {
+				invalidateAll()
+			}
+		}
+		sock.on('streamer:event', onEvent)
+		socketSub = () => {
+			sock.off('streamer:event', onEvent)
+			sock.emit('streamer-hub:leave')
+		}
+	})
+	onDestroy(() => { socketSub?.() })
 	const liveNow       = $derived(health?.currentSession?.live === true)
 	// Prefer the health endpoint timestamp (DB MAX) over the in-memory list head
 	const lastEvent     = $derived(
@@ -674,14 +708,24 @@
 
 		<!-- ── Recent events feed ─────────────────────────────────────────── -->
 		<section class="rounded-xl border border-slate-700/60 bg-slate-900/50 overflow-hidden">
-			<header class="px-5 py-3 border-b border-slate-700/60">
-				<h2 class="text-sm font-semibold text-white">Événements récents</h2>
-				<p class="text-[11px] text-slate-500 mt-0.5">{events.length} dans le feed. Chaque event est persisté + diffusé dans <code class="font-mono text-cyan-300">#twitch-chat</code> et dispatché aux subscribers du chat bridge.</p>
+			<header class="px-5 py-3 border-b border-slate-700/60 flex items-start justify-between gap-3">
+				<div>
+					<h2 class="text-sm font-semibold text-white">Événements récents</h2>
+					<p class="text-[11px] text-slate-500 mt-0.5">{events.length} dans le feed. Chaque event est persisté + diffusé dans <code class="font-mono text-cyan-300">#twitch-chat</code>.</p>
+				</div>
+				<span class="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-emerald-300 shrink-0">
+					<span class="relative flex h-2 w-2">
+						<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60"></span>
+						<span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+					</span>
+					Live{liveCounter > 0 ? ` · ${liveCounter}` : ''}
+				</span>
 			</header>
 			<ul class="divide-y divide-slate-700/40">
-				{#each events as evt}
+				{#each events as evt (evt.id)}
 					{@const meta = EVENT_META[evt.eventType] ?? { label: evt.eventType, tone: 'slate', desc: '' }}
-					<li class="px-5 py-2.5 flex items-center gap-3 text-sm hover:bg-slate-800/20 transition-colors">
+					<li class="px-5 py-2.5 flex items-center gap-3 text-sm hover:bg-slate-800/20 transition-colors"
+						in:fly={{ y: -10, duration: 280 }}>
 						<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border {TONE_CLASSES[meta.tone]} shrink-0 min-w-20 justify-center">{meta.label}</span>
 						<span class="flex-1 text-slate-200 truncate" title={humanize(evt)}>{humanize(evt)}</span>
 						<span class="shrink-0 text-[11px] text-slate-500 tabular-nums">{fmtRelative(evt.occurredAt)}</span>
