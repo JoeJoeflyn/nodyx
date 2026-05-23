@@ -249,9 +249,11 @@ export function formatEventMessage(eventType: string, payload: unknown): string 
       return `🏁 Poll terminé (${status}) : **${title}**`
     }
     case 'stream.online': {
-      const startedAt = get('started_at')
-      const fmt = startedAt ? new Date(startedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''
-      return `🎬 **Stream démarré**${fmt ? ` à ${fmt}` : ''}`
+      // No timestamp in the body: the chat message already shows the post
+      // time in the viewer's own timezone. Embedding a server-side time string
+      // would either drift (UTC vs viewer locale) or impose one timezone to
+      // every Nodyx instance worldwide.
+      return `🎬 **Stream démarré**`
     }
     case 'stream.offline': {
       return `⏹️ Stream terminé`
