@@ -1618,6 +1618,27 @@
 
 <style>
 
+	/* ── Twitch chat badges (bridged via Streamer Hub) ────────────────────── */
+	/* Inserted into message HTML by services/streamer/badges.ts as
+	   <span class="twitch-badges"><img class="streamer-badge" ... /></span>.
+	   Without these rules, Twitch serves the badge image at 72x72 native
+	   resolution, which renders huge and breaks the message layout.        */
+	:global(.twitch-badges) {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		vertical-align: -3px;
+		margin-right: 4px;
+	}
+	:global(.streamer-badge) {
+		width:  18px;
+		height: 18px;
+		display: inline-block;
+		vertical-align: middle;
+		border-radius: 3px;
+		image-rendering: -webkit-optimize-contrast;
+	}
+
 	/* ── Username in chat ─────────────────────────────────────────────────── */
 	/* Stable vertical rhythm even when an emoji glyph cohabits with a custom
 	   pixel font. Using global so it survives the dynamic className list. */
