@@ -13,11 +13,12 @@
 //   - Recovery §6.5 : si Helix retourne 429 (rate-limit), on enqueue dans
 //     chatOutboundQueue qui retry avec backoff exponentiel.
 
-import { db } from '../../config/database'
+import { db, redis } from '../../config/database'
 import { findPrimaryStreamer, getDecryptedTokens, refreshAndPersist } from './tokenService'
 import { audit } from './audit'
 import { twitchProvider } from './providers/twitchProvider'
 import { enqueueOutbound, startOutboundWorker } from './chatOutboundQueue'
+import { renderBadges } from './badges'
 import type { ProviderId } from './providers/_types'
 
 const RELAY_PREFIX_DISABLED = process.env.STREAMER_CHAT_NO_PREFIX === '1'
@@ -143,7 +144,14 @@ async function dispatchToTwitch(text: string): Promise<
     message:         text,
   })
 
-  if (r.ok) return { ok: true }
+  if (r.ok) {
+    // Mark this Twitch message_id as our own outbound, so the matching
+    // inbound EventSub Chat event (which always bounces back) is suppressed
+    // by pushTwitchChatMessage. Twitch normally delivers the echo within
+    // a few seconds, so 60s TTL is largely enough and self-cleans.
+    await redis.set(`streamer:chat:echo:${r.messageId}`, '1', 'EX', 60).catch(() => {})
+    return { ok: true }
+  }
   if (r.rateLimited) return { ok: false, rateLimited: true }
   return { ok: false, rateLimited: false, reason: r.reason }
 }
@@ -198,6 +206,54 @@ export async function relayMessageToTwitch(args: {
 // Idempotent : startOutboundWorker garde un singleton interne.
 export function startChatOutboundWorker(): void {
   startOutboundWorker(dispatchToTwitch)
+}
+
+// ── Broadcaster badge sur les messages Nodyx-natifs du streamer ─────────────
+// Quand le user lié au compte Twitch (= le streamer) poste un message dans
+// #twitch-chat, on lui colle le badge "broadcaster" sur sa row Nodyx, comme
+// le ferait l'echo EventSub si on ne le suppressait pas. Cohérent avec ce
+// qu'on voit sur Twitch (sender_id = broadcaster_id → badge broadcaster).
+//
+// Pour les autres membres Nodyx qui postent dans #twitch-chat : pas de badge
+// (ils ne sont pas le streamer, même si Twitch les voit comme broadcaster
+// via le relay OAuth). Le préfixe [username] suffit côté Twitch.
+
+const STREAMER_USER_CACHE_KEY = 'streamer:owner_user_id'
+const STREAMER_USER_CACHE_TTL = 300  // 5min, invalidé naturellement à l'OAuth
+
+async function getStreamerOwnerUserId(): Promise<{ userId: string | null; broadcasterId: string } | null> {
+  const cached = await redis.get(STREAMER_USER_CACHE_KEY).catch(() => null)
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached) as { userId: string | null; broadcasterId: string }
+      if (parsed.broadcasterId) return parsed
+    } catch { /* fallthrough */ }
+  }
+  const primary = await findPrimaryStreamer('twitch')
+  if (!primary) return null
+  const payload = { userId: primary.userId, broadcasterId: primary.externalId }
+  await redis.set(STREAMER_USER_CACHE_KEY, JSON.stringify(payload), 'EX', STREAMER_USER_CACHE_TTL).catch(() => {})
+  return payload
+}
+
+export async function applyBroadcasterBadgeIfOwner(
+  authorUserId: string,
+  content:      string,
+): Promise<string> {
+  const owner = await getStreamerOwnerUserId().catch(() => null)
+  if (!owner || owner.userId !== authorUserId) return content
+
+  const badgesHtml = await renderBadges({
+    badges:        [{ set_id: 'broadcaster', id: '1' }],
+    broadcasterId: owner.broadcasterId,
+  }).catch(() => '')
+  if (!badgesHtml) return content
+  return badgesHtml + content
+}
+
+// Invalide le cache (à appeler après OAuth connect/disconnect).
+export async function invalidateStreamerOwnerCache(): Promise<void> {
+  await redis.del(STREAMER_USER_CACHE_KEY).catch(() => {})
 }
 
 // Export pour tests ou usage admin debug

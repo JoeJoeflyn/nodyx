@@ -520,26 +520,35 @@ export function registerSocketIO(server: Server): void {
         }
         // ▲ FIN OCTOGUARD HOOK
 
+        // ── Streamer Hub bridge outbound (Phase 2 §6.4) ──────────────────
+        // Si le message a été posté dans #twitch-chat ET que l'auteur est
+        // le streamer lié, on prépend le badge "broadcaster" pour qu'on le
+        // voie sur Nodyx comme sur Twitch (le badge venait avant de l'echo
+        // EventSub, maintenant suppressé pour anti-doublon).
+        const { rows: chCheck } = await db.query<{ slug: string }>(
+          `SELECT slug FROM channels WHERE id = $1 LIMIT 1`,
+          [channelId],
+        ).catch(() => ({ rows: [] as { slug: string }[] }))
+        const isTwitchChat = chCheck[0]?.slug === 'twitch-chat'
+
+        let finalContent = sanitized
+        if (isTwitchChat) {
+          finalContent = await import('../services/streamer/twitchChatBridge')
+            .then(({ applyBroadcasterBadgeIfOwner }) => applyBroadcasterBadgeIfOwner(userId, sanitized))
+            .catch(() => sanitized)
+        }
+
         const message = await ChannelModel.addMessage({
           channel_id:   channelId,
           author_id:    userId,
-          content:      sanitized,
+          content:      finalContent,
           reply_to_id:  replyToId ?? null,
         })
         if (io) {
           io.to(`channel:${channelId}`).emit('chat:message', message)
         }
 
-        // ── Streamer Hub bridge outbound (Phase 2 §6.4) ──────────────────
-        // Si le message a été posté dans le channel #twitch-chat, on le
-        // relaie vers le chat Twitch via Helix POST /chat/messages. Best-
-        // effort, ne bloque pas la response socket. Skip si stream offline
-        // (le bridge.relay check tout seul).
-        const { rows: chCheck } = await db.query<{ slug: string }>(
-          `SELECT slug FROM channels WHERE id = $1 LIMIT 1`,
-          [channelId],
-        ).catch(() => ({ rows: [] as { slug: string }[] }))
-        if (chCheck[0]?.slug === 'twitch-chat') {
+        if (isTwitchChat) {
           import('../services/streamer/twitchChatBridge')
             .then(({ relayMessageToTwitch }) =>
               relayMessageToTwitch({

@@ -23,9 +23,15 @@ const { enqueueOutboundMock, startOutboundWorkerMock } = vi.hoisted(() => ({
   startOutboundWorkerMock: vi.fn(),
 }))
 
+const { redisSetMock, redisDelMock } = vi.hoisted(() => ({
+  redisSetMock: vi.fn().mockResolvedValue('OK'),
+  redisDelMock: vi.fn().mockResolvedValue(1),
+}))
+
 vi.mock('../config/database', () => ({
   db:    { query: dbQueryMock },
-  redis: {},
+  // set/del sont utilisés par twitchChatBridge pour marquer l'echo (anti-doublon).
+  redis: { set: redisSetMock, del: redisDelMock },
 }))
 
 vi.mock('../services/streamer/tokenService', () => ({
@@ -74,6 +80,8 @@ function streamerOfflineRow() {
 beforeEach(() => {
   vi.resetAllMocks()
   enqueueOutboundMock.mockResolvedValue({ length: 1, overflowAlerted: false })
+  redisSetMock.mockResolvedValue('OK')
+  redisDelMock.mockResolvedValue(1)
   process.env.STREAMER_TWITCH_CLIENT_ID = 'test-client-id'
   delete process.env.STREAMER_CHAT_TEST_MODE
   delete process.env.STREAMER_CHAT_NO_PREFIX

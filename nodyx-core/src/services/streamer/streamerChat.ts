@@ -12,7 +12,7 @@
 //     - Outbound : chaque message écrit ici par un membre Nodyx est relayé
 //       vers le chat Twitch via Helix POST /chat/messages (cf brique 2.4).
 
-import { db } from '../../config/database'
+import { db, redis } from '../../config/database'
 import * as Channel from '../../models/channel'
 import { io } from '../../socket/io'
 import { renderChatMessage } from './emotes'
@@ -395,6 +395,19 @@ export async function pushTwitchChatMessage(args: {
   }
   const evt = body?.event
   if (!evt?.chatter_user_id || !evt.chatter_user_login || !evt.broadcaster_user_id || !evt.message?.text) return
+
+  // Echo suppression: if this message_id was just sent by our own outbound
+  // relay (twitchChatBridge.dispatchToTwitch), Twitch is bouncing it back to
+  // us via EventSub Chat. We already have the original message in #twitch-chat
+  // from the Nodyx side, so republishing it would create a visible duplicate.
+  if (evt.message_id) {
+    const echoKey = `streamer:chat:echo:${evt.message_id}`
+    const isEcho  = await redis.get(echoKey).catch(() => null)
+    if (isEcho) {
+      await redis.del(echoKey).catch(() => {})
+      return
+    }
+  }
 
   const communityId = await getInstanceCommunityId()
   if (!communityId) return
