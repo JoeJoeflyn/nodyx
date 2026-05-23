@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores'
-	import { invalidateAll } from '$app/navigation'
+	import { invalidateAll, replaceState } from '$app/navigation'
+	import { onMount } from 'svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -79,6 +80,33 @@
 	// Auto-expand the checklist when something needs attention
 	$effect(() => {
 		if (setup && setup.overall !== 'ok') setupOpen = true
+	})
+
+	// Surface the OAuth callback result as a toast (instead of dumping raw JSON
+	// in the address bar). The callback redirects here with ?twitch=connected,
+	// ?twitch=replayed or ?twitch=error[&reason=...].
+	onMount(() => {
+		const url = new URL(window.location.href)
+		const twitch = url.searchParams.get('twitch')
+		if (!twitch) return
+
+		if (twitch === 'connected') {
+			const login = url.searchParams.get('login') ?? ''
+			const subs  = url.searchParams.get('subs')  ?? '0'
+			pushToast(`Twitch lié : @${login} · ${subs} subscription${parseInt(subs, 10) > 1 ? 's' : ''} EventSub créée${parseInt(subs, 10) > 1 ? 's' : ''}`, true)
+		} else if (twitch === 'replayed') {
+			pushToast('Callback déjà traité (probable double-redirect). Le compte est lié.', true)
+		} else if (twitch === 'error') {
+			const reason = url.searchParams.get('reason') ?? 'inconnu'
+			pushToast(`Connexion Twitch échouée : ${decodeURIComponent(reason)}`, false)
+		}
+
+		// Clean the URL so the toast does not re-trigger on refresh
+		url.searchParams.delete('twitch')
+		url.searchParams.delete('login')
+		url.searchParams.delete('subs')
+		url.searchParams.delete('reason')
+		replaceState(url.pathname + (url.search ? url.search : ''), {})
 	})
 	const liveNow       = $derived(health?.currentSession?.live === true)
 	// Prefer the health endpoint timestamp (DB MAX) over the in-memory list head

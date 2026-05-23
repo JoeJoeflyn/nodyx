@@ -236,7 +236,7 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
     // kind === 'streamer'
     if (replayed) {
       request.log.info({ stateKind: 'streamer' }, 'OAuth callback replayed — skipping exchange')
-      return reply.redirect('/admin/streamer-hub?twitch_link_replay=1', 302)
+      return reply.redirect('/admin/streamer-hub?twitch=replayed', 302)
     }
     try {
       const result = await completeOAuthCallback({
@@ -247,22 +247,23 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
         adminUserId: stateData.targetUserId,
         ip:          request.ip,
       })
-      return reply.send({
-        ok:       true,
-        streamer: result.streamer,
-        email:    result.email,
-        subscribed: result.subscribeResults,
-      })
+      // Redirect to the admin dashboard with a success marker. Email + token
+      // payload are intentionally NOT forwarded in the URL: the dashboard will
+      // fetch fresh data via /streamer/twitch/me on load. This also removes the
+      // "raw JSON in your browser" UX after OAuth.
+      const login = encodeURIComponent(result.streamer.externalLogin)
+      const subs  = result.subscribeResults.length
+      return reply.redirect(`/admin/streamer-hub?twitch=connected&login=${login}&subs=${subs}`, 302)
     } catch (err) {
       const e = err as Error
-      const status = err instanceof ProviderError ? err.status : 500
       await audit({
         action: 'connect_twitch', status: 'failed',
         userId: stateData.targetUserId, ipAddress: request.ip,
         metadata: { stage: 'callback_pipeline' },
         error:    e.message,
       })
-      return reply.code(502).send({ ok: false, error: 'pipeline_failure', status, message: e.message })
+      const reason = encodeURIComponent(e.message?.slice(0, 200) || 'pipeline_failure')
+      return reply.redirect(`/admin/streamer-hub?twitch=error&reason=${reason}`, 302)
     }
   })
 
