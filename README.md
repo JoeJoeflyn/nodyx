@@ -55,7 +55,7 @@ Forum + Chat + Voice + P2P + Canvas + Homepage Builder + Widget SDK, one server,
 </details>
 
 <div align="center">
-  <img src="docs/img/nodyx_home_page.png" alt="Nodyx, Homepage Builder" width="860"/>
+  <img src="docs/img/fronted_nodyx_page_builder.png" alt="Nodyx, Homepage Builder" width="860"/>
 </div>
 
 ---
