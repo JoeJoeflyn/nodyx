@@ -710,7 +710,34 @@ export async function ingestEvent(args: {
   } catch (err) {
     console.error('[streamerHub] live broadcast failed', err)
   }
+
+  // Dispatch vers les overlays OBS abonnées au type 'alert_box' (Phase 3+).
+  // Les overlays alert box reçoivent les 5 types d'événements à célébrer ;
+  // les autres types d'overlays (goal_bar, timer, etc.) consommeront leurs
+  // propres triggers dans des slices futures.
+  try {
+    if (io && ALERT_BOX_EVENT_TYPES.has(args.eventType)) {
+      const { dispatchOverlayEvent } = await import('../../socket/overlay')
+      dispatchOverlayEvent(io, {
+        kind:       'alert_box',
+        eventType:  args.eventType,
+        payload:    args.payload,
+        occurredAt: new Date().toISOString(),
+      })
+    }
+  } catch (err) {
+    console.error('[streamerHub] overlay dispatch failed', err)
+  }
 }
+
+// Types d'events qu'une overlay alert_box doit recevoir et célébrer visuellement.
+const ALERT_BOX_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'channel.follow',
+  'channel.subscribe',
+  'channel.subscription.gift',
+  'channel.cheer',
+  'channel.raid',
+])
 
 // Le user qui agit dans le payload dépend de l'event. Pour la plupart des
 // events, c'est `user_id` (le viewer qui follow / sub / cheer). Pour les

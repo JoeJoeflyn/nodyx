@@ -60,6 +60,15 @@ import {
   getEngagementScopes,
   patchPrediction,
 } from '../services/streamer/twitchEngagement'
+import {
+  createOverlay,
+  findOverlayByToken,
+  isOverlayType,
+  listOverlays,
+  revokeOverlay,
+  updateOverlayConfig,
+  type OverlayType,
+} from '../services/streamer/overlayService'
 import { ProviderError } from '../services/streamer/providers/_types'
 
 // ── Helpers env ──────────────────────────────────────────────────────────────
@@ -592,6 +601,71 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
       return reply.send({ ok: true, prediction: r.data })
     },
   )
+
+  // ── Overlays OBS ───────────────────────────────────────────────────────
+  // Génère et gère les URLs browser source à coller dans OBS. Chaque overlay
+  // a un token unguessable qui sert d'auth côté socket (lookup + room join).
+
+  server.get('/overlays', { preHandler: adminOnly }, async () => {
+    const rows = await listOverlays()
+    return { overlays: rows }
+  })
+
+  server.post<{ Body: { overlayType?: string; label?: string; config?: Record<string, unknown> } }>(
+    '/overlays',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const t = request.body?.overlayType ?? ''
+      if (!isOverlayType(t)) {
+        return reply.code(400).send({ ok: false, error: 'invalid_overlay_type', allowed: ['alert_box', 'goal_bar', 'stream_timer', 'event_ticker', 'leaderboard'] })
+      }
+      const overlay = await createOverlay({
+        overlayType: t as OverlayType,
+        label:       request.body?.label  ?? null,
+        config:      request.body?.config ?? {},
+        createdBy:   request.user!.userId,
+      })
+      return reply.send({ ok: true, overlay })
+    },
+  )
+
+  server.patch<{ Params: { id: string }; Body: { label?: string; config?: Record<string, unknown> } }>(
+    '/overlays/:id',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const updated = await updateOverlayConfig({
+        id:     request.params.id,
+        label:  request.body?.label,
+        config: request.body?.config,
+      })
+      if (!updated) return reply.code(404).send({ ok: false, error: 'not_found' })
+      return reply.send({ ok: true, overlay: updated })
+    },
+  )
+
+  server.delete<{ Params: { id: string } }>('/overlays/:id', { preHandler: adminOnly }, async (request, reply) => {
+    const ok = await revokeOverlay(request.params.id)
+    if (!ok) return reply.code(404).send({ ok: false, error: 'not_found_or_already_revoked' })
+    return reply.send({ ok: true })
+  })
+
+  // GET /overlay/lookup/:token — public — bootstrap d'une overlay côté navigateur.
+  // PAS d'auth admin parce que la page tourne dans OBS sur la machine du
+  // streamer. Le token EST l'auth, et il donne uniquement le droit de lire la
+  // config et de recevoir les events (rien d'écriture). Si revoked → 404.
+  server.get<{ Params: { token: string } }>('/overlay/lookup/:token', async (request, reply) => {
+    const overlay = await findOverlayByToken(request.params.token)
+    if (!overlay) return reply.code(404).send({ ok: false, error: 'not_found' })
+    return reply.send({
+      ok:      true,
+      overlay: {
+        id:          overlay.id,
+        overlayType: overlay.overlayType,
+        label:       overlay.label,
+        config:      overlay.config,
+      },
+    })
+  })
 
   // GET /stats  — admin only — totaux + séries journalières des events EventSub
   // sur les N derniers jours (default 7, max 30). Sert à alimenter les sparklines

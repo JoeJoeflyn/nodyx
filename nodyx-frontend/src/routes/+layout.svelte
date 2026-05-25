@@ -248,6 +248,11 @@
 		$page.url.pathname !== '/banned'
 	)
 
+	// Routes /overlay/* sont des pages OBS browser source : fullscreen
+	// transparent, AUCUN chrome Nodyx (ni nav, ni sidebar, ni members bar).
+	// On bypass complètement le rendu du layout pour ces routes.
+	const isOverlayRoute = $derived($page.url.pathname.startsWith('/overlay/'))
+
 	// Active channel ID from URL (used on /chat to highlight the current channel)
 	const activeChatChannelId = $derived($page.url.searchParams.get('channel') ?? null)
 
@@ -446,6 +451,10 @@
 	<link rel="stylesheet" href={GOOGLE_FONTS_URL} />
 </svelte:head>
 
+{#if isOverlayRoute}
+	<!-- Overlay OBS : aucun chrome Nodyx, juste la page transparente. -->
+	{@render children()}
+{:else}
 <div class="min-h-screen flex flex-col" style="{appVars}; background: var(--p-bg); color: var(--p-text)">
 
 	<!-- ══ MAINTENANCE BANNER (sticky top, hidden when no op in progress) ════════ -->
@@ -1478,6 +1487,7 @@
 	</nav>
 	{/if}
 </div>
+{/if}<!-- /isOverlayRoute -->
 
 <!-- ── Status modal ──────────────────────────────────────────────────────── -->
 {#if showStatusModal}

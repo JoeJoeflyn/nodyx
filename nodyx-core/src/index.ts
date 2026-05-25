@@ -39,6 +39,7 @@ import { startChatOutboundWorker } from './services/streamer/twitchChatBridge'
 import { NODYX_VERSION } from './utils/version'
 import { setIO }              from './socket/io'
 import { registerSocketIO } from './socket/index'
+import { registerOverlayNamespace } from './socket/overlay'
 import { runMigrations }    from './scripts/migrate'
 import { initOctoGuard }    from './services/octoguard'
 import { octoguardAdminPlugin, reportsPublicPlugin } from './routes/octoguard'
@@ -224,6 +225,7 @@ const start = async () => {
     })
     setIO(io)
     registerSocketIO(io)
+    registerOverlayNamespace(io)
     console.log('⚡ Socket.IO prêt')
     startScheduler(io)
     startChatOutboundWorker()

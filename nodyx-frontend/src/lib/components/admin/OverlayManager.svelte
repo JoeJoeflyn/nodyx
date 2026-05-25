@@ -1,0 +1,225 @@
+<script lang="ts">
+	import { onMount } from 'svelte'
+	import { apiFetch } from '$lib/api'
+	import { browser } from '$app/environment'
+
+	interface Props {
+		token: string
+	}
+
+	let { token }: Props = $props()
+
+	type OverlayType = 'alert_box' | 'goal_bar' | 'stream_timer' | 'event_ticker' | 'leaderboard'
+
+	type OverlayRow = {
+		id:           string
+		token:        string
+		overlayType:  OverlayType
+		label:        string | null
+		config:       Record<string, unknown>
+		createdAt:    string
+		updatedAt:    string
+		lastSeenAt:   string | null
+	}
+
+	// Pour le slice 1, seul alert_box est implémenté. Les autres types
+	// sont créables mais leur page route n'existe pas encore (placeholder).
+	const TYPE_META: Record<OverlayType, { label: string; desc: string; routeSlug: string; ready: boolean }> = {
+		alert_box:    { label: 'Alert Box',    desc: 'Notifications follow/sub/raid/cheer qui slide à l\'écran.', routeSlug: 'alert',    ready: true  },
+		goal_bar:     { label: 'Goal Bar',     desc: 'Barre de progression vers un objectif (followers/subs).',  routeSlug: 'goal',     ready: false },
+		stream_timer: { label: 'Stream Timer', desc: 'Temps écoulé depuis le début du stream.',                    routeSlug: 'timer',    ready: false },
+		event_ticker: { label: 'Event Ticker', desc: 'Bandeau défilant des derniers événements.',                  routeSlug: 'ticker',   ready: false },
+		leaderboard:  { label: 'Leaderboard',  desc: 'Top contributors (follows/subs/raids/bits) sur 7/30j.',     routeSlug: 'board',    ready: false },
+	}
+
+	let overlays = $state<OverlayRow[]>([])
+	let loading  = $state(true)
+	let toast    = $state<{ text: string; ok: boolean } | null>(null)
+
+	// Form create
+	let formType:  OverlayType = $state('alert_box')
+	let formLabel = $state('')
+	let creating  = $state(false)
+
+	function flash(text: string, ok: boolean): void {
+		toast = { text, ok }
+		if (browser) setTimeout(() => { toast = null }, 3500)
+	}
+
+	async function reload(): Promise<void> {
+		const res = await apiFetch(fetch, '/streamer/overlays', { headers: { Authorization: `Bearer ${token}` } })
+		if (res.ok) {
+			const data = await res.json() as { overlays: OverlayRow[] }
+			overlays = data.overlays
+		}
+		loading = false
+	}
+
+	onMount(() => { reload() })
+
+	async function create(): Promise<void> {
+		if (creating) return
+		creating = true
+		try {
+			const res = await apiFetch(fetch, '/streamer/overlays', {
+				method:  'POST',
+				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+				body:    JSON.stringify({ overlayType: formType, label: formLabel.trim() || null }),
+			})
+			if (res.ok) {
+				flash('Overlay créée. URL prête à coller dans OBS.', true)
+				formLabel = ''
+				await reload()
+			} else {
+				flash('Création échouée.', false)
+			}
+		} catch {
+			flash('Erreur réseau.', false)
+		} finally {
+			creating = false
+		}
+	}
+
+	async function revoke(id: string): Promise<void> {
+		if (!confirm('Révoquer cette overlay ? L\'URL ne fonctionnera plus dans OBS. Tu pourras en créer une nouvelle.')) return
+		const res = await apiFetch(fetch, `/streamer/overlays/${id}`, {
+			method:  'DELETE',
+			headers: { Authorization: `Bearer ${token}` },
+		})
+		if (res.ok) {
+			flash('Overlay révoquée.', true)
+			await reload()
+		} else flash('Révocation échouée.', false)
+	}
+
+	function urlFor(o: OverlayRow): string {
+		const meta = TYPE_META[o.overlayType]
+		// L'overlay tourne sur le frontend (route SvelteKit /overlay/...), donc
+		// on prend l'origin du navigateur. En SSR (jamais ce composant), fallback
+		// chaine vide pour ne pas crasher.
+		const base = (browser ? window.location.origin : '').replace(/\/+$/, '')
+		return `${base}/overlay/${meta.routeSlug}/${o.token}`
+	}
+
+	async function copyUrl(o: OverlayRow): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(urlFor(o))
+			flash('URL copiée. Colle-la dans OBS → Browser Source.', true)
+		} catch {
+			flash('Copie échouée, sélectionne manuellement l\'URL.', false)
+		}
+	}
+
+	function fmtRelative(iso: string | null): string {
+		if (!iso) return 'jamais connectée'
+		const diff = Date.now() - new Date(iso).getTime()
+		const m = Math.floor(diff / 60_000)
+		if (m < 1)  return 'à l\'instant'
+		if (m < 60) return `il y a ${m} min`
+		const h = Math.floor(m / 60)
+		if (h < 24) return `il y a ${h}h`
+		const d = Math.floor(h / 24)
+		return `il y a ${d}j`
+	}
+</script>
+
+<section class="rounded-xl border border-cyan-500/25 bg-gradient-to-br from-cyan-950/30 via-slate-900/60 to-indigo-950/20 p-5 space-y-5">
+	<header class="flex items-center justify-between gap-3 flex-wrap">
+		<div class="flex items-center gap-2.5">
+			<svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+			<h2 class="text-sm font-semibold text-white">Browser Sources OBS</h2>
+		</div>
+		<a href="https://obsproject.com/kb/browser-source" target="_blank" rel="noopener noreferrer"
+			class="text-[11px] text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1">
+			Comment ajouter un Browser Source dans OBS
+			<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+		</a>
+	</header>
+
+	{#if toast}
+		<div class="rounded-lg border p-3 text-xs flex items-center gap-2 {toast.ok ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border-rose-500/40 bg-rose-500/10 text-rose-200'}">
+			<span class="w-1.5 h-1.5 rounded-full {toast.ok ? 'bg-emerald-400' : 'bg-rose-400'}"></span>
+			{toast.text}
+		</div>
+	{/if}
+
+	<!-- Form: créer une nouvelle overlay -->
+	<div class="rounded-lg border border-slate-700/60 bg-slate-950/40 p-4 space-y-3">
+		<div class="text-[11px] uppercase tracking-widest font-semibold text-slate-400">Nouvelle overlay</div>
+		<div class="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-2">
+			<select bind:value={formType}
+				class="rounded-lg bg-slate-900 border border-slate-700/60 focus:border-cyan-500/60 focus:ring-2 focus:ring-cyan-500/20 px-3 py-2 text-sm text-white outline-none transition-colors">
+				{#each Object.entries(TYPE_META) as [k, m] (k)}
+					<option value={k} disabled={!m.ready}>
+						{m.label}{m.ready ? '' : ' (Soon)'}
+					</option>
+				{/each}
+			</select>
+			<input type="text" bind:value={formLabel} maxlength="60"
+				placeholder="Label optionnel (ex: Alert principale)"
+				class="rounded-lg bg-slate-900 border border-slate-700/60 focus:border-cyan-500/60 focus:ring-2 focus:ring-cyan-500/20 px-3 py-2 text-sm text-white placeholder-slate-600 outline-none transition-colors"/>
+			<button type="button" onclick={create} disabled={creating || !TYPE_META[formType].ready}
+				class="rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 disabled:opacity-30 disabled:cursor-not-allowed border border-cyan-500/40 text-cyan-200 font-medium px-4 py-2 text-sm transition-colors">
+				{creating ? 'Création…' : 'Créer'}
+			</button>
+		</div>
+		<div class="text-[11px] text-slate-500">{TYPE_META[formType].desc}</div>
+	</div>
+
+	<!-- Liste des overlays -->
+	<div class="space-y-2">
+		<div class="text-[11px] uppercase tracking-widest font-semibold text-slate-400">Overlays actives ({overlays.length})</div>
+
+		{#if loading}
+			<div class="text-xs text-slate-500 text-center py-6">Chargement…</div>
+		{:else if overlays.length === 0}
+			<div class="rounded-lg border border-dashed border-slate-700/60 bg-slate-900/30 p-6 text-center text-xs text-slate-500">
+				Aucune overlay créée. Lance ta première Alert Box ci-dessus, copie l'URL, colle-la dans OBS comme Browser Source en 1920×1080 transparent.
+			</div>
+		{:else}
+			{#each overlays as o (o.id)}
+				{@const meta = TYPE_META[o.overlayType]}
+				{@const url  = urlFor(o)}
+				<div class="rounded-lg border border-slate-700/60 bg-slate-950/40 p-4 space-y-3">
+					<div class="flex items-start justify-between gap-3 flex-wrap">
+						<div class="flex items-center gap-2.5">
+							<span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+								{meta?.label ?? o.overlayType}
+							</span>
+							<div>
+								<div class="text-sm font-semibold text-white">{o.label || 'Sans label'}</div>
+								<div class="text-[10px] text-slate-500">
+									Créée {fmtRelative(o.createdAt)} · Dernière connexion OBS : <span class={o.lastSeenAt ? 'text-emerald-400' : 'text-slate-600'}>{fmtRelative(o.lastSeenAt)}</span>
+								</div>
+							</div>
+						</div>
+						<button type="button" onclick={() => revoke(o.id)}
+							class="text-[11px] text-rose-300 hover:text-rose-200 border border-rose-500/30 hover:border-rose-500/50 px-2.5 py-1 rounded transition-colors">
+							Révoquer
+						</button>
+					</div>
+					<div class="flex gap-2">
+						<code class="flex-1 text-[11px] font-mono text-slate-300 bg-slate-900 border border-slate-700/60 rounded px-3 py-2 truncate" title={url}>{url}</code>
+						<button type="button" onclick={() => copyUrl(o)}
+							class="rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-200 px-3 py-2 text-xs font-medium transition-colors shrink-0 inline-flex items-center gap-1.5">
+							<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+							Copier
+						</button>
+					</div>
+				</div>
+			{/each}
+		{/if}
+	</div>
+
+	<!-- Quick-start OBS -->
+	<details class="rounded-lg border border-slate-700/60 bg-slate-900/30 group">
+		<summary class="px-4 py-2.5 text-xs font-medium text-slate-300 cursor-pointer hover:text-white">
+			Comment intégrer dans OBS (3 étapes)
+		</summary>
+		<div class="px-4 pb-4 pt-1 text-xs text-slate-400 space-y-2 leading-relaxed">
+			<p><strong class="text-slate-200">1.</strong> Dans OBS, dans Sources, clic droit → "Ajouter" → "Browser Source".</p>
+			<p><strong class="text-slate-200">2.</strong> Colle l'URL de l'overlay. Largeur 1920, Hauteur 1080. Coche "Shutdown source when not visible" pour économiser la RAM.</p>
+			<p><strong class="text-slate-200">3.</strong> Place la source au-dessus de ta scène. Le fond est transparent, seul le contenu des alertes apparait.</p>
+		</div>
+	</details>
+</section>
