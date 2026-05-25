@@ -126,6 +126,10 @@ export const STREAMER_HUB_SCOPES = [
   'user:bot',
   'channel:bot',
   'channel:read:polls',
+  // Stream Control Panel (Phase 3) : éditer le titre + la catégorie du
+  // stream depuis Nodyx, poser des markers VOD pendant le live. Couvre les
+  // deux endpoints helix : PATCH /channels et POST /streams/markers.
+  'channel:manage:broadcast',
 ] as const
 
 // Scopes minimaux pour le viewer flow : on a juste besoin d'identifier le user

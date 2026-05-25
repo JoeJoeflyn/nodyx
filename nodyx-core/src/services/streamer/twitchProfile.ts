@@ -99,6 +99,24 @@ interface HelixStreamsResponse {
   }>
 }
 
+// /channels expose les valeurs persistantes (titre + catégorie) qui s'affichent
+// sur la page de la chaine même quand le streamer est hors ligne. /streams
+// ne renvoie ces valeurs que pendant un live, donc on prend /channels comme
+// source de vérité pour "le réglage actuel du canal".
+interface HelixChannelsResponse {
+  data?: Array<{
+    broadcaster_id:        string
+    broadcaster_login:     string
+    broadcaster_name:      string
+    game_id:               string
+    game_name:             string
+    title:                 string
+    broadcaster_language:  string
+    delay:                 number
+    tags?:                 string[]
+  }>
+}
+
 interface HelixFollowersResponse {
   total?: number
 }
@@ -116,19 +134,21 @@ export async function getTwitchProfile(options?: { forceRefresh?: boolean }): Pr
   const tok = await getValidStreamerAccessToken()
   if (!tok) return null
 
-  const [users, streams, followers] = await Promise.all([
+  const [users, streams, followers, channels] = await Promise.all([
     helixGetRaw<HelixUsersResponse>(`/users?id=${tok.broadcasterId}`, tok.token),
     helixGetRaw<HelixStreamsResponse>(`/streams?user_id=${tok.broadcasterId}`, tok.token),
     helixGetRaw<HelixFollowersResponse>(
       `/channels/followers?broadcaster_id=${tok.broadcasterId}&first=1`,
       tok.token,
     ),
+    helixGetRaw<HelixChannelsResponse>(`/channels?broadcaster_id=${tok.broadcasterId}`, tok.token),
   ])
 
   const u = users?.data?.[0]
   if (!u) return null
 
-  const s = streams?.data?.[0] ?? null
+  const s = streams?.data?.[0]  ?? null
+  const c = channels?.data?.[0] ?? null
 
   const profile: TwitchProfile = {
     user: {
@@ -144,15 +164,17 @@ export async function getTwitchProfile(options?: { forceRefresh?: boolean }): Pr
     },
     stream: {
       isLive:       !!s,
-      gameName:     s?.game_name ?? null,
-      title:        s?.title ?? null,
+      // Source de vérité pour title/gameName : /channels (persistant), pas
+      // /streams (uniquement live). Fallback sur s.* puis null si tout vide.
+      gameName:     c?.game_name || s?.game_name || null,
+      title:        c?.title     || s?.title     || null,
       viewerCount:  s?.viewer_count ?? null,
       startedAt:    s?.started_at ?? null,
       // Twitch retourne une URL avec placeholders {width}x{height}. On résout en 640x360.
       thumbnailUrl: s?.thumbnail_url
         ? s.thumbnail_url.replace('{width}', '640').replace('{height}', '360')
         : null,
-      language:     s?.language ?? null,
+      language:     c?.broadcaster_language || s?.language || null,
     },
     followers: {
       total: typeof followers?.total === 'number' ? followers.total : null,

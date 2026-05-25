@@ -6,6 +6,7 @@
 	import { getSocket } from '$lib/socket'
 	import Sparkline from '$lib/components/admin/Sparkline.svelte'
 	import StreamerHero from '$lib/components/admin/StreamerHero.svelte'
+	import StreamControlPanel from '$lib/components/admin/StreamControlPanel.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -132,6 +133,8 @@
 	const setup         = $derived<SetupPayload | null>((data as { setup?: SetupPayload | null }).setup ?? null)
 	const stats         = $derived<StatsPayload | null>((data as { stats?: StatsPayload | null }).stats ?? null)
 	const twitchProfile = $derived<TwitchProfilePayload | null>((data as { profile?: TwitchProfilePayload | null }).profile ?? null)
+	const controlHasScope = $derived<boolean>((data as { controlHasScope?: boolean }).controlHasScope === true)
+	const pageToken     = $derived(($page.data as { token?: string }).token ?? '')
 
 	// Ordre + types affichés dans les cartes Stats. On garde follow / sub /
 	// cheer / raid (les "moments" de stream) et on exclut les messages (trop
@@ -467,6 +470,18 @@
 	<!-- ── Hero Twitch (avatar, live state, follower count, ticking timer) ─── -->
 	{#if isConnected && twitchProfile}
 		<StreamerHero profile={twitchProfile} />
+	{/if}
+
+	<!-- ── Stream Control Panel (titre + catégorie + marker VOD) ──────────── -->
+	{#if isConnected && twitchProfile}
+		<StreamControlPanel
+			token={pageToken}
+			hasManageScope={controlHasScope}
+			currentTitle={twitchProfile.stream.title}
+			currentGameName={twitchProfile.stream.gameName}
+			isLive={twitchProfile.stream.isLive}
+			onProfileUpdated={() => invalidateAll()}
+		/>
 	{/if}
 
 	<!-- ── Setup checklist (diagnostic visuel point par point) ─────────────── -->

@@ -45,6 +45,12 @@ import {
 import { listRecentEvents } from '../services/streamer/eventService'
 import { audit } from '../services/streamer/audit'
 import { getTwitchProfile } from '../services/streamer/twitchProfile'
+import {
+  createMarker,
+  hasManageBroadcastScope,
+  searchGames,
+  updateChannelInfo,
+} from '../services/streamer/twitchStreamControl'
 import { ProviderError } from '../services/streamer/providers/_types'
 
 // ── Helpers env ──────────────────────────────────────────────────────────────
@@ -354,6 +360,94 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
         return reply.code(404).send({ ok: false, error: 'no_streamer_or_helix_unavailable' })
       }
       return profile
+    },
+  )
+
+  // ── Stream Control Panel (Phase 3) ─────────────────────────────────────
+  // Pilote la diffusion Twitch depuis Nodyx : édition titre + catégorie,
+  // marker VOD pendant le live, recherche de jeu. Tous gated par
+  // channel:manage:broadcast (scope ajouté à STREAMER_HUB_SCOPES, requiert
+  // un reconnect pour les anciennes connexions).
+
+  // GET /twitch/control-status — admin only — état du scope manage broadcast
+  // pour que le frontend prompt un reconnect si nécessaire.
+  server.get('/twitch/control-status', { preHandler: adminOnly }, async () => {
+    const hasScope = await hasManageBroadcastScope()
+    return { hasScope, requiredScope: 'channel:manage:broadcast' }
+  })
+
+  // PATCH /twitch/channel — admin only — met à jour titre + catégorie du
+  // stream. Twitch limite le titre à 140 chars (truncation côté service).
+  server.patch<{ Body: { title?: string; gameId?: string } }>(
+    '/twitch/channel',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const r = await updateChannelInfo({
+        title:  request.body?.title,
+        gameId: request.body?.gameId,
+      })
+      if (!r.ok) {
+        await audit({
+          action:   'channel_update_failed',
+          status:   'failed',
+          userId:   request.user!.userId,
+          ipAddress: request.ip,
+          metadata: { status: r.status, reason: r.reason },
+        })
+        return reply.code(r.status >= 400 && r.status < 600 ? r.status : 502)
+          .send({ ok: false, error: r.reason })
+      }
+      await audit({
+        action:    'channel_update',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  {
+          titleSet:  typeof request.body?.title  === 'string',
+          gameIdSet: typeof request.body?.gameId === 'string',
+        },
+      })
+      return reply.send({ ok: true })
+    },
+  )
+
+  // GET /twitch/games/search?q= — admin only — autocomplete catégorie.
+  // 0 résultats si q < 2 chars. Max 10 résultats.
+  server.get<{ Querystring: { q?: string } }>(
+    '/twitch/games/search',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const q = request.query.q ?? ''
+      const r = await searchGames(q)
+      if (!r.ok) return reply.code(502).send({ ok: false, error: r.reason })
+      return reply.send({ games: r.data })
+    },
+  )
+
+  // POST /twitch/marker — admin only — place un marker VOD à la position
+  // courante du stream. Échoue 404 si offline (Twitch enforced).
+  server.post<{ Body: { description?: string } }>(
+    '/twitch/marker',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const r = await createMarker({ description: request.body?.description })
+      if (!r.ok) {
+        // 404 = stream offline, on retourne 409 (conflict) côté API pour que
+        // le frontend distingue "pas streamer" (401) de "pas live" (409).
+        const httpCode = r.status === 404 ? 409 : (r.status >= 400 && r.status < 600 ? r.status : 502)
+        return reply.code(httpCode).send({
+          ok:    false,
+          error: r.status === 404 ? 'stream_offline' : r.reason,
+        })
+      }
+      await audit({
+        action:    'vod_marker_created',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { markerId: r.data.id, positionSeconds: r.data.positionSeconds },
+      })
+      return reply.send({ ok: true, marker: r.data })
     },
   )
 

@@ -5,15 +5,16 @@ export const load: PageServerLoad = async ({ fetch, parent }) => {
 	const { token } = await parent()
 	const auth = { headers: { Authorization: `Bearer ${token}` } }
 
-	// Loads in parallel: connected streamers, EventSub subs, recent events, hub health, setup checklist, stats 7j, twitch profile.
-	const [meRes, subsRes, eventsRes, healthRes, setupRes, statsRes, profileRes] = await Promise.all([
-		apiFetch(fetch, '/streamer/twitch/me',              auth),
-		apiFetch(fetch, '/streamer/twitch/eventsub-status', auth),
-		apiFetch(fetch, '/streamer/events?limit=20',        auth),
-		apiFetch(fetch, '/streamer/health',                 auth),
-		apiFetch(fetch, '/streamer/setup-status',           auth),
-		apiFetch(fetch, '/streamer/stats?days=7',           auth),
-		apiFetch(fetch, '/streamer/twitch/profile',         auth),
+	// Loads in parallel: connected streamers, EventSub subs, recent events, hub health, setup checklist, stats 7j, twitch profile, scope du Control Panel.
+	const [meRes, subsRes, eventsRes, healthRes, setupRes, statsRes, profileRes, controlRes] = await Promise.all([
+		apiFetch(fetch, '/streamer/twitch/me',                auth),
+		apiFetch(fetch, '/streamer/twitch/eventsub-status',   auth),
+		apiFetch(fetch, '/streamer/events?limit=20',          auth),
+		apiFetch(fetch, '/streamer/health',                   auth),
+		apiFetch(fetch, '/streamer/setup-status',             auth),
+		apiFetch(fetch, '/streamer/stats?days=7',             auth),
+		apiFetch(fetch, '/streamer/twitch/profile',           auth),
+		apiFetch(fetch, '/streamer/twitch/control-status',    auth),
 	])
 
 	const me      = meRes.ok      ? await meRes.json()      : { streamers: [] }
@@ -23,6 +24,7 @@ export const load: PageServerLoad = async ({ fetch, parent }) => {
 	const setup   = setupRes.ok   ? await setupRes.json()   : null
 	const stats   = statsRes.ok   ? await statsRes.json()   : null
 	const profile = profileRes.ok ? await profileRes.json() : null
+	const control = controlRes.ok ? await controlRes.json() : { hasScope: false }
 
 	return {
 		streamers:        me.streamers ?? [],
@@ -33,5 +35,6 @@ export const load: PageServerLoad = async ({ fetch, parent }) => {
 		setup,
 		stats,
 		profile,
+		controlHasScope:  control.hasScope === true,
 	}
 }

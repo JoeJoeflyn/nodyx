@@ -19,6 +19,9 @@ export type AuditAction =
   | 'chat_relay_queued'
   | 'chat_relay_dropped'
   | 'chat_relay_queue_overflow'
+  | 'channel_update'
+  | 'channel_update_failed'
+  | 'vod_marker_created'
 
 export interface AuditEntry {
   action:    AuditAction
