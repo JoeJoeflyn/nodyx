@@ -136,6 +136,54 @@
 	const controlHasScope = $derived<boolean>((data as { controlHasScope?: boolean }).controlHasScope === true)
 	const pageToken     = $derived(($page.data as { token?: string }).token ?? '')
 
+	// ── Onglets ─────────────────────────────────────────────────────────────
+	// 6 zones pour ne pas surcharger la page : overview / studio live /
+	// récompenses / overlays / audience / config. Synchronisation #hash dans
+	// l'URL pour deep-link (ex: /admin/streamer-hub#tab=studio). Si pas
+	// connecté, on force "config" pour que l'utilisateur voie le bouton Connect.
+	type TabId = 'overview' | 'studio' | 'rewards' | 'overlays' | 'audience' | 'config'
+
+	const TABS: Array<{ id: TabId; label: string; iconPath: string; soon?: boolean }> = [
+		{ id: 'overview', label: 'Vue d\'ensemble', iconPath: 'M3 7a4 4 0 014-4h10a4 4 0 014 4v10a4 4 0 01-4 4H7a4 4 0 01-4-4V7z M9 9h6v6H9z' },
+		{ id: 'studio',   label: 'Studio Live',     iconPath: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
+		{ id: 'rewards',  label: 'Récompenses',     iconPath: 'M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zM5 21h14a2 2 0 002-2v-9a2 2 0 00-2-2H5a2 2 0 00-2 2v9a2 2 0 002 2z', soon: true },
+		{ id: 'overlays', label: 'Overlays OBS',    iconPath: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z', soon: true },
+		{ id: 'audience', label: 'Audience',        iconPath: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
+		{ id: 'config',   label: 'Configuration',   iconPath: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+	]
+
+	let activeTab = $state<TabId>('overview')
+
+	function selectTab(t: TabId): void {
+		if (TABS.find(x => x.id === t)?.soon) return  // "à venir" → no-op
+		activeTab = t
+		// La sync URL ↔ activeTab est faite dans un $effect plus bas, on n'a
+		// rien à faire ici de plus que muter le state.
+	}
+
+	function readTabFromHash(): TabId | null {
+		if (typeof window === 'undefined') return null
+		const m = window.location.hash.match(/tab=([a-z]+)/)
+		if (!m) return null
+		const id = m[1] as TabId
+		return TABS.some(t => t.id === id) ? id : null
+	}
+
+	// Sync activeTab → URL hash. Re-run à chaque changement d'activeTab.
+	// On utilise EXCLUSIVEMENT history.replaceState natif (pas celui de
+	// $app/navigation) pour ne pas trigger une ré-exécution SvelteKit qui
+	// pourrait désynchroniser les handlers DOM du state réactif.
+	$effect(() => {
+		if (typeof window === 'undefined') return
+		const t = activeTab
+		const u = new URL(window.location.href)
+		const wanted = `#tab=${t}`
+		if (u.hash !== wanted) {
+			u.hash = wanted
+			window.history.replaceState({}, '', u.pathname + u.search + u.hash)
+		}
+	})
+
 	// Ordre + types affichés dans les cartes Stats. On garde follow / sub /
 	// cheer / raid (les "moments" de stream) et on exclut les messages (trop
 	// de bruit pour une sparkline lisible).
@@ -160,6 +208,33 @@
 	// Surface the OAuth callback result as a toast (instead of dumping raw JSON
 	// in the address bar). The callback redirects here with ?twitch=connected,
 	// ?twitch=replayed or ?twitch=error[&reason=...].
+	// Init onglet : si déconnecté → config (le streamer doit voir le bouton
+	// Connect en premier). Sinon, lis le hash de l'URL (#tab=studio par ex).
+	// On écoute aussi hashchange + popstate pour que back/forward du navigateur
+	// (ou édition manuelle du hash) re-sync l'onglet courant.
+	let hashListener: (() => void) | null = null
+	onMount(() => {
+		if (!isConnected) {
+			activeTab = 'config'
+		} else {
+			const fromHash = readTabFromHash()
+			if (fromHash) activeTab = fromHash
+		}
+
+		hashListener = () => {
+			const t = readTabFromHash()
+			if (t && t !== activeTab) activeTab = t
+		}
+		window.addEventListener('hashchange', hashListener)
+		window.addEventListener('popstate',   hashListener)
+	})
+	onDestroy(() => {
+		if (hashListener && typeof window !== 'undefined') {
+			window.removeEventListener('hashchange', hashListener)
+			window.removeEventListener('popstate',   hashListener)
+		}
+	})
+
 	onMount(() => {
 		const url = new URL(window.location.href)
 		const twitch = url.searchParams.get('twitch')
@@ -176,12 +251,20 @@
 			pushToast(`Connexion Twitch échouée : ${decodeURIComponent(reason)}`, false)
 		}
 
-		// Clean the URL so the toast does not re-trigger on refresh
+		// Clean the URL so the toast does not re-trigger on refresh.
+		// IMPORTANT : on utilise history.replaceState natif et PAS celui de
+		// $app/navigation. Le replaceState de SvelteKit peut causer une
+		// ré-exécution du composant qui désynchronise les handlers DOM
+		// (attachés à l'ancienne instance) du state réactif (sur la nouvelle).
+		// Bug observé après Twitch deco/reco : les onglets ne réagissaient
+		// plus aux clics tant qu'on n'avait pas refresh la page.
 		url.searchParams.delete('twitch')
 		url.searchParams.delete('login')
 		url.searchParams.delete('subs')
 		url.searchParams.delete('reason')
-		replaceState(url.pathname + (url.search ? url.search : ''), {})
+		const search = url.search ? url.search : ''
+		const hash   = url.hash   ? url.hash   : ''
+		window.history.replaceState({}, '', url.pathname + search + hash)
 	})
 
 	// ── Live feed via Socket.IO (admin-only room) ─────────────────────────
@@ -472,20 +555,98 @@
 		<StreamerHero profile={twitchProfile} />
 	{/if}
 
-	<!-- ── Stream Control Panel (titre + catégorie + marker VOD) ──────────── -->
-	{#if isConnected && twitchProfile}
-		<StreamControlPanel
-			token={pageToken}
-			hasManageScope={controlHasScope}
-			currentTitle={twitchProfile.stream.title}
-			currentGameName={twitchProfile.stream.gameName}
-			isLive={twitchProfile.stream.isLive}
-			onProfileUpdated={() => invalidateAll()}
-		/>
+	<!-- ── Tab bar sticky (apparait dès que connecté) ─────────────────────── -->
+	{#if isConnected}
+		<nav class="sticky top-0 z-20 -mx-2 px-2 py-2 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/60 rounded-b-lg">
+			<ul class="flex gap-1 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700">
+				{#each TABS as tab (tab.id)}
+					{@const isActive = activeTab === tab.id}
+					<li class="shrink-0">
+						<button
+							type="button"
+							onclick={() => selectTab(tab.id)}
+							disabled={tab.soon}
+							class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors relative
+								{isActive
+									? 'bg-cyan-500/15 text-cyan-200 border border-cyan-500/40'
+									: tab.soon
+										? 'text-slate-600 cursor-not-allowed border border-transparent'
+										: 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'}"
+						>
+							<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" d={tab.iconPath}/>
+							</svg>
+							<span class="hidden sm:inline">{tab.label}</span>
+							{#if tab.soon}
+								<span class="text-[9px] uppercase tracking-wider font-bold text-slate-600 bg-slate-800/60 px-1.5 py-0.5 rounded">Soon</span>
+							{/if}
+						</button>
+					</li>
+				{/each}
+			</ul>
+		</nav>
 	{/if}
 
-	<!-- ── Setup checklist (diagnostic visuel point par point) ─────────────── -->
-	{#if setup}
+	<!-- ══ Tab: Studio Live ════════════════════════════════════════════════ -->
+	{#if isConnected && activeTab === 'studio'}
+		{#if twitchProfile}
+			<StreamControlPanel
+				token={pageToken}
+				hasManageScope={controlHasScope}
+				currentTitle={twitchProfile.stream.title}
+				currentGameName={twitchProfile.stream.gameName}
+				isLive={twitchProfile.stream.isLive}
+				onProfileUpdated={() => invalidateAll()}
+			/>
+		{/if}
+
+		<section class="rounded-xl border border-dashed border-slate-700/60 bg-slate-900/30 p-8 text-center space-y-2">
+			<svg class="w-10 h-10 mx-auto text-slate-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+			<div class="text-sm font-semibold text-slate-300">Bientôt : Polls · Prédictions · Raid composer</div>
+			<div class="text-[11px] text-slate-500 max-w-md mx-auto">Lance un sondage ou une prédiction depuis Nodyx, voit les votes en barre live et déclenche un raid sortant en un clic. Dans la prochaine session.</div>
+		</section>
+	{/if}
+
+	<!-- ══ Tab: Récompenses (placeholder) ═════════════════════════════════ -->
+	{#if isConnected && activeTab === 'rewards'}
+		<section class="rounded-xl border border-dashed border-slate-700/60 bg-slate-900/30 p-10 text-center space-y-3">
+			<svg class="w-12 h-12 mx-auto text-purple-500/60" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zM5 21h14a2 2 0 002-2v-9a2 2 0 00-2-2H5a2 2 0 00-2 2v9a2 2 0 002 2z"/></svg>
+			<div class="text-base font-semibold text-slate-200">Channel Points Rewards</div>
+			<div class="text-sm text-slate-500 max-w-lg mx-auto">Gérer tes récompenses Twitch depuis Nodyx, voir la queue des redemptions en temps réel, et mapper chaque reward à une action (son, scène OBS, animation overlay, ajout playlist, etc).</div>
+			<div class="text-[11px] uppercase tracking-widest font-bold text-purple-400/80 pt-2">Prochainement</div>
+		</section>
+	{/if}
+
+	<!-- ══ Tab: Overlays OBS (placeholder) ════════════════════════════════ -->
+	{#if isConnected && activeTab === 'overlays'}
+		<section class="rounded-xl border border-dashed border-slate-700/60 bg-slate-900/30 p-10 text-center space-y-3">
+			<svg class="w-12 h-12 mx-auto text-cyan-500/60" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+			<div class="text-base font-semibold text-slate-200">Browser Sources OBS</div>
+			<div class="text-sm text-slate-500 max-w-lg mx-auto">Génère des URLs à coller dans OBS comme Browser Source : alert box follower/sub/raid, goal bars, timer de stream, ticker des events, leaderboard top contributors. Animation native sur fond transparent, sons custom, configuration depuis Nodyx.</div>
+			<div class="text-[11px] uppercase tracking-widest font-bold text-cyan-400/80 pt-2">Prochainement</div>
+		</section>
+	{/if}
+
+	<!-- ══ Tab: Audience (placeholder + mini stat) ════════════════════════ -->
+	{#if isConnected && activeTab === 'audience'}
+		<section class="rounded-xl border border-slate-700/60 bg-slate-900/40 p-6 space-y-4">
+			<div class="flex items-center gap-3">
+				<svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+				<h2 class="text-base font-semibold text-white">Viewers Twitch liés à Nodyx</h2>
+			</div>
+			<div class="text-3xl font-bold text-white tabular-nums">
+				{health?.linkedViewersCount ?? 0}
+				<span class="text-sm font-normal text-slate-500 align-middle ml-2">viewer{(health?.linkedViewersCount ?? 0) > 1 ? 's' : ''} ont link leur compte</span>
+			</div>
+			<div class="text-sm text-slate-400 max-w-2xl">
+				Bientôt cette zone affichera la liste complète : avatar Nodyx + login Twitch, date du link, dernière activité (chat / event), bouton unlink admin. Ainsi qu'un classement top contributors (follows, subs, raids, bits) sur 7/30 jours.
+			</div>
+			<div class="text-[11px] uppercase tracking-widest font-bold text-slate-500 pt-1">Page complète à venir</div>
+		</section>
+	{/if}
+
+	<!-- ── Setup checklist (config tab — diagnostic visuel point par point) ── -->
+	{#if setup && (!isConnected || activeTab === 'config')}
 		{@const tone =
 			setup.overall === 'ok'      ? 'border-emerald-500/30 bg-emerald-500/5' :
 			setup.overall === 'warning' ? 'border-amber-500/30  bg-amber-500/5'   :
@@ -561,8 +722,8 @@
 		</section>
 	{/if}
 
-	<!-- ── Live banner (fallback quand le Hero Twitch n'est pas dispo) ─────── -->
-	{#if liveNow && health?.currentSession && !twitchProfile}
+	<!-- ── Live banner (overview tab — fallback quand Hero pas dispo) ──────── -->
+	{#if liveNow && health?.currentSession && !twitchProfile && activeTab === 'overview'}
 		<div class="rounded-xl border border-rose-500/40 bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent p-4 flex items-center gap-3">
 			<span class="relative flex h-3 w-3">
 				<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-60"></span>
@@ -576,8 +737,8 @@
 		</div>
 	{/if}
 
-	<!-- ── Health overview ─────────────────────────────────────────────────── -->
-	{#if isConnected && primary}
+	<!-- ── Health overview (overview tab) ──────────────────────────────────── -->
+	{#if isConnected && primary && activeTab === 'overview'}
 		<section class="grid grid-cols-2 md:grid-cols-4 gap-3">
 			<!-- Connexion -->
 			<div class="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
@@ -631,8 +792,8 @@
 		</section>
 	{/if}
 
-	<!-- ── Stats 7 jours ───────────────────────────────────────────────────── -->
-	{#if isConnected && stats}
+	<!-- ── Stats 7 jours (overview tab) ────────────────────────────────────── -->
+	{#if isConnected && stats && activeTab === 'overview'}
 		<section class="space-y-3">
 			<div class="flex items-center justify-between">
 				<h2 class="text-sm font-semibold text-white">Stats des {stats.periodDays} derniers jours</h2>
@@ -721,7 +882,8 @@
 			</div>
 		</section>
 	{:else if primary}
-		<!-- ── Streamer details ───────────────────────────────────────────── -->
+		<!-- ── Streamer details (config tab) ──────────────────────────────── -->
+		{#if activeTab === 'config'}
 		<section class="rounded-xl border border-slate-700/60 bg-slate-900/50 p-5">
 			<div class="flex items-start gap-4">
 				<div class="w-12 h-12 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center shrink-0">
@@ -833,8 +995,10 @@
 				{/each}
 			</ul>
 		</section>
+		{/if}<!-- /config tab (streamer details + test event + EventSub subs) -->
 
-		<!-- ── Recent events feed ─────────────────────────────────────────── -->
+		<!-- ── Recent events feed (overview tab) ──────────────────────────── -->
+		{#if activeTab === 'overview'}
 		<section class="rounded-xl border border-slate-700/60 bg-slate-900/50 overflow-hidden">
 			<header class="px-5 py-3 border-b border-slate-700/60 flex items-start justify-between gap-3">
 				<div>
@@ -865,9 +1029,11 @@
 				{/each}
 			</ul>
 		</section>
+		{/if}<!-- /overview tab (recent events feed) -->
 	{/if}
 
-	<!-- ── Help & FAQ ──────────────────────────────────────────────────────── -->
+	<!-- ── Help & FAQ (config tab + always when disconnected) ─────────────── -->
+	{#if !isConnected || activeTab === 'config'}
 	<section class="rounded-xl border border-slate-700/60 bg-slate-900/40 overflow-hidden">
 		<button type="button" onclick={() => helpOpen = !helpOpen}
 			class="w-full px-5 py-3 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors">
@@ -916,6 +1082,7 @@
 			</div>
 		{/if}
 	</section>
+	{/if}<!-- /config or disconnected (Help & FAQ) -->
 
 	{#if toast}
 		<div class="fixed bottom-6 right-6 max-w-sm px-4 py-3 rounded-lg shadow-lg text-sm
