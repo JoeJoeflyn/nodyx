@@ -22,6 +22,12 @@ export type AuditAction =
   | 'channel_update'
   | 'channel_update_failed'
   | 'vod_marker_created'
+  | 'poll_created'
+  | 'poll_create_failed'
+  | 'poll_ended'
+  | 'prediction_created'
+  | 'prediction_create_failed'
+  | 'prediction_patched'
 
 export interface AuditEntry {
   action:    AuditAction

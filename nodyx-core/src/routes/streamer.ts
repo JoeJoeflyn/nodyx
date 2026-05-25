@@ -51,6 +51,15 @@ import {
   searchGames,
   updateChannelInfo,
 } from '../services/streamer/twitchStreamControl'
+import {
+  createPoll,
+  createPrediction,
+  endPoll,
+  getActivePoll,
+  getActivePrediction,
+  getEngagementScopes,
+  patchPrediction,
+} from '../services/streamer/twitchEngagement'
 import { ProviderError } from '../services/streamer/providers/_types'
 
 // ── Helpers env ──────────────────────────────────────────────────────────────
@@ -448,6 +457,139 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
         metadata:  { markerId: r.data.id, positionSeconds: r.data.positionSeconds },
       })
       return reply.send({ ok: true, marker: r.data })
+    },
+  )
+
+  // ── Engagement live : Polls + Prédictions ──────────────────────────────
+  // Endpoints CRUD pour piloter sondages et prédictions Twitch depuis Studio
+  // Live. Scopes manage:polls + manage:predictions (à reconnecter si la
+  // connexion OAuth date d'avant cette feature).
+
+  server.get('/twitch/engagement-status', { preHandler: adminOnly }, async () => {
+    const scopes = await getEngagementScopes()
+    return {
+      hasPolls:       scopes.hasPolls,
+      hasPredictions: scopes.hasPredictions,
+      requiredScopes: ['channel:manage:polls', 'channel:manage:predictions'],
+    }
+  })
+
+  // ── Polls ────────────────────────────────────────────────────────────
+  server.get('/twitch/poll/active', { preHandler: adminOnly }, async (_request, reply) => {
+    const r = await getActivePoll()
+    if (!r.ok) return reply.code(r.status >= 400 && r.status < 600 ? r.status : 502).send({ ok: false, error: r.reason })
+    return reply.send({ poll: r.data })
+  })
+
+  server.post<{ Body: { title?: string; choices?: string[]; duration?: number } }>(
+    '/twitch/poll',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const { title, choices, duration } = request.body ?? {}
+      if (!title || !Array.isArray(choices) || typeof duration !== 'number') {
+        return reply.code(400).send({ ok: false, error: 'missing_fields' })
+      }
+      const r = await createPoll({ title, choices, duration })
+      if (!r.ok) {
+        await audit({
+          action:    'poll_create_failed',
+          status:    'failed',
+          userId:    request.user!.userId,
+          ipAddress: request.ip,
+          metadata:  { reason: r.reason, status: r.status },
+        })
+        return reply.code(r.status >= 400 && r.status < 600 ? r.status : 502).send({ ok: false, error: r.reason })
+      }
+      await audit({
+        action:    'poll_created',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { pollId: r.data.id, choices: r.data.choices.length, duration: r.data.durationSeconds },
+      })
+      return reply.send({ ok: true, poll: r.data })
+    },
+  )
+
+  server.patch<{ Params: { id: string }; Body: { status?: 'TERMINATED' | 'ARCHIVED' } }>(
+    '/twitch/poll/:id',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const status = request.body?.status ?? 'TERMINATED'
+      if (status !== 'TERMINATED' && status !== 'ARCHIVED') {
+        return reply.code(400).send({ ok: false, error: 'invalid_status' })
+      }
+      const r = await endPoll({ pollId: request.params.id, status })
+      if (!r.ok) return reply.code(r.status >= 400 && r.status < 600 ? r.status : 502).send({ ok: false, error: r.reason })
+      await audit({
+        action:    'poll_ended',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { pollId: request.params.id, finalStatus: status },
+      })
+      return reply.send({ ok: true, poll: r.data })
+    },
+  )
+
+  // ── Prédictions ──────────────────────────────────────────────────────
+  server.get('/twitch/prediction/active', { preHandler: adminOnly }, async (_request, reply) => {
+    const r = await getActivePrediction()
+    if (!r.ok) return reply.code(r.status >= 400 && r.status < 600 ? r.status : 502).send({ ok: false, error: r.reason })
+    return reply.send({ prediction: r.data })
+  })
+
+  server.post<{ Body: { title?: string; outcomes?: string[]; predictionWindow?: number } }>(
+    '/twitch/prediction',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const { title, outcomes, predictionWindow } = request.body ?? {}
+      if (!title || !Array.isArray(outcomes) || typeof predictionWindow !== 'number') {
+        return reply.code(400).send({ ok: false, error: 'missing_fields' })
+      }
+      const r = await createPrediction({ title, outcomes, predictionWindow })
+      if (!r.ok) {
+        await audit({
+          action:    'prediction_create_failed',
+          status:    'failed',
+          userId:    request.user!.userId,
+          ipAddress: request.ip,
+          metadata:  { reason: r.reason, status: r.status },
+        })
+        return reply.code(r.status >= 400 && r.status < 600 ? r.status : 502).send({ ok: false, error: r.reason })
+      }
+      await audit({
+        action:    'prediction_created',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { predictionId: r.data.id, outcomes: r.data.outcomes.length, window: r.data.predictionWindowSeconds },
+      })
+      return reply.send({ ok: true, prediction: r.data })
+    },
+  )
+
+  server.patch<{
+    Params: { id: string }
+    Body:   { status?: 'LOCKED' | 'RESOLVED' | 'CANCELED'; winningOutcomeId?: string }
+  }>(
+    '/twitch/prediction/:id',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const { status, winningOutcomeId } = request.body ?? {}
+      if (status !== 'LOCKED' && status !== 'RESOLVED' && status !== 'CANCELED') {
+        return reply.code(400).send({ ok: false, error: 'invalid_status' })
+      }
+      const r = await patchPrediction({ predictionId: request.params.id, status, winningOutcomeId })
+      if (!r.ok) return reply.code(r.status >= 400 && r.status < 600 ? r.status : 502).send({ ok: false, error: r.reason })
+      await audit({
+        action:    'prediction_patched',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { predictionId: request.params.id, newStatus: status, winningOutcomeId: winningOutcomeId ?? null },
+      })
+      return reply.send({ ok: true, prediction: r.data })
     },
   )
 

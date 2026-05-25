@@ -7,6 +7,7 @@
 	import Sparkline from '$lib/components/admin/Sparkline.svelte'
 	import StreamerHero from '$lib/components/admin/StreamerHero.svelte'
 	import StreamControlPanel from '$lib/components/admin/StreamControlPanel.svelte'
+	import StudioEngagement   from '$lib/components/admin/StudioEngagement.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -134,6 +135,8 @@
 	const stats         = $derived<StatsPayload | null>((data as { stats?: StatsPayload | null }).stats ?? null)
 	const twitchProfile = $derived<TwitchProfilePayload | null>((data as { profile?: TwitchProfilePayload | null }).profile ?? null)
 	const controlHasScope = $derived<boolean>((data as { controlHasScope?: boolean }).controlHasScope === true)
+	const engagementHasPolls       = $derived<boolean>((data as { engagementHasPolls?: boolean }).engagementHasPolls === true)
+	const engagementHasPredictions = $derived<boolean>((data as { engagementHasPredictions?: boolean }).engagementHasPredictions === true)
 	const pageToken     = $derived(($page.data as { token?: string }).token ?? '')
 
 	// ── Onglets ─────────────────────────────────────────────────────────────
@@ -600,10 +603,15 @@
 			/>
 		{/if}
 
-		<section class="rounded-xl border border-dashed border-slate-700/60 bg-slate-900/30 p-8 text-center space-y-2">
-			<svg class="w-10 h-10 mx-auto text-slate-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-			<div class="text-sm font-semibold text-slate-300">Bientôt : Polls · Prédictions · Raid composer</div>
-			<div class="text-[11px] text-slate-500 max-w-md mx-auto">Lance un sondage ou une prédiction depuis Nodyx, voit les votes en barre live et déclenche un raid sortant en un clic. Dans la prochaine session.</div>
+		<StudioEngagement
+			token={pageToken}
+			hasPolls={engagementHasPolls}
+			hasPredictions={engagementHasPredictions}
+			broadcasterType={twitchProfile?.user.broadcasterType ?? ''}
+		/>
+
+		<section class="rounded-xl border border-dashed border-slate-700/60 bg-slate-900/30 p-6 text-center space-y-1">
+			<div class="text-[11px] text-slate-500">Bientôt dans Studio Live : raid composer (chercher un streamer + lancer un raid en un clic).</div>
 		</section>
 	{/if}
 

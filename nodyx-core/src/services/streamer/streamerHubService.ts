@@ -130,6 +130,11 @@ export const STREAMER_HUB_SCOPES = [
   // stream depuis Nodyx, poser des markers VOD pendant le live. Couvre les
   // deux endpoints helix : PATCH /channels et POST /streams/markers.
   'channel:manage:broadcast',
+  // Engagement (Phase 3, suite) : lancer/terminer sondages et prédictions.
+  // channel:read:polls est déjà inclus plus haut, on ajoute le manage.
+  'channel:manage:polls',
+  'channel:read:predictions',
+  'channel:manage:predictions',
 ] as const
 
 // Scopes minimaux pour le viewer flow : on a juste besoin d'identifier le user
