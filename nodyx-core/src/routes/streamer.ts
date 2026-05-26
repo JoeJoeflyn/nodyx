@@ -639,6 +639,20 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
         config: request.body?.config,
       })
       if (!updated) return reply.code(404).send({ ok: false, error: 'not_found' })
+
+      // Push live la nouvelle config à toutes les pages overlays connectées
+      // pour CE overlay précis (room overlay:<id>). Évite au streamer de
+      // devoir refresh OBS pour voir le nouveau template / thème.
+      try {
+        const { io } = await import('../socket/io')
+        if (io) {
+          io.of('/overlay').to(`overlay:${updated.id}`).emit('overlay:config-updated', {
+            config: updated.config,
+            label:  updated.label,
+          })
+        }
+      } catch { /* best-effort */ }
+
       return reply.send({ ok: true, overlay: updated })
     },
   )
@@ -648,6 +662,47 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
     if (!ok) return reply.code(404).send({ ok: false, error: 'not_found_or_already_revoked' })
     return reply.send({ ok: true })
   })
+
+  // POST /overlays/:id/test-fire — admin only — envoie un event factice à
+  // CETTE overlay précise (room overlay:<id>), sans passer par ingestEvent.
+  // Ne crée pas de row dans streamer_events, ne pollue pas les stats, ne
+  // touche pas au channel #twitch-chat. Utile pour valider que la config et
+  // les templates fonctionnent sans attendre un vrai follower.
+  server.post<{ Params: { id: string }; Body: { eventType?: string } }>(
+    '/overlays/:id/test-fire',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const ALLOWED: readonly string[] = [
+        'channel.follow', 'channel.subscribe', 'channel.subscription.gift',
+        'channel.cheer', 'channel.raid',
+      ]
+      const evtType = request.body?.eventType ?? 'channel.follow'
+      if (!ALLOWED.includes(evtType)) {
+        return reply.code(400).send({ ok: false, error: 'invalid_event_type', allowed: ALLOWED })
+      }
+
+      // Payloads alignés sur ce que Twitch livrerait via EventSub.
+      const FAKE: Record<string, Record<string, unknown>> = {
+        'channel.follow':            { user_name: 'TestFollower',   user_login: 'testfollower' },
+        'channel.subscribe':         { user_name: 'TestSubscriber', tier: '1000', is_gift: false },
+        'channel.subscription.gift': { user_name: 'TestGifter',     total: 5 },
+        'channel.cheer':             { user_name: 'TestCheerer',    bits: 1000, is_anonymous: false },
+        'channel.raid':              { from_broadcaster_user_name: 'TestRaider', viewers: 42 },
+      }
+
+      const { io } = await import('../socket/io')
+      if (!io) return reply.code(503).send({ ok: false, error: 'socket_unavailable' })
+      const ns = io.of('/overlay')
+      ns.to(`overlay:${request.params.id}`).emit('overlay:event', {
+        kind:       'alert_box',
+        eventType:  evtType,
+        payload:    { event: FAKE[evtType], subscription: { type: evtType, test: true } },
+        occurredAt: new Date().toISOString(),
+      })
+
+      return reply.send({ ok: true })
+    },
+  )
 
   // GET /overlay/lookup/:token — public — bootstrap d'une overlay côté navigateur.
   // PAS d'auth admin parce que la page tourne dans OBS sur la machine du

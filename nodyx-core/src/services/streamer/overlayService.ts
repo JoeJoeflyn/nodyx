@@ -24,6 +24,88 @@ export function isOverlayType(s: string): s is OverlayType {
   return VALID_TYPES.has(s as OverlayType)
 }
 
+// ── Config schemas par type d'overlay ───────────────────────────────────────
+// Stocké dans streamer_overlays.config (JSONB) avec une shape par type. La
+// page overlay frontend lit cette config au boot et l'applique (theme, durée,
+// templates de message). Le streamer édite via PATCH /overlays/:id.
+
+export type AlertBoxTheme = 'cyber' | 'soft' | 'retro' | 'neon' | 'holographic' | 'minimal' | 'custom'
+export const ALERT_BOX_THEMES: readonly AlertBoxTheme[] = ['cyber', 'soft', 'retro', 'neon', 'holographic', 'minimal', 'custom']
+
+export type AlertEventKey =
+  | 'channel.follow'
+  | 'channel.subscribe'
+  | 'channel.subscription.gift'
+  | 'channel.cheer'
+  | 'channel.raid'
+
+export interface AlertEventCfg {
+  enabled:   boolean
+  template:  string                // "{user_name} a follow !" — variables {var_name}
+  iconUrl?:  string | null         // optionnel pour le thème custom : icône à gauche du message
+}
+
+export interface AlertBoxCustomTheme {
+  bgImageUrl?:    string | null   // image de fond de la card (https://...)
+  bgColor?:       string | null   // fallback / overlay si bgImage absent (#0f172a etc)
+  accentColor?:   string | null   // surcharge la couleur d'accent (sinon palette par event)
+  textColor?:     string | null   // couleur du message principal
+}
+
+export interface AlertBoxConfig {
+  theme:        AlertBoxTheme
+  durationMs:   number
+  events:       Record<AlertEventKey, AlertEventCfg>
+  customTheme?: AlertBoxCustomTheme    // uniquement utilisé si theme === 'custom'
+}
+
+// Config par défaut quand on crée un alert_box ou si l'admin n'a rien
+// personnalisé. Tu peux toujours éditer ensuite via le panneau admin.
+export const DEFAULT_ALERT_BOX_CONFIG: AlertBoxConfig = {
+  theme:      'cyber',
+  durationMs: 5000,
+  events: {
+    'channel.follow':            { enabled: true, template: '{user_name} a follow !' },
+    'channel.subscribe':         { enabled: true, template: '{user_name} s\'abonne (tier {tier}) !' },
+    'channel.subscription.gift': { enabled: true, template: '{user_name} offre {total} sub{total_plural} !' },
+    'channel.cheer':             { enabled: true, template: '{user_name} envoie {bits} bits !' },
+    'channel.raid':              { enabled: true, template: 'Raid de {from_broadcaster_user_name} avec {viewers} viewers !' },
+  },
+}
+
+// Merge config DB partielle avec les defaults (l'admin peut ne configurer
+// que la moitié des events ; le reste tombe sur les defaults plutôt que
+// de casser la page overlay).
+export function withAlertBoxDefaults(raw: Record<string, unknown> | undefined): AlertBoxConfig {
+  const cfg = raw ?? {}
+  const events = { ...DEFAULT_ALERT_BOX_CONFIG.events }
+  const rawEvents = (cfg.events ?? {}) as Record<string, Partial<AlertEventCfg>>
+  for (const k of Object.keys(events) as AlertEventKey[]) {
+    const incoming = rawEvents[k]
+    if (incoming && typeof incoming === 'object') {
+      events[k] = {
+        enabled:  typeof incoming.enabled  === 'boolean' ? incoming.enabled  : events[k].enabled,
+        template: typeof incoming.template === 'string'  ? incoming.template : events[k].template,
+        iconUrl:  typeof incoming.iconUrl  === 'string'  ? incoming.iconUrl  : null,
+      }
+    }
+  }
+  const theme = ALERT_BOX_THEMES.includes(cfg.theme as AlertBoxTheme)
+    ? cfg.theme as AlertBoxTheme
+    : DEFAULT_ALERT_BOX_CONFIG.theme
+  const durationMs = typeof cfg.durationMs === 'number' && cfg.durationMs >= 1000 && cfg.durationMs <= 30000
+    ? cfg.durationMs
+    : DEFAULT_ALERT_BOX_CONFIG.durationMs
+  const ct = (cfg.customTheme ?? {}) as Partial<AlertBoxCustomTheme>
+  const customTheme: AlertBoxCustomTheme = {
+    bgImageUrl:  typeof ct.bgImageUrl  === 'string' ? ct.bgImageUrl  : null,
+    bgColor:     typeof ct.bgColor     === 'string' ? ct.bgColor     : null,
+    accentColor: typeof ct.accentColor === 'string' ? ct.accentColor : null,
+    textColor:   typeof ct.textColor   === 'string' ? ct.textColor   : null,
+  }
+  return { theme, durationMs, events, customTheme }
+}
+
 export interface OverlayRow {
   id:           string
   token:        string

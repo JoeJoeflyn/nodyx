@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte'
 	import { apiFetch } from '$lib/api'
 	import { browser } from '$app/environment'
+	import AlertBoxConfigEditor from './AlertBoxConfigEditor.svelte'
 
 	interface Props {
 		token: string
@@ -32,9 +33,16 @@
 		leaderboard:  { label: 'Leaderboard',  desc: 'Top contributors (follows/subs/raids/bits) sur 7/30j.',     routeSlug: 'board',    ready: false },
 	}
 
-	let overlays = $state<OverlayRow[]>([])
-	let loading  = $state(true)
-	let toast    = $state<{ text: string; ok: boolean } | null>(null)
+	let overlays    = $state<OverlayRow[]>([])
+	let loading     = $state(true)
+	let toast       = $state<{ text: string; ok: boolean } | null>(null)
+	let configOpen  = $state<Set<string>>(new Set())   // ids overlays dont le panneau config est déplié
+
+	function toggleConfig(id: string): void {
+		const next = new Set(configOpen)
+		if (next.has(id)) next.delete(id); else next.add(id)
+		configOpen = next
+	}
 
 	// Form create
 	let formType:  OverlayType = $state('alert_box')
@@ -193,10 +201,19 @@
 								</div>
 							</div>
 						</div>
-						<button type="button" onclick={() => revoke(o.id)}
-							class="text-[11px] text-rose-300 hover:text-rose-200 border border-rose-500/30 hover:border-rose-500/50 px-2.5 py-1 rounded transition-colors">
-							Révoquer
-						</button>
+						<div class="flex items-center gap-1.5">
+							{#if o.overlayType === 'alert_box'}
+								<button type="button" onclick={() => toggleConfig(o.id)}
+									class="text-[11px] text-cyan-300 hover:text-cyan-200 border border-cyan-500/30 hover:border-cyan-500/50 px-2.5 py-1 rounded transition-colors inline-flex items-center gap-1">
+									<svg class="w-3 h-3 transition-transform {configOpen.has(o.id) ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+									{configOpen.has(o.id) ? 'Fermer' : 'Configurer'}
+								</button>
+							{/if}
+							<button type="button" onclick={() => revoke(o.id)}
+								class="text-[11px] text-rose-300 hover:text-rose-200 border border-rose-500/30 hover:border-rose-500/50 px-2.5 py-1 rounded transition-colors">
+								Révoquer
+							</button>
+						</div>
 					</div>
 					<div class="flex gap-2">
 						<code class="flex-1 text-[11px] font-mono text-slate-300 bg-slate-900 border border-slate-700/60 rounded px-3 py-2 truncate" title={url}>{url}</code>
@@ -206,6 +223,9 @@
 							Copier
 						</button>
 					</div>
+					{#if o.overlayType === 'alert_box' && configOpen.has(o.id)}
+						<AlertBoxConfigEditor token={token} overlayId={o.id} initial={o.config} onSaved={reload} />
+					{/if}
 				</div>
 			{/each}
 		{/if}

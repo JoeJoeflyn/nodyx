@@ -6,50 +6,103 @@
 	import { fly, fade } from 'svelte/transition'
 
 	// Page transparente conçue pour être collée comme Browser Source dans OBS.
-	// Aucun chrome, aucune nav, aucun auth user. Le token dans l'URL EST l'auth :
-	// il bootstrappe la config via REST et ouvre la socket overlay namespace.
-	//
-	// Pour ce slice 1, on affiche un texte simple en haut à droite qui glisse
-	// pendant 5 secondes puis disparait. La polish (avatars, sons, custom
-	// templates) viendra au slice 2.
+	// Le token dans l'URL EST l'auth : il bootstrappe la config via REST et
+	// ouvre la socket overlay namespace. Le rendu suit le `theme` configuré
+	// par l'admin et substitue les variables `{user_name}`, `{bits}`, etc.
+	// dans les templates par event type.
 
 	const token = $derived(($page.params as { token: string }).token)
 
+	type AlertTheme = 'cyber' | 'soft' | 'retro' | 'neon' | 'holographic' | 'minimal' | 'custom'
+	type AlertEventKey =
+		| 'channel.follow' | 'channel.subscribe' | 'channel.subscription.gift'
+		| 'channel.cheer'  | 'channel.raid'
+	type AlertEventCfg = { enabled: boolean; template: string; iconUrl?: string | null }
+	type CustomTheme = {
+		bgImageUrl?:  string | null
+		bgColor?:     string | null
+		accentColor?: string | null
+		textColor?:   string | null
+	}
+	type AlertConfig = {
+		theme:        AlertTheme
+		durationMs:   number
+		events:       Record<AlertEventKey, AlertEventCfg>
+		customTheme?: CustomTheme
+	}
+
+	const DEFAULT_CONFIG: AlertConfig = {
+		theme:      'cyber',
+		durationMs: 5000,
+		events: {
+			'channel.follow':            { enabled: true, template: '{user_name} a follow !' },
+			'channel.subscribe':         { enabled: true, template: '{user_name} s\'abonne (tier {tier}) !' },
+			'channel.subscription.gift': { enabled: true, template: '{user_name} offre {total} sub{total_plural} !' },
+			'channel.cheer':             { enabled: true, template: '{user_name} envoie {bits} bits !' },
+			'channel.raid':              { enabled: true, template: 'Raid de {from_broadcaster_user_name} avec {viewers} viewers !' },
+		},
+	}
+
+	const VALID_THEMES = ['cyber', 'soft', 'retro', 'neon', 'holographic', 'minimal', 'custom'] as const
+
+	function mergeConfig(raw: Record<string, unknown> | null | undefined): AlertConfig {
+		const cfg = raw ?? {}
+		const events = { ...DEFAULT_CONFIG.events }
+		const rawEvents = (cfg.events ?? {}) as Record<string, Partial<AlertEventCfg>>
+		for (const k of Object.keys(events) as AlertEventKey[]) {
+			const inc = rawEvents[k]
+			if (inc) {
+				events[k] = {
+					enabled:  typeof inc.enabled  === 'boolean' ? inc.enabled  : events[k].enabled,
+					template: typeof inc.template === 'string'  ? inc.template : events[k].template,
+					iconUrl:  typeof inc.iconUrl  === 'string'  ? inc.iconUrl  : null,
+				}
+			}
+		}
+		const theme = (VALID_THEMES as readonly string[]).includes(cfg.theme as string)
+			? cfg.theme as AlertTheme : DEFAULT_CONFIG.theme
+		const durationMs = typeof cfg.durationMs === 'number' && cfg.durationMs >= 1000 && cfg.durationMs <= 30000
+			? cfg.durationMs : DEFAULT_CONFIG.durationMs
+		const ct = (cfg.customTheme ?? {}) as Partial<CustomTheme>
+		const customTheme: CustomTheme = {
+			bgImageUrl:  typeof ct.bgImageUrl  === 'string' ? ct.bgImageUrl  : null,
+			bgColor:     typeof ct.bgColor     === 'string' ? ct.bgColor     : null,
+			accentColor: typeof ct.accentColor === 'string' ? ct.accentColor : null,
+			textColor:   typeof ct.textColor   === 'string' ? ct.textColor   : null,
+		}
+		return { theme, durationMs, events, customTheme }
+	}
+
 	type AlertItem = {
 		id:        string
-		eventType: string
+		eventType: AlertEventKey
 		message:   string
-		color:     string   // accent
 		shownAt:   number
 	}
 
-	let alerts   = $state<AlertItem[]>([])
-	let status   = $state<'loading' | 'ready' | 'invalid' | 'error'>('loading')
-	let overlay  = $state<{ id: string; overlayType: string; label: string | null } | null>(null)
-
-	const SHOW_DURATION_MS = 5000
-
-	// ── Bootstrap : valide le token via REST puis ouvre la socket ────────────
+	let alerts  = $state<AlertItem[]>([])
+	let status  = $state<'loading' | 'ready' | 'invalid' | 'error'>('loading')
+	let config  = $state<AlertConfig>(DEFAULT_CONFIG)
+	let socket: { disconnect: () => void } | null = null
 
 	async function bootstrap(): Promise<void> {
 		try {
 			const res = await fetch(`${PUBLIC_API_URL}/api/v1/streamer/overlay/lookup/${token}`)
 			if (!res.ok) { status = 'invalid'; return }
-			const data = await res.json() as { ok: boolean; overlay: { id: string; overlayType: string; label: string | null } }
+			const data = await res.json() as {
+				ok: boolean
+				overlay: { overlayType: string; config: Record<string, unknown> }
+			}
 			if (!data.ok || data.overlay.overlayType !== 'alert_box') { status = 'invalid'; return }
-			overlay = data.overlay
+			config = mergeConfig(data.overlay.config)
 			openSocket()
 		} catch {
 			status = 'error'
 		}
 	}
 
-	let socket: { disconnect: () => void } | null = null
-
 	async function openSocket(): Promise<void> {
-		// Import dynamique pour SSR-safety
 		const { io } = await import('socket.io-client')
-		// Connect on /overlay namespace with token in handshake auth
 		const s = io(`${PUBLIC_API_URL}/overlay`, {
 			auth:       { token },
 			transports: ['polling', 'websocket'],
@@ -57,78 +110,119 @@
 		})
 		s.on('connect',         () => { status = 'ready' })
 		s.on('connect_error',   () => { status = 'invalid' })
-		s.on('disconnect',      () => { /* swallow */ })
 		s.on('overlay:ready',   () => { status = 'ready' })
-		s.on('overlay:event',   (evt: { eventType: string; payload: Record<string, { event?: Record<string, unknown> }> }) => {
-			const item = buildAlertItem(evt)
-			if (item) pushAlert(item)
+		s.on('overlay:event',   (evt: { eventType: string; payload: { event?: Record<string, unknown> } }) => {
+			handleEvent(evt)
+		})
+		// Push live de la config depuis l'admin : on remplace la config locale
+		// sans avoir à reload OBS. Du coup tu peux tweaker les templates et
+		// voir le rendu en direct via le bouton Tester de l'admin.
+		s.on('overlay:config-updated', (data: { config: Record<string, unknown> }) => {
+			config = mergeConfig(data.config)
 		})
 		socket = s
 	}
 
-	onMount(() => {
-		if (browser) bootstrap()
-	})
+	onMount(() => { if (browser) bootstrap() })
+	onDestroy(() => { if (socket) socket.disconnect() })
 
-	onDestroy(() => {
-		if (socket) socket.disconnect()
-	})
+	// ── Substitution de variables ────────────────────────────────────────────
+	// {var_name} → valeur correspondante dans le payload event, fallback chaine
+	// vide. Variables spéciales calculées (tier humanisé, total_plural, etc).
 
-	// ── Construction du message à afficher ───────────────────────────────────
+	function substituteTemplate(template: string, vars: Record<string, string>): string {
+		return template.replace(/\{([a-z_]+)\}/gi, (_, key) => vars[key] ?? '')
+	}
 
-	function buildAlertItem(evt: { eventType: string; payload: { event?: Record<string, unknown> } }): AlertItem | null {
-		const e = (evt.payload?.event ?? {}) as Record<string, unknown>
-		const id = `${evt.eventType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+	function buildVars(eventType: AlertEventKey, e: Record<string, unknown>): Record<string, string> {
+		const userName = (e.user_name as string) ?? (e.user_login as string) ?? 'Anonyme'
+		const isAnon   = e.is_anonymous === true
+		const total    = Number(e.total ?? 1)
 
-		switch (evt.eventType) {
-			case 'channel.follow':
+		const base: Record<string, string> = {
+			user_name:    isAnon ? 'Anonyme' : userName,
+			user_login:   (e.user_login as string) ?? '',
+		}
+
+		switch (eventType) {
+			case 'channel.subscribe':
 				return {
-					id, eventType: evt.eventType,
-					message: `${e.user_name ?? e.user_login ?? 'Anonyme'} a follow !`,
-					color:   '#06b6d4',
-					shownAt: Date.now(),
+					...base,
+					tier: String(e.tier ?? '1000').replace('000', '') || '1',
 				}
-			case 'channel.subscribe': {
-				const tier = String(e.tier ?? '').replace('000', '') || '1'
-				return {
-					id, eventType: evt.eventType,
-					message: `${e.user_name ?? '?'} s'abonne (tier ${tier})${e.is_gift ? ' offert !' : ' !'}`,
-					color:   '#a855f7',
-					shownAt: Date.now(),
-				}
-			}
 			case 'channel.subscription.gift':
 				return {
-					id, eventType: evt.eventType,
-					message: `${e.user_name ?? 'Anonyme'} offre ${e.total ?? 1} sub${(e.total as number ?? 1) > 1 ? 's' : ''} !`,
-					color:   '#ec4899',
-					shownAt: Date.now(),
+					...base,
+					total:        String(total),
+					total_plural: total > 1 ? 's' : '',
 				}
 			case 'channel.cheer':
 				return {
-					id, eventType: evt.eventType,
-					message: `${e.is_anonymous ? 'Anonyme' : e.user_name ?? '?'} envoie ${e.bits ?? 0} bits !`,
-					color:   '#f59e0b',
-					shownAt: Date.now(),
+					...base,
+					user_name: isAnon ? 'Anonyme' : userName,
+					bits:      String(e.bits ?? 0),
 				}
 			case 'channel.raid':
 				return {
-					id, eventType: evt.eventType,
-					message: `Raid de ${e.from_broadcaster_user_name ?? '?'} avec ${e.viewers ?? 0} viewers !`,
-					color:   '#ef4444',
-					shownAt: Date.now(),
+					...base,
+					from_broadcaster_user_name: (e.from_broadcaster_user_name as string) ?? '?',
+					viewers:                    String(e.viewers ?? 0),
 				}
 			default:
-				return null
+				return base
 		}
 	}
 
-	function pushAlert(item: AlertItem): void {
+	function handleEvent(evt: { eventType: string; payload: { event?: Record<string, unknown> } }): void {
+		const key = evt.eventType as AlertEventKey
+		const cfg = config.events[key]
+		if (!cfg || !cfg.enabled) return     // event désactivé par l'admin
+
+		const e    = evt.payload?.event ?? {}
+		const vars = buildVars(key, e)
+		const msg  = substituteTemplate(cfg.template, vars)
+
+		const item: AlertItem = {
+			id:        `${key}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+			eventType: key,
+			message:   msg,
+			shownAt:   Date.now(),
+		}
 		alerts = [...alerts, item]
-		// Auto-dismiss
-		setTimeout(() => {
-			alerts = alerts.filter(a => a.id !== item.id)
-		}, SHOW_DURATION_MS)
+		setTimeout(() => { alerts = alerts.filter(a => a.id !== item.id) }, config.durationMs)
+	}
+
+	// ── Couleur d'accent par event type ──────────────────────────────────────
+	const ACCENTS: Record<AlertEventKey, string> = {
+		'channel.follow':            '#06b6d4',
+		'channel.subscribe':         '#a855f7',
+		'channel.subscription.gift': '#ec4899',
+		'channel.cheer':             '#f59e0b',
+		'channel.raid':              '#ef4444',
+	}
+
+	const LABELS: Record<AlertEventKey, string> = {
+		'channel.follow':            'Nouveau follower',
+		'channel.subscribe':         'Nouvel abonné',
+		'channel.subscription.gift': 'Sub offert',
+		'channel.cheer':             'Bits',
+		'channel.raid':              'Raid',
+	}
+
+	// Echappe une string pour la mettre dans une CSS url() ou color : on
+	// supprime les caractères qui pourraient casser la propriété (`)\;}{`).
+	function safeCssValue(s: string | null | undefined): string {
+		if (!s) return ''
+		return s.replace(/[\\;}{"`]/g, '').slice(0, 500)
+	}
+
+	function buildCustomStyle(c: CustomTheme | undefined): string {
+		if (!c) return ''
+		const parts: string[] = []
+		if (c.bgImageUrl) parts.push(`background-image: url("${safeCssValue(c.bgImageUrl)}")`)
+		if (c.bgColor)    parts.push(`background-color: ${safeCssValue(c.bgColor)}`)
+		if (c.textColor)  parts.push(`--text-color: ${safeCssValue(c.textColor)}`)
+		return parts.join('; ')
 	}
 </script>
 
@@ -145,14 +239,14 @@
 	</style>
 </svelte:head>
 
-<div class="overlay-root">
+<div class="overlay-root theme-{config.theme}">
 	{#if status === 'invalid'}
 		<div class="status-msg status-error" transition:fade>
 			Overlay invalide ou révoquée. Génère une nouvelle URL dans Nodyx.
 		</div>
 	{:else if status === 'error'}
 		<div class="status-msg status-error" transition:fade>
-			Connexion Nodyx impossible. Vérifie ta connexion réseau.
+			Connexion Nodyx impossible.
 		</div>
 	{:else if status === 'loading'}
 		<div class="status-msg status-info" transition:fade>
@@ -161,11 +255,18 @@
 	{/if}
 
 	{#each alerts as alert (alert.id)}
-		<div class="alert-card" style="border-color: {alert.color}; box-shadow: 0 8px 32px {alert.color}40;"
-		     in:fly={{ x: 400, duration: 400 }} out:fade={{ duration: 300 }}>
-			<div class="alert-bar" style="background: {alert.color}"></div>
+		{@const accent  = config.theme === 'custom' && config.customTheme?.accentColor ? config.customTheme.accentColor : ACCENTS[alert.eventType]}
+		{@const label   = LABELS[alert.eventType]}
+		{@const iconUrl = config.events[alert.eventType]?.iconUrl ?? null}
+		{@const cstyles = config.theme === 'custom' ? buildCustomStyle(config.customTheme) : ''}
+		<div class="alert-card" style="--accent: {accent}; {cstyles}"
+		     in:fly={{ x: 400, duration: 420 }} out:fade={{ duration: 280 }}>
+			<div class="alert-bar"></div>
+			{#if iconUrl}
+				<img src={iconUrl} alt="" class="alert-icon" />
+			{/if}
 			<div class="alert-content">
-				<div class="alert-eyebrow" style="color: {alert.color}">Nouveau !</div>
+				<div class="alert-eyebrow">{label}</div>
 				<div class="alert-message">{alert.message}</div>
 			</div>
 		</div>
@@ -186,43 +287,263 @@
 		max-width: 480px;
 	}
 
-	.alert-card {
+	/* ══ THEME : Cyber (default — Nodyx) ═══════════════════════════════════ */
+	.theme-cyber .alert-card {
 		display: flex;
 		min-width: 320px;
 		max-width: 480px;
 		background: rgba(15, 23, 42, 0.92);
 		backdrop-filter: blur(8px);
 		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-left-width: 3px;
+		border-left: 3px solid var(--accent);
 		border-radius: 10px;
 		overflow: hidden;
+		box-shadow: 0 8px 32px color-mix(in oklab, var(--accent) 30%, transparent);
 	}
-
-	.alert-bar {
+	.theme-cyber .alert-bar {
 		width: 4px;
 		flex-shrink: 0;
+		background: var(--accent);
+	}
+	.theme-cyber .alert-content { padding: 12px 16px; flex: 1; }
+	.theme-cyber .alert-eyebrow {
+		font-size: 10px; font-weight: 700; text-transform: uppercase;
+		letter-spacing: 0.12em; margin-bottom: 4px; color: var(--accent);
+	}
+	.theme-cyber .alert-message {
+		color: #f1f5f9; font-size: 15px; font-weight: 600; line-height: 1.35;
 	}
 
-	.alert-content {
+	/* ══ THEME : Soft (rounded, doux, glassmorphism) ═══════════════════════ */
+	.theme-soft .alert-card {
+		display: flex;
+		min-width: 320px;
+		max-width: 480px;
+		background: rgba(255, 255, 255, 0.95);
+		backdrop-filter: blur(12px);
+		border: 1px solid rgba(0, 0, 0, 0.04);
+		border-radius: 22px;
+		overflow: hidden;
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+	}
+	.theme-soft .alert-bar {
+		width: 6px;
+		flex-shrink: 0;
+		background: var(--accent);
+	}
+	.theme-soft .alert-content { padding: 14px 18px; flex: 1; }
+	.theme-soft .alert-eyebrow {
+		font-size: 11px; font-weight: 600; text-transform: uppercase;
+		letter-spacing: 0.08em; margin-bottom: 3px;
+		color: color-mix(in oklab, var(--accent) 70%, black);
+	}
+	.theme-soft .alert-message {
+		color: #1e293b; font-size: 16px; font-weight: 600; line-height: 1.35;
+	}
+
+	/* ══ THEME : Retro (pixel, gros gras, gros contour) ══════════════════ */
+	.theme-retro .alert-card {
+		display: flex;
+		flex-direction: column;
+		min-width: 280px;
+		max-width: 480px;
+		background: #1a1a2e;
+		border: 4px solid var(--accent);
+		border-radius: 0;
+		box-shadow: 6px 6px 0 0 color-mix(in oklab, var(--accent) 60%, black);
+		font-family: 'VT323', 'Press Start 2P', monospace;
+		image-rendering: pixelated;
+	}
+	.theme-retro .alert-bar { display: none; }
+	.theme-retro .alert-content {
 		padding: 12px 16px;
-		flex: 1;
+		background:
+			linear-gradient(90deg, var(--accent) 0%, var(--accent) 4%, transparent 4%, transparent 96%, var(--accent) 96%, var(--accent) 100%);
+		background-size: 100% 4px, 100% 100%;
+		background-repeat: no-repeat;
+		background-position: top, center;
 	}
-
-	.alert-eyebrow {
-		font-size: 10px;
-		font-weight: 700;
+	.theme-retro .alert-eyebrow {
+		font-size: 14px;
+		font-weight: 400;
+		letter-spacing: 0.2em;
+		margin-bottom: 6px;
+		color: var(--accent);
 		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		margin-bottom: 4px;
+	}
+	.theme-retro .alert-message {
+		color: #f1f5f9; font-size: 20px; font-weight: 400; line-height: 1.2;
 	}
 
-	.alert-message {
-		color: #f1f5f9;
-		font-size: 15px;
-		font-weight: 600;
-		line-height: 1.35;
+	/* ══ THEME : Neon (dark + glow puissant + animation pulse) ══════════ */
+	.theme-neon .alert-card {
+		display: flex;
+		min-width: 320px;
+		max-width: 480px;
+		background: #050511;
+		border: 2px solid var(--accent);
+		border-radius: 12px;
+		overflow: hidden;
+		box-shadow:
+			0 0 18px var(--accent),
+			0 0 36px color-mix(in oklab, var(--accent) 60%, transparent),
+			inset 0 0 12px color-mix(in oklab, var(--accent) 20%, transparent);
+		animation: neon-pulse 2.4s ease-in-out infinite;
+	}
+	@keyframes neon-pulse {
+		0%, 100% { box-shadow: 0 0 18px var(--accent), 0 0 36px color-mix(in oklab, var(--accent) 60%, transparent); }
+		50%      { box-shadow: 0 0 26px var(--accent), 0 0 52px color-mix(in oklab, var(--accent) 75%, transparent); }
+	}
+	.theme-neon .alert-bar {
+		width: 4px;
+		flex-shrink: 0;
+		background: var(--accent);
+		box-shadow: 0 0 10px var(--accent);
+	}
+	.theme-neon .alert-content { padding: 14px 18px; flex: 1; }
+	.theme-neon .alert-eyebrow {
+		font-size: 10px; font-weight: 700; text-transform: uppercase;
+		letter-spacing: 0.18em; margin-bottom: 4px;
+		color: var(--accent);
+		text-shadow: 0 0 8px var(--accent);
+	}
+	.theme-neon .alert-message {
+		color: #f1f5f9; font-size: 16px; font-weight: 700; line-height: 1.3;
+		text-shadow: 0 0 6px color-mix(in oklab, var(--accent) 50%, transparent);
 	}
 
+	/* ══ THEME : Holographic (iridescent gradient animé) ════════════════ */
+	.theme-holographic .alert-card {
+		display: flex;
+		min-width: 320px;
+		max-width: 480px;
+		position: relative;
+		background: linear-gradient(135deg, #1a0033 0%, #001a33 50%, #003322 100%);
+		border-radius: 14px;
+		overflow: hidden;
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+		isolation: isolate;
+	}
+	.theme-holographic .alert-card::before {
+		content: '';
+		position: absolute; inset: 0;
+		background: linear-gradient(115deg,
+			rgba(236, 72, 153, 0.18) 0%,
+			rgba(99, 102, 241, 0.18) 25%,
+			rgba(6, 182, 212, 0.18) 50%,
+			rgba(168, 85, 247, 0.18) 75%,
+			rgba(236, 72, 153, 0.18) 100%);
+		background-size: 300% 100%;
+		animation: holo-shift 6s linear infinite;
+		z-index: -1;
+	}
+	.theme-holographic .alert-card::after {
+		content: '';
+		position: absolute; inset: 0;
+		border-radius: 14px;
+		padding: 1.5px;
+		background: linear-gradient(135deg, #ec4899, #6366f1, #06b6d4, #a855f7, #ec4899);
+		background-size: 300% 300%;
+		-webkit-mask:
+			linear-gradient(#fff 0 0) content-box,
+			linear-gradient(#fff 0 0);
+		-webkit-mask-composite: xor;
+		mask-composite: exclude;
+		animation: holo-shift 6s linear infinite;
+		pointer-events: none;
+	}
+	@keyframes holo-shift {
+		0%   { background-position: 0%   0%; }
+		100% { background-position: 300% 0%; }
+	}
+	.theme-holographic .alert-bar { display: none; }
+	.theme-holographic .alert-content { padding: 14px 18px; flex: 1; position: relative; z-index: 1; }
+	.theme-holographic .alert-eyebrow {
+		font-size: 10px; font-weight: 700; text-transform: uppercase;
+		letter-spacing: 0.14em; margin-bottom: 4px;
+		background: linear-gradient(90deg, #ec4899, #06b6d4);
+		background-clip: text;
+		-webkit-background-clip: text;
+		color: transparent;
+	}
+	.theme-holographic .alert-message {
+		color: #f1f5f9; font-size: 16px; font-weight: 600; line-height: 1.35;
+	}
+
+	/* ══ THEME : Minimal (texte seul, aucun bg, gros gras avec ombre) ══ */
+	.theme-minimal .alert-card {
+		display: flex;
+		flex-direction: column;
+		background: transparent;
+		border: none;
+		box-shadow: none;
+		padding: 0;
+		gap: 2px;
+	}
+	.theme-minimal .alert-bar { display: none; }
+	.theme-minimal .alert-content { padding: 0; flex: 1; }
+	.theme-minimal .alert-eyebrow {
+		font-size: 11px; font-weight: 700; text-transform: uppercase;
+		letter-spacing: 0.2em; margin-bottom: 2px;
+		color: var(--accent);
+		text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+	}
+	.theme-minimal .alert-message {
+		color: #ffffff;
+		font-size: 24px;
+		font-weight: 800;
+		line-height: 1.15;
+		text-shadow:
+			0 2px 4px rgba(0, 0, 0, 0.9),
+			0 4px 16px rgba(0, 0, 0, 0.7),
+			0 0 1px rgba(0, 0, 0, 1);
+		letter-spacing: -0.01em;
+	}
+
+	/* ══ THEME : Custom (bgImage / bgColor / textColor / accent depuis admin) */
+	.theme-custom .alert-card {
+		display: flex;
+		min-width: 320px;
+		max-width: 480px;
+		background: #0f172a;
+		background-size: cover;
+		background-position: center;
+		background-repeat: no-repeat;
+		border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+		border-left: 4px solid var(--accent);
+		border-radius: 12px;
+		overflow: hidden;
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+	}
+	.theme-custom .alert-bar { display: none; }
+	.theme-custom .alert-content {
+		padding: 14px 18px; flex: 1;
+		background: linear-gradient(90deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 70%, transparent 100%);
+	}
+	.theme-custom .alert-eyebrow {
+		font-size: 10px; font-weight: 700; text-transform: uppercase;
+		letter-spacing: 0.14em; margin-bottom: 4px;
+		color: var(--accent);
+	}
+	.theme-custom .alert-message {
+		color: var(--text-color, #f1f5f9);
+		font-size: 16px; font-weight: 700; line-height: 1.3;
+		text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+	}
+
+	/* ══ Icône optionnelle à gauche du message (utilisée par custom) ═══ */
+	.alert-icon {
+		width: 56px;
+		height: 56px;
+		margin: 12px 0 12px 16px;
+		object-fit: cover;
+		border-radius: 8px;
+		flex-shrink: 0;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+	}
+	.theme-minimal .alert-icon, .theme-retro .alert-icon { display: none; }
+
+	/* Status messages (loading/error) — communs à tous les thèmes */
 	.status-msg {
 		padding: 8px 14px;
 		border-radius: 8px;
@@ -230,13 +551,11 @@
 		font-weight: 500;
 		font-family: 'Geist', -apple-system, sans-serif;
 	}
-
 	.status-info {
 		background: rgba(15, 23, 42, 0.85);
 		color: #94a3b8;
 		border: 1px solid rgba(148, 163, 184, 0.2);
 	}
-
 	.status-error {
 		background: rgba(239, 68, 68, 0.15);
 		color: #fca5a5;
