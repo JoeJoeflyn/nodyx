@@ -27,7 +27,7 @@
 	const TYPE_META: Record<OverlayType, { label: string; desc: string; routeSlug: string; ready: boolean }> = {
 		alert_box:    { label: 'Alert Box',    desc: 'Notifications follow/sub/raid/cheer qui slide à l\'écran.', routeSlug: 'alert',    ready: true  },
 		goal_bar:     { label: 'Goal Bar',     desc: 'Barre de progression vers un objectif (followers/subs).',  routeSlug: 'goal',     ready: false },
-		stream_timer: { label: 'Stream Timer', desc: 'Temps écoulé depuis le début du stream.',                    routeSlug: 'timer',    ready: false },
+		stream_timer: { label: 'Stream Timer', desc: 'Temps écoulé depuis le début du stream, hidden quand offline.', routeSlug: 'timer',    ready: true  },
 		event_ticker: { label: 'Event Ticker', desc: 'Bandeau défilant des derniers événements.',                  routeSlug: 'ticker',   ready: false },
 		leaderboard:  { label: 'Leaderboard',  desc: 'Top contributors (follows/subs/raids/bits) sur 7/30j.',     routeSlug: 'board',    ready: false },
 	}

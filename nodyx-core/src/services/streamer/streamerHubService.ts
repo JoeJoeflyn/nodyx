@@ -711,19 +711,21 @@ export async function ingestEvent(args: {
     console.error('[streamerHub] live broadcast failed', err)
   }
 
-  // Dispatch vers les overlays OBS abonnées au type 'alert_box' (Phase 3+).
-  // Les overlays alert box reçoivent les 5 types d'événements à célébrer ;
-  // les autres types d'overlays (goal_bar, timer, etc.) consommeront leurs
-  // propres triggers dans des slices futures.
+  // Dispatch vers les overlays OBS. Chaque overlay a son propre filtre :
+  //   - alert_box     : reçoit follow / sub / gift / cheer / raid
+  //   - stream_timer  : reçoit stream.online (reset chrono) + stream.offline (hide)
+  // Les autres types (goal_bar, ticker, leaderboard) seront branchés dans
+  // les slices à venir avec leurs propres ensembles d'events.
   try {
-    if (io && ALERT_BOX_EVENT_TYPES.has(args.eventType)) {
+    if (io) {
       const { dispatchOverlayEvent } = await import('../../socket/overlay')
-      dispatchOverlayEvent(io, {
-        kind:       'alert_box',
-        eventType:  args.eventType,
-        payload:    args.payload,
-        occurredAt: new Date().toISOString(),
-      })
+      const now = new Date().toISOString()
+      if (ALERT_BOX_EVENT_TYPES.has(args.eventType)) {
+        dispatchOverlayEvent(io, { kind: 'alert_box',    eventType: args.eventType, payload: args.payload, occurredAt: now })
+      }
+      if (STREAM_TIMER_EVENT_TYPES.has(args.eventType)) {
+        dispatchOverlayEvent(io, { kind: 'stream_timer', eventType: args.eventType, payload: args.payload, occurredAt: now })
+      }
     }
   } catch (err) {
     console.error('[streamerHub] overlay dispatch failed', err)
@@ -737,6 +739,14 @@ const ALERT_BOX_EVENT_TYPES: ReadonlySet<string> = new Set([
   'channel.subscription.gift',
   'channel.cheer',
   'channel.raid',
+])
+
+// Types d'events que les overlays stream_timer consomment :
+// online → reset le chrono à partir du started_at fourni dans le payload,
+// offline → cache l'overlay (stream terminé).
+const STREAM_TIMER_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'stream.online',
+  'stream.offline',
 ])
 
 // Le user qui agit dans le payload dépend de l'event. Pour la plupart des

@@ -653,9 +653,29 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
   // PAS d'auth admin parce que la page tourne dans OBS sur la machine du
   // streamer. Le token EST l'auth, et il donne uniquement le droit de lire la
   // config et de recevoir les events (rien d'écriture). Si revoked → 404.
+  //
+  // Selon le type d'overlay, on inclut un objet state initial pour que la
+  // page puisse render quelque chose avant que les events socket arrivent
+  // (ex: stream_timer a besoin du started_at de la session en cours).
   server.get<{ Params: { token: string } }>('/overlay/lookup/:token', async (request, reply) => {
     const overlay = await findOverlayByToken(request.params.token)
     if (!overlay) return reply.code(404).send({ ok: false, error: 'not_found' })
+
+    let state: Record<string, unknown> | null = null
+
+    if (overlay.overlayType === 'stream_timer') {
+      const r = await db.query<{ started_at: string; ended_at: string | null }>(
+        `SELECT started_at, ended_at FROM streamer_sessions
+         WHERE provider = 'twitch'
+         ORDER BY started_at DESC LIMIT 1`,
+      ).catch(() => null)
+      const s = r?.rows[0]
+      state = {
+        isLive:    !!(s && !s.ended_at),
+        startedAt: s && !s.ended_at ? s.started_at : null,
+      }
+    }
+
     return reply.send({
       ok:      true,
       overlay: {
@@ -663,6 +683,7 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
         overlayType: overlay.overlayType,
         label:       overlay.label,
         config:      overlay.config,
+        state,
       },
     })
   })
