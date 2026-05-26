@@ -32,6 +32,12 @@ export function isOverlayType(s: string): s is OverlayType {
 export type AlertBoxTheme = 'cyber' | 'soft' | 'retro' | 'neon' | 'holographic' | 'minimal' | 'custom'
 export const ALERT_BOX_THEMES: readonly AlertBoxTheme[] = ['cyber', 'soft', 'retro', 'neon', 'holographic', 'minimal', 'custom']
 
+export type AlertPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'center'
+export const ALERT_POSITIONS: readonly AlertPosition[] = ['top-right', 'top-left', 'bottom-right', 'bottom-left', 'center']
+
+export type AlertAnimation = 'slide-right' | 'slide-left' | 'slide-top' | 'slide-bottom' | 'scale' | 'bounce' | 'fade'
+export const ALERT_ANIMATIONS: readonly AlertAnimation[] = ['slide-right', 'slide-left', 'slide-top', 'slide-bottom', 'scale', 'bounce', 'fade']
+
 export type AlertEventKey =
   | 'channel.follow'
   | 'channel.subscribe'
@@ -43,6 +49,7 @@ export interface AlertEventCfg {
   enabled:   boolean
   template:  string                // "{user_name} a follow !" — variables {var_name}
   iconUrl?:  string | null         // optionnel pour le thème custom : icône à gauche du message
+  soundUrl?: string | null         // URL d'un mp3/wav à jouer quand l'event arrive
 }
 
 export interface AlertBoxCustomTheme {
@@ -54,7 +61,10 @@ export interface AlertBoxCustomTheme {
 
 export interface AlertBoxConfig {
   theme:        AlertBoxTheme
+  position:     AlertPosition
+  animation:    AlertAnimation
   durationMs:   number
+  soundVolume:  number                  // 0 à 1, appliqué à tous les sons
   events:       Record<AlertEventKey, AlertEventCfg>
   customTheme?: AlertBoxCustomTheme    // uniquement utilisé si theme === 'custom'
 }
@@ -62,8 +72,11 @@ export interface AlertBoxConfig {
 // Config par défaut quand on crée un alert_box ou si l'admin n'a rien
 // personnalisé. Tu peux toujours éditer ensuite via le panneau admin.
 export const DEFAULT_ALERT_BOX_CONFIG: AlertBoxConfig = {
-  theme:      'cyber',
-  durationMs: 5000,
+  theme:       'cyber',
+  position:    'top-right',
+  animation:   'slide-right',
+  durationMs:  5000,
+  soundVolume: 0.6,
   events: {
     'channel.follow':            { enabled: true, template: '{user_name} a follow !' },
     'channel.subscribe':         { enabled: true, template: '{user_name} s\'abonne (tier {tier}) !' },
@@ -87,15 +100,25 @@ export function withAlertBoxDefaults(raw: Record<string, unknown> | undefined): 
         enabled:  typeof incoming.enabled  === 'boolean' ? incoming.enabled  : events[k].enabled,
         template: typeof incoming.template === 'string'  ? incoming.template : events[k].template,
         iconUrl:  typeof incoming.iconUrl  === 'string'  ? incoming.iconUrl  : null,
+        soundUrl: typeof incoming.soundUrl === 'string'  ? incoming.soundUrl : null,
       }
     }
   }
   const theme = ALERT_BOX_THEMES.includes(cfg.theme as AlertBoxTheme)
     ? cfg.theme as AlertBoxTheme
     : DEFAULT_ALERT_BOX_CONFIG.theme
+  const position = ALERT_POSITIONS.includes(cfg.position as AlertPosition)
+    ? cfg.position as AlertPosition
+    : DEFAULT_ALERT_BOX_CONFIG.position
+  const animation = ALERT_ANIMATIONS.includes(cfg.animation as AlertAnimation)
+    ? cfg.animation as AlertAnimation
+    : DEFAULT_ALERT_BOX_CONFIG.animation
   const durationMs = typeof cfg.durationMs === 'number' && cfg.durationMs >= 1000 && cfg.durationMs <= 30000
     ? cfg.durationMs
     : DEFAULT_ALERT_BOX_CONFIG.durationMs
+  const soundVolume = typeof cfg.soundVolume === 'number' && cfg.soundVolume >= 0 && cfg.soundVolume <= 1
+    ? cfg.soundVolume
+    : DEFAULT_ALERT_BOX_CONFIG.soundVolume
   const ct = (cfg.customTheme ?? {}) as Partial<AlertBoxCustomTheme>
   const customTheme: AlertBoxCustomTheme = {
     bgImageUrl:  typeof ct.bgImageUrl  === 'string' ? ct.bgImageUrl  : null,
@@ -103,7 +126,7 @@ export function withAlertBoxDefaults(raw: Record<string, unknown> | undefined): 
     accentColor: typeof ct.accentColor === 'string' ? ct.accentColor : null,
     textColor:   typeof ct.textColor   === 'string' ? ct.textColor   : null,
   }
-  return { theme, durationMs, events, customTheme }
+  return { theme, position, animation, durationMs, soundVolume, events, customTheme }
 }
 
 export interface OverlayRow {

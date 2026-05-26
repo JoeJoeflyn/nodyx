@@ -2,12 +2,15 @@
 	import { apiFetch } from '$lib/api'
 	import { browser } from '$app/environment'
 	import AlertThemePreview from './AlertThemePreview.svelte'
+	import MediaSoundPicker  from './MediaSoundPicker.svelte'
 
 	type AlertTheme = 'cyber' | 'soft' | 'retro' | 'neon' | 'holographic' | 'minimal' | 'custom'
+	type AlertPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'center'
+	type AlertAnimation = 'slide-right' | 'slide-left' | 'slide-top' | 'slide-bottom' | 'scale' | 'bounce' | 'fade'
 	type AlertEventKey =
 		| 'channel.follow' | 'channel.subscribe' | 'channel.subscription.gift'
 		| 'channel.cheer'  | 'channel.raid'
-	type AlertEventCfg = { enabled: boolean; template: string; iconUrl?: string | null }
+	type AlertEventCfg = { enabled: boolean; template: string; iconUrl?: string | null; soundUrl?: string | null }
 	type CustomTheme = {
 		bgImageUrl?:  string | null
 		bgColor?:     string | null
@@ -16,7 +19,10 @@
 	}
 	type AlertConfig = {
 		theme:        AlertTheme
+		position:     AlertPosition
+		animation:    AlertAnimation
 		durationMs:   number
+		soundVolume:  number
 		events:       Record<AlertEventKey, AlertEventCfg>
 		customTheme:  CustomTheme
 	}
@@ -30,17 +36,22 @@
 
 	let { token, overlayId, initial, onSaved }: Props = $props()
 
-	const VALID_THEMES = ['cyber', 'soft', 'retro', 'neon', 'holographic', 'minimal', 'custom'] as const
+	const VALID_THEMES     = ['cyber', 'soft', 'retro', 'neon', 'holographic', 'minimal', 'custom'] as const
+	const VALID_POSITIONS  = ['top-right', 'top-left', 'bottom-right', 'bottom-left', 'center'] as const
+	const VALID_ANIMATIONS = ['slide-right', 'slide-left', 'slide-top', 'slide-bottom', 'scale', 'bounce', 'fade'] as const
 
 	const DEFAULTS: AlertConfig = {
-		theme:      'cyber',
-		durationMs: 5000,
+		theme:       'cyber',
+		position:    'top-right',
+		animation:   'slide-right',
+		durationMs:  5000,
+		soundVolume: 0.6,
 		events: {
-			'channel.follow':            { enabled: true, template: '{user_name} a follow !',                                         iconUrl: null },
-			'channel.subscribe':         { enabled: true, template: '{user_name} s\'abonne (tier {tier}) !',                          iconUrl: null },
-			'channel.subscription.gift': { enabled: true, template: '{user_name} offre {total} sub{total_plural} !',                   iconUrl: null },
-			'channel.cheer':             { enabled: true, template: '{user_name} envoie {bits} bits !',                               iconUrl: null },
-			'channel.raid':              { enabled: true, template: 'Raid de {from_broadcaster_user_name} avec {viewers} viewers !', iconUrl: null },
+			'channel.follow':            { enabled: true, template: '{user_name} a follow !',                                         iconUrl: null, soundUrl: null },
+			'channel.subscribe':         { enabled: true, template: '{user_name} s\'abonne (tier {tier}) !',                          iconUrl: null, soundUrl: null },
+			'channel.subscription.gift': { enabled: true, template: '{user_name} offre {total} sub{total_plural} !',                   iconUrl: null, soundUrl: null },
+			'channel.cheer':             { enabled: true, template: '{user_name} envoie {bits} bits !',                               iconUrl: null, soundUrl: null },
+			'channel.raid':              { enabled: true, template: 'Raid de {from_broadcaster_user_name} avec {viewers} viewers !', iconUrl: null, soundUrl: null },
 		},
 		customTheme: { bgImageUrl: null, bgColor: null, accentColor: null, textColor: null },
 	}
@@ -55,12 +66,19 @@
 				enabled:  typeof inc.enabled  === 'boolean' ? inc.enabled  : events[k].enabled,
 				template: typeof inc.template === 'string'  ? inc.template : events[k].template,
 				iconUrl:  typeof inc.iconUrl  === 'string'  ? inc.iconUrl  : null,
+				soundUrl: typeof inc.soundUrl === 'string'  ? inc.soundUrl : null,
 			}
 		}
 		const theme = (VALID_THEMES as readonly string[]).includes(cfg.theme as string)
 			? cfg.theme as AlertTheme : DEFAULTS.theme
+		const position = (VALID_POSITIONS as readonly string[]).includes(cfg.position as string)
+			? cfg.position as AlertPosition : DEFAULTS.position
+		const animation = (VALID_ANIMATIONS as readonly string[]).includes(cfg.animation as string)
+			? cfg.animation as AlertAnimation : DEFAULTS.animation
 		const durationMs = typeof cfg.durationMs === 'number' && cfg.durationMs >= 1000 && cfg.durationMs <= 30000
 			? cfg.durationMs : DEFAULTS.durationMs
+		const soundVolume = typeof cfg.soundVolume === 'number' && cfg.soundVolume >= 0 && cfg.soundVolume <= 1
+			? cfg.soundVolume : DEFAULTS.soundVolume
 		const ct = (cfg.customTheme ?? {}) as Partial<CustomTheme>
 		const customTheme: CustomTheme = {
 			bgImageUrl:  typeof ct.bgImageUrl  === 'string' ? ct.bgImageUrl  : null,
@@ -68,13 +86,27 @@
 			accentColor: typeof ct.accentColor === 'string' ? ct.accentColor : null,
 			textColor:   typeof ct.textColor   === 'string' ? ct.textColor   : null,
 		}
-		return { theme, durationMs, events, customTheme }
+		return { theme, position, animation, durationMs, soundVolume, events, customTheme }
 	}
 
 	let config = $state<AlertConfig>(merge(initial))
 	let saving = $state(false)
 	let firing = $state<string | null>(null)
 	let toast  = $state<{ text: string; ok: boolean } | null>(null)
+
+	// Picker médiathèque : on garde l'event key courant pour savoir où placer
+	// l'URL sélectionnée.
+	let pickerOpen      = $state(false)
+	let pickerTargetKey = $state<AlertEventKey | null>(null)
+
+	function openPickerFor(key: AlertEventKey): void {
+		pickerTargetKey = key
+		pickerOpen      = true
+	}
+	function onPickSound(url: string, _label: string): void {
+		if (!pickerTargetKey) return
+		config.events[pickerTargetKey].soundUrl = url
+	}
 
 	function flash(text: string, ok: boolean): void {
 		toast = { text, ok }
@@ -98,6 +130,54 @@
 			flash('Erreur réseau.', false)
 		} finally {
 			saving = false
+		}
+	}
+
+	function previewSound(url: string | null | undefined): void {
+		if (!url) return
+
+		// Détection précoce : mixed-content. Si Nodyx est en HTTPS et le son
+		// en HTTP, le navigateur bloque silencieusement.
+		if (typeof window !== 'undefined'
+			&& window.location.protocol === 'https:'
+			&& url.startsWith('http://')) {
+			flash('URL en HTTP bloquée car Nodyx est en HTTPS. Utilise une URL https://...', false)
+			return
+		}
+
+		try {
+			const audio = new Audio(url)
+			audio.volume = Math.min(1, Math.max(0, config.soundVolume))
+			// Pas de crossOrigin : on a juste besoin de lire l'audio, pas de
+			// l'inspecter via Web Audio API. Sans crossOrigin, le browser
+			// accepte n'importe quelle origine. AVEC, il exige les headers
+			// CORS que la plupart des hosts publics n'envoient pas.
+
+			// Erreur de chargement (404, codec, CORS strict, etc) — vient via
+			// l'event "error" sur l'élément Audio, pas via le reject de play().
+			audio.addEventListener('error', () => {
+				const me = audio.error
+				const code = me?.code
+				const reason =
+					code === MediaError.MEDIA_ERR_NETWORK   ? 'erreur réseau (URL inaccessible ?)'
+					: code === MediaError.MEDIA_ERR_DECODE  ? 'fichier corrompu ou codec non supporté'
+					: code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ? 'format non supporté (essaye un mp3 ou wav standard)'
+					: code === MediaError.MEDIA_ERR_ABORTED ? 'lecture annulée'
+					: 'origine bloquée ou URL invalide'
+				flash(`Son injouable : ${reason}.`, false)
+			}, { once: true })
+
+			audio.play().catch((err: DOMException) => {
+				const name = err?.name ?? ''
+				const reason =
+					name === 'NotAllowedError'    ? 'autoplay bloqué (clique d\'abord sur la page)'
+					: name === 'NotSupportedError' ? 'format non supporté par le navigateur'
+					: name === 'AbortError'        ? 'lecture annulée'
+					: err?.message?.slice(0, 80) || 'raison inconnue'
+				flash(`Son injouable : ${reason}.`, false)
+			})
+		} catch (err) {
+			flash(`URL son invalide : ${(err as Error).message?.slice(0, 80) ?? 'parsing échoué'}.`, false)
 		}
 	}
 
@@ -212,14 +292,70 @@
 		</div>
 	{/if}
 
-	<!-- Duration -->
-	<div>
-		<label for="alert-duration" class="block text-[11px] uppercase tracking-widest font-semibold text-slate-400 mb-2">
-			Durée d'affichage : <span class="text-cyan-300 font-mono">{(config.durationMs / 1000).toFixed(1)}s</span>
-		</label>
-		<input id="alert-duration" type="range" min="1000" max="15000" step="500" bind:value={config.durationMs}
-			class="w-full accent-cyan-500"/>
-		<div class="flex justify-between text-[10px] text-slate-600 font-mono mt-0.5"><span>1s</span><span>15s</span></div>
+	<!-- Position + Animation + Duration grouped -->
+	<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+		<div>
+			<div class="text-[11px] uppercase tracking-widest font-semibold text-slate-400 mb-1.5">Position à l'écran</div>
+			<div class="grid grid-cols-3 grid-rows-3 gap-1 p-1.5 rounded-lg bg-slate-950/60 border border-slate-700/40 aspect-[3/2]">
+				{#each [
+					['top-left',     'start', 'start'],
+					[null,            null,    null  ],
+					['top-right',    'end',   'start'],
+					[null,            null,    null  ],
+					['center',       'center','center'],
+					[null,            null,    null  ],
+					['bottom-left',  'start', 'end'  ],
+					[null,            null,    null  ],
+					['bottom-right', 'end',   'end'  ],
+				] as [pos, hAlign, vAlign]}
+					{#if pos === null}
+						<div></div>
+					{:else}
+						{@const p = pos as AlertPosition}
+						{@const isActive = config.position === p}
+						<button type="button" onclick={() => config.position = p}
+							title={p}
+							class="rounded transition-colors flex p-1.5 justify-{hAlign} items-{vAlign}
+								{isActive ? 'bg-cyan-500/15 border border-cyan-500/40' : 'bg-slate-900/40 border border-slate-700/40 hover:border-slate-600/60'}">
+							<span class="w-3 h-1.5 rounded-sm {isActive ? 'bg-cyan-400' : 'bg-slate-600'}"></span>
+						</button>
+					{/if}
+				{/each}
+			</div>
+		</div>
+		<div>
+			<label for="alert-animation" class="block text-[11px] uppercase tracking-widest font-semibold text-slate-400 mb-1.5">Animation d'entrée</label>
+			<select id="alert-animation" bind:value={config.animation}
+				class="w-full rounded-lg bg-slate-950/60 border border-slate-700/60 focus:border-cyan-500/60 focus:ring-2 focus:ring-cyan-500/20 px-3 py-2 text-sm text-white outline-none transition-colors">
+				<option value="slide-right">Slide depuis la droite</option>
+				<option value="slide-left">Slide depuis la gauche</option>
+				<option value="slide-top">Slide depuis le haut</option>
+				<option value="slide-bottom">Slide depuis le bas</option>
+				<option value="scale">Scale (zoom doux)</option>
+				<option value="bounce">Bounce (rebond)</option>
+				<option value="fade">Fade (apparition simple)</option>
+			</select>
+		</div>
+	</div>
+
+	<!-- Duration + Volume -->
+	<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+		<div>
+			<label for="alert-duration" class="block text-[11px] uppercase tracking-widest font-semibold text-slate-400 mb-2">
+				Durée : <span class="text-cyan-300 font-mono">{(config.durationMs / 1000).toFixed(1)}s</span>
+			</label>
+			<input id="alert-duration" type="range" min="1000" max="15000" step="500" bind:value={config.durationMs}
+				class="w-full accent-cyan-500"/>
+			<div class="flex justify-between text-[10px] text-slate-600 font-mono mt-0.5"><span>1s</span><span>15s</span></div>
+		</div>
+		<div>
+			<label for="alert-volume" class="block text-[11px] uppercase tracking-widest font-semibold text-slate-400 mb-2">
+				Volume sons : <span class="text-cyan-300 font-mono">{Math.round(config.soundVolume * 100)}%</span>
+			</label>
+			<input id="alert-volume" type="range" min="0" max="1" step="0.05" bind:value={config.soundVolume}
+				class="w-full accent-cyan-500"/>
+			<div class="flex justify-between text-[10px] text-slate-600 font-mono mt-0.5"><span>0%</span><span>100%</span></div>
+		</div>
 	</div>
 
 	<!-- Events -->
@@ -256,6 +392,27 @@
 							{/if}
 						</div>
 					{/if}
+					<div class="flex items-center gap-2">
+						<input type="url" bind:value={config.events[key].soundUrl}
+							disabled={!cfg.enabled}
+							placeholder="URL son (mp3 / wav) ou choisis depuis la médiathèque →"
+							class="flex-1 rounded bg-slate-950 border border-slate-700/60 focus:border-cyan-500/60 focus:ring-2 focus:ring-cyan-500/20 px-2.5 py-1.5 text-[11px] text-white placeholder-slate-600 outline-none transition-colors disabled:opacity-40 font-mono"/>
+						<button type="button" onclick={() => openPickerFor(key)}
+							disabled={!cfg.enabled}
+							class="shrink-0 rounded bg-indigo-500/15 hover:bg-indigo-500/25 disabled:opacity-30 border border-indigo-500/40 text-indigo-200 px-2 py-1.5 text-[10px] font-medium transition-colors inline-flex items-center gap-1"
+							title="Choisir depuis la médiathèque Nodyx">
+							<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+							Médiathèque
+						</button>
+						{#if cfg.soundUrl}
+							<button type="button" onclick={() => previewSound(cfg.soundUrl)}
+								class="shrink-0 rounded bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 px-2 py-1.5 text-[10px] font-medium transition-colors inline-flex items-center gap-1"
+								aria-label="Preview son">
+								<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+								Preview
+							</button>
+						{/if}
+					</div>
 					<div class="flex items-center justify-between gap-2 text-[10px]">
 						<div class="text-slate-500">
 							Variables :
@@ -284,3 +441,10 @@
 		{saving ? 'Sauvegarde…' : 'Sauvegarder la config'}
 	</button>
 </div>
+
+<MediaSoundPicker
+	token={token}
+	open={pickerOpen}
+	onPick={onPickSound}
+	onClose={() => { pickerOpen = false; pickerTargetKey = null }}
+/>

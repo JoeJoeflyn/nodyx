@@ -2,14 +2,24 @@ import { fail } from '@sveltejs/kit'
 import type { PageServerLoad, Actions } from './$types'
 import { apiFetch } from '$lib/api'
 
+// Charge en parallèle les 3 types de médias : images, vidéos, audio. Chaque
+// onglet est listé indépendamment côté frontend, l'utilisateur choisit lequel
+// afficher via les tabs. Le upload se fait avec le type courant pré-rempli.
 export const load: PageServerLoad = async ({ fetch, parent }) => {
 	const { token } = await parent()
-	const res = await apiFetch(fetch, '/assets?type=image&limit=100', {
-		headers: { Authorization: `Bearer ${token}` },
-	})
-	if (!res.ok) return { images: [] }
-	const { assets } = await res.json()
-	return { images: assets ?? [] }
+	const auth = { headers: { Authorization: `Bearer ${token}` } }
+
+	const [imgRes, vidRes, audRes] = await Promise.all([
+		apiFetch(fetch, '/assets?type=image&limit=100', auth),
+		apiFetch(fetch, '/assets?type=video&limit=100', auth),
+		apiFetch(fetch, '/assets?type=sound&limit=100', auth),
+	])
+
+	const images = imgRes.ok ? (await imgRes.json()).assets ?? [] : []
+	const videos = vidRes.ok ? (await vidRes.json()).assets ?? [] : []
+	const audios = audRes.ok ? (await audRes.json()).assets ?? [] : []
+
+	return { images, videos, audios }
 }
 
 export const actions: Actions = {

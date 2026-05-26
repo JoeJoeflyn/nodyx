@@ -3,7 +3,8 @@
 	import { page } from '$app/stores'
 	import { browser } from '$app/environment'
 	import { PUBLIC_API_URL } from '$env/static/public'
-	import { fly, fade } from 'svelte/transition'
+	import { fly, fade, scale } from 'svelte/transition'
+	import { backOut, cubicOut } from 'svelte/easing'
 
 	// Page transparente conçue pour être collée comme Browser Source dans OBS.
 	// Le token dans l'URL EST l'auth : il bootstrappe la config via REST et
@@ -14,10 +15,12 @@
 	const token = $derived(($page.params as { token: string }).token)
 
 	type AlertTheme = 'cyber' | 'soft' | 'retro' | 'neon' | 'holographic' | 'minimal' | 'custom'
+	type AlertPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'center'
+	type AlertAnimation = 'slide-right' | 'slide-left' | 'slide-top' | 'slide-bottom' | 'scale' | 'bounce' | 'fade'
 	type AlertEventKey =
 		| 'channel.follow' | 'channel.subscribe' | 'channel.subscription.gift'
 		| 'channel.cheer'  | 'channel.raid'
-	type AlertEventCfg = { enabled: boolean; template: string; iconUrl?: string | null }
+	type AlertEventCfg = { enabled: boolean; template: string; iconUrl?: string | null; soundUrl?: string | null }
 	type CustomTheme = {
 		bgImageUrl?:  string | null
 		bgColor?:     string | null
@@ -26,14 +29,20 @@
 	}
 	type AlertConfig = {
 		theme:        AlertTheme
+		position:     AlertPosition
+		animation:    AlertAnimation
 		durationMs:   number
+		soundVolume:  number
 		events:       Record<AlertEventKey, AlertEventCfg>
 		customTheme?: CustomTheme
 	}
 
 	const DEFAULT_CONFIG: AlertConfig = {
-		theme:      'cyber',
-		durationMs: 5000,
+		theme:       'cyber',
+		position:    'top-right',
+		animation:   'slide-right',
+		durationMs:  5000,
+		soundVolume: 0.6,
 		events: {
 			'channel.follow':            { enabled: true, template: '{user_name} a follow !' },
 			'channel.subscribe':         { enabled: true, template: '{user_name} s\'abonne (tier {tier}) !' },
@@ -43,7 +52,9 @@
 		},
 	}
 
-	const VALID_THEMES = ['cyber', 'soft', 'retro', 'neon', 'holographic', 'minimal', 'custom'] as const
+	const VALID_THEMES     = ['cyber', 'soft', 'retro', 'neon', 'holographic', 'minimal', 'custom'] as const
+	const VALID_POSITIONS  = ['top-right', 'top-left', 'bottom-right', 'bottom-left', 'center'] as const
+	const VALID_ANIMATIONS = ['slide-right', 'slide-left', 'slide-top', 'slide-bottom', 'scale', 'bounce', 'fade'] as const
 
 	function mergeConfig(raw: Record<string, unknown> | null | undefined): AlertConfig {
 		const cfg = raw ?? {}
@@ -56,13 +67,20 @@
 					enabled:  typeof inc.enabled  === 'boolean' ? inc.enabled  : events[k].enabled,
 					template: typeof inc.template === 'string'  ? inc.template : events[k].template,
 					iconUrl:  typeof inc.iconUrl  === 'string'  ? inc.iconUrl  : null,
+					soundUrl: typeof inc.soundUrl === 'string'  ? inc.soundUrl : null,
 				}
 			}
 		}
 		const theme = (VALID_THEMES as readonly string[]).includes(cfg.theme as string)
 			? cfg.theme as AlertTheme : DEFAULT_CONFIG.theme
+		const position = (VALID_POSITIONS as readonly string[]).includes(cfg.position as string)
+			? cfg.position as AlertPosition : DEFAULT_CONFIG.position
+		const animation = (VALID_ANIMATIONS as readonly string[]).includes(cfg.animation as string)
+			? cfg.animation as AlertAnimation : DEFAULT_CONFIG.animation
 		const durationMs = typeof cfg.durationMs === 'number' && cfg.durationMs >= 1000 && cfg.durationMs <= 30000
 			? cfg.durationMs : DEFAULT_CONFIG.durationMs
+		const soundVolume = typeof cfg.soundVolume === 'number' && cfg.soundVolume >= 0 && cfg.soundVolume <= 1
+			? cfg.soundVolume : DEFAULT_CONFIG.soundVolume
 		const ct = (cfg.customTheme ?? {}) as Partial<CustomTheme>
 		const customTheme: CustomTheme = {
 			bgImageUrl:  typeof ct.bgImageUrl  === 'string' ? ct.bgImageUrl  : null,
@@ -70,7 +88,7 @@
 			accentColor: typeof ct.accentColor === 'string' ? ct.accentColor : null,
 			textColor:   typeof ct.textColor   === 'string' ? ct.textColor   : null,
 		}
-		return { theme, durationMs, events, customTheme }
+		return { theme, position, animation, durationMs, soundVolume, events, customTheme }
 	}
 
 	type AlertItem = {
@@ -190,6 +208,35 @@
 		}
 		alerts = [...alerts, item]
 		setTimeout(() => { alerts = alerts.filter(a => a.id !== item.id) }, config.durationMs)
+
+		// Joue le son associé à l'event s'il y en a un. OBS Browser Source
+		// autorise le playback audio si "Control audio via OBS" est coché.
+		// Modern browsers bloquent l'autoplay sans user gesture, mais OBS bypass.
+		if (cfg.soundUrl) playSound(cfg.soundUrl)
+	}
+
+	function playSound(url: string): void {
+		try {
+			const audio = new Audio(url)
+			audio.volume = Math.min(1, Math.max(0, config.soundVolume))
+			audio.play().catch(() => { /* autoplay bloqué hors OBS, on swallow */ })
+		} catch { /* URL invalide ou format non supporté */ }
+	}
+
+	// ── Animation d'entrée selon config ──────────────────────────────────────
+	// Wrappers qui dispatchent vers la bonne transition Svelte. La sortie est
+	// toujours un fade pour rester sobre et permettre le stacking.
+	function animateIn(node: Element, _params: object) {
+		switch (config.animation) {
+			case 'slide-left':   return fly(node, { x: -400, duration: 420, easing: cubicOut })
+			case 'slide-top':    return fly(node, { y: -200, duration: 420, easing: cubicOut })
+			case 'slide-bottom': return fly(node, { y:  200, duration: 420, easing: cubicOut })
+			case 'scale':        return scale(node, { start: 0.6, duration: 360, easing: cubicOut })
+			case 'bounce':       return scale(node, { start: 0.4, duration: 540, easing: backOut })
+			case 'fade':         return fade(node, { duration: 360 })
+			case 'slide-right':
+			default:             return fly(node, { x: 400, duration: 420, easing: cubicOut })
+		}
 	}
 
 	// ── Couleur d'accent par event type ──────────────────────────────────────
@@ -239,7 +286,7 @@
 	</style>
 </svelte:head>
 
-<div class="overlay-root theme-{config.theme}">
+<div class="overlay-root theme-{config.theme} pos-{config.position}">
 	{#if status === 'invalid'}
 		<div class="status-msg status-error" transition:fade>
 			Overlay invalide ou révoquée. Génère une nouvelle URL dans Nodyx.
@@ -260,7 +307,7 @@
 		{@const iconUrl = config.events[alert.eventType]?.iconUrl ?? null}
 		{@const cstyles = config.theme === 'custom' ? buildCustomStyle(config.customTheme) : ''}
 		<div class="alert-card" style="--accent: {accent}; {cstyles}"
-		     in:fly={{ x: 400, duration: 420 }} out:fade={{ duration: 280 }}>
+		     in:animateIn={{}} out:fade={{ duration: 280 }}>
 			<div class="alert-bar"></div>
 			{#if iconUrl}
 				<img src={iconUrl} alt="" class="alert-icon" />
@@ -276,16 +323,18 @@
 <style>
 	.overlay-root {
 		position: fixed;
-		top: 24px;
-		right: 24px;
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		align-items: flex-end;
 		pointer-events: none;
 		font-family: 'Geist', -apple-system, system-ui, sans-serif;
 		max-width: 480px;
 	}
+	.overlay-root.pos-top-right    { top: 24px;    right: 24px; align-items: flex-end;   }
+	.overlay-root.pos-top-left     { top: 24px;    left:  24px; align-items: flex-start; }
+	.overlay-root.pos-bottom-right { bottom: 24px; right: 24px; align-items: flex-end;   flex-direction: column-reverse; }
+	.overlay-root.pos-bottom-left  { bottom: 24px; left:  24px; align-items: flex-start; flex-direction: column-reverse; }
+	.overlay-root.pos-center       { top: 50%; left: 50%; transform: translate(-50%, -50%); align-items: center; }
 
 	/* ══ THEME : Cyber (default — Nodyx) ═══════════════════════════════════ */
 	.theme-cyber .alert-card {

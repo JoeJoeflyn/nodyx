@@ -3,19 +3,74 @@
 	import { apiFetch } from '$lib/api'
 	import { PUBLIC_API_URL } from '$env/static/public'
 
-	let { data }: { data: any } = $props()
+	type AssetRow = {
+		id:              string
+		name:            string
+		file_path:       string
+		thumbnail_path?: string | null
+		mime_type:       string
+		file_size:       number
+	}
+	type PageData = {
+		token:  string
+		images: AssetRow[]
+		videos: AssetRow[]
+		audios: AssetRow[]
+	}
+
+	let { data }: { data: PageData } = $props()
 
 	const baseUrl = PUBLIC_API_URL.replace('/api/v1', '')
 
-	function imgUrl(asset: { file_path: string; thumbnail_path?: string }) {
+	// ── Tabs ─────────────────────────────────────────────────────────────────
+	type TabId = 'images' | 'videos' | 'audios'
+	type TabMeta = {
+		label:        string
+		assetType:    'image' | 'video' | 'sound'
+		accept:       string
+		desc:         string
+		mimePrefixes: string[]
+	}
+	const TABS: Record<TabId, TabMeta> = {
+		images: {
+			label:        'Images',
+			assetType:    'image',
+			accept:       'image/jpeg,image/png,image/webp,image/gif',
+			desc:         'JPG, PNG, WebP, GIF · max 12 Mo · sera converti en WebP',
+			mimePrefixes: ['image/'],
+		},
+		videos: {
+			label:        'Vidéos',
+			assetType:    'video',
+			accept:       'video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska',
+			desc:         'MP4, WebM, OGG, MOV, MKV · max selon quota',
+			mimePrefixes: ['video/'],
+		},
+		audios: {
+			label:        'Audio',
+			assetType:    'sound',
+			accept:       'audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/mp4,audio/flac',
+			desc:         'MP3, OGG, WAV, FLAC, WebM, M4A · idéal pour les sons d\'overlay',
+			mimePrefixes: ['audio/'],
+		},
+	}
+
+	let activeTab = $state<TabId>('images')
+
+	const currentAssets = $derived<AssetRow[]>(
+		activeTab === 'images' ? data.images
+		: activeTab === 'videos' ? data.videos
+		: data.audios,
+	)
+
+	function fullUrl(asset: AssetRow) {
+		return `${baseUrl}/uploads/${asset.file_path}`
+	}
+	function thumbUrl(asset: AssetRow) {
 		return `${baseUrl}/uploads/${asset.thumbnail_path ?? asset.file_path}`
 	}
 
-	function fullUrl(asset: { file_path: string }) {
-		return `${baseUrl}/uploads/${asset.file_path}`
-	}
-
-	// ── Upload ────────────────────────────────────────────────────────────────
+	// ── Upload ───────────────────────────────────────────────────────────────
 	let uploading   = $state(false)
 	let uploadError = $state('')
 	let uploadOk    = $state(false)
@@ -25,8 +80,9 @@
 	async function handleUpload(files: FileList | null) {
 		if (!files || files.length === 0) return
 		const file = files[0]
-		if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type)) {
-			uploadError = 'Format non supporté. Utilisez JPG, PNG, WebP ou GIF.'
+		const meta = TABS[activeTab]
+		if (!meta.mimePrefixes.some(p => file.type.startsWith(p))) {
+			uploadError = `Format non supporté pour cet onglet. ${meta.desc}`
 			return
 		}
 
@@ -34,7 +90,7 @@
 
 		const form = new FormData()
 		form.append('name', file.name.replace(/\.[^.]+$/, ''))
-		form.append('asset_type', 'image')
+		form.append('asset_type', meta.assetType)
 		form.append('file', file)
 
 		try {
@@ -48,7 +104,7 @@
 				uploadError = j.error ?? 'Erreur lors de l\'upload.'
 			} else {
 				uploadOk = true
-				// Reload to show new image
+				// Reload to show the new file
 				setTimeout(() => location.reload(), 800)
 			}
 		} catch {
@@ -58,14 +114,26 @@
 		}
 	}
 
-	// ── Copy URL ──────────────────────────────────────────────────────────────
+	// ── Copy URL ─────────────────────────────────────────────────────────────
 	let copiedId = $state<string | null>(null)
 
-	async function copyUrl(asset: { id: string; file_path: string }) {
+	async function copyUrl(asset: AssetRow) {
 		await navigator.clipboard.writeText(fullUrl(asset))
 		copiedId = asset.id
 		setTimeout(() => { copiedId = null }, 2000)
 	}
+
+	function fmtSize(bytes: number): string {
+		if (bytes < 1024) return `${bytes} o`
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`
+		return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`
+	}
+
+	const tabCounts = $derived({
+		images: data.images.length,
+		videos: data.videos.length,
+		audios: data.audios.length,
+	})
 </script>
 
 <svelte:head><title>Admin — Médiathèque</title></svelte:head>
@@ -73,16 +141,31 @@
 <div class="space-y-6">
 
 	<!-- Header -->
-	<div class="flex items-start justify-between">
+	<div class="flex items-start justify-between gap-4 flex-wrap">
 		<div>
 			<h1 class="text-xl font-bold text-white">Médiathèque</h1>
 			<p class="text-sm text-gray-400 mt-0.5">
-				Images hébergées — {data.images.length} fichier{data.images.length > 1 ? 's' : ''}
+				Fichiers hébergés sur Nodyx, utilisables comme URLs dans les overlays, posts et autres outils.
 			</p>
 		</div>
 	</div>
 
-	<!-- Zone d'upload -->
+	<!-- Tabs -->
+	<nav class="flex gap-1 border-b border-gray-800/60">
+		{#each Object.entries(TABS) as [k, m] (k)}
+			{@const isActive = activeTab === k}
+			<button type="button" onclick={() => activeTab = k as TabId}
+				class="px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px
+					{isActive
+						? 'border-indigo-500 text-white'
+						: 'border-transparent text-gray-400 hover:text-gray-200'}">
+				{m.label}
+				<span class="ml-1.5 text-[10px] font-mono text-gray-500">{tabCounts[k as TabId]}</span>
+			</button>
+		{/each}
+	</nav>
+
+	<!-- Zone d'upload pour l'onglet courant -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer
@@ -99,7 +182,7 @@
 		<input
 			bind:this={fileInput}
 			type="file"
-			accept="image/jpeg,image/png,image/webp,image/gif"
+			accept={TABS[activeTab].accept}
 			class="hidden"
 			onchange={(e) => handleUpload((e.target as HTMLInputElement).files)}
 		/>
@@ -117,7 +200,7 @@
 				<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
 				</svg>
-				<span class="text-sm font-medium">Image uploadée — rechargement…</span>
+				<span class="text-sm font-medium">Fichier uploadé — rechargement…</span>
 			</div>
 		{:else}
 			<div class="flex flex-col items-center gap-3 pointer-events-none">
@@ -125,8 +208,8 @@
 					<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
 				</svg>
 				<div>
-					<p class="text-sm font-medium text-gray-300">Glisser une image ici ou cliquer pour parcourir</p>
-					<p class="text-xs text-gray-500 mt-1">JPG, PNG, WebP, GIF — max 12 Mo</p>
+					<p class="text-sm font-medium text-gray-300">Glisser un fichier ici ou cliquer pour parcourir</p>
+					<p class="text-xs text-gray-500 mt-1">{TABS[activeTab].desc}</p>
 				</div>
 			</div>
 		{/if}
@@ -136,34 +219,42 @@
 		{/if}
 	</div>
 
-	<!-- Grille d'images -->
-	{#if data.images.length === 0}
+	<!-- Grille de médias -->
+	{#if currentAssets.length === 0}
 		<div class="text-center py-16 text-gray-600">
-			<svg class="w-10 h-10 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M13.5 12h.008v.008H13.5V12zm0 0H9m4.06-7.19l-4.5-4.5A1.5 1.5 0 007 1.5H4.5A2.25 2.25 0 002.25 3.75v16.5A2.25 2.25 0 004.5 22.5h15a2.25 2.25 0 002.25-2.25V8.25a2.25 2.25 0 00-.44-1.34l-4.5-4.5z"/>
-			</svg>
-			<p class="text-sm">Aucune image hébergée pour l'instant.</p>
+			<p class="text-sm">Aucun fichier dans {TABS[activeTab].label.toLowerCase()} pour l'instant.</p>
 		</div>
 	{:else}
 		<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-			{#each data.images as asset (asset.id)}
-				<div class="group relative rounded-xl overflow-hidden border border-gray-800 bg-gray-900/60 hover:border-gray-600 transition-all">
-					<!-- Preview -->
-					<div class="aspect-square overflow-hidden bg-gray-900">
-						<img
-							src={imgUrl(asset)}
-							alt={asset.name}
-							class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-						/>
+			{#each currentAssets as asset (asset.id)}
+				<div class="group relative rounded-xl overflow-hidden border border-gray-800 bg-gray-900/60 hover:border-gray-600 transition-all flex flex-col">
+					<!-- Preview adaptatif au type -->
+					<div class="aspect-square overflow-hidden bg-gray-900 flex items-center justify-center">
+						{#if activeTab === 'images'}
+							<img src={thumbUrl(asset)} alt={asset.name}
+								class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"/>
+						{:else if activeTab === 'videos'}
+							<!-- svelte-ignore a11y_media_has_caption -->
+							<video src={fullUrl(asset)} controls preload="metadata"
+								class="w-full h-full object-cover"></video>
+						{:else}
+							<div class="w-full h-full flex flex-col items-center justify-center p-3 gap-2">
+								<svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.657-1.343 3-3 3s-3-1.343-3-3 1.343-3 3-3 3 1.343 3 3zm12-3c0 1.657-1.343 3-3 3s-3-1.343-3-3 1.343-3 3-3 3 1.343 3 3z"/>
+								</svg>
+								<audio src={fullUrl(asset)} controls preload="metadata" class="w-full"></audio>
+							</div>
+						{/if}
 					</div>
 
 					<!-- Infos + actions -->
-					<div class="p-2.5 space-y-2">
-						<p class="text-xs text-gray-300 font-medium truncate" title={asset.name}>{asset.name}</p>
-						<p class="text-[10px] text-gray-600">{Math.round(asset.file_size / 1024)} Ko</p>
+					<div class="p-2.5 space-y-2 flex-1 flex flex-col">
+						<div class="flex-1">
+							<p class="text-xs text-gray-300 font-medium truncate" title={asset.name}>{asset.name}</p>
+							<p class="text-[10px] text-gray-600">{fmtSize(asset.file_size)}</p>
+						</div>
 
 						<div class="flex gap-1.5">
-							<!-- Copier URL -->
 							<button
 								type="button"
 								onclick={() => copyUrl(asset)}
@@ -185,7 +276,6 @@
 								{/if}
 							</button>
 
-							<!-- Supprimer -->
 							<form method="POST" action="?/delete" use:enhance={({ cancel }) => {
 								if (!confirm(`Supprimer "${asset.name}" ?`)) cancel()
 							}}>
@@ -197,7 +287,7 @@
 								>
 									<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-									</svg>
+								</svg>
 								</button>
 							</form>
 						</div>

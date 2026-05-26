@@ -28,7 +28,7 @@ const config = {
                 'style-src':    ['self', 'unsafe-inline', 'https://fonts.googleapis.com'],
                 'style-src-attr': ['unsafe-inline'], // attributs style="" dynamiques (185 occurrences)
                 'img-src':      ['self', 'data:', 'blob:', 'https:'],
-                'media-src':    ['self', 'blob:'],
+                'media-src':    ['self', 'blob:', 'https:'],
                 'font-src':     ['self', 'data:', 'https://fonts.gstatic.com'],
                 'connect-src':  ['self', 'wss:', 'https:'],
                 'frame-src':    [
