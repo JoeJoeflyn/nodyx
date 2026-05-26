@@ -67,8 +67,10 @@ import {
   listOverlays,
   revokeOverlay,
   updateOverlayConfig,
+  withGoalBarDefaults,
   type OverlayType,
 } from '../services/streamer/overlayService'
+import { computeGoalBarState } from '../services/streamer/goalBarState'
 import { ProviderError } from '../services/streamer/providers/_types'
 
 // ── Helpers env ──────────────────────────────────────────────────────────────
@@ -703,6 +705,18 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
       return reply.send({ ok: true })
     },
   )
+
+  // GET /overlay/goal/:token/state — public — état courant de la goal bar.
+  // Calcule le `current` en live (helix ou COUNT/SUM streamer_events selon
+  // goalType). Pas d'auth admin : le token EST l'auth.
+  server.get<{ Params: { token: string } }>('/overlay/goal/:token/state', async (request, reply) => {
+    const overlay = await findOverlayByToken(request.params.token)
+    if (!overlay)                         return reply.code(404).send({ ok: false, error: 'not_found' })
+    if (overlay.overlayType !== 'goal_bar') return reply.code(400).send({ ok: false, error: 'wrong_overlay_type' })
+    const cfg   = withGoalBarDefaults(overlay.config)
+    const state = await computeGoalBarState(cfg)
+    return reply.send({ ok: true, state })
+  })
 
   // GET /overlay/lookup/:token — public — bootstrap d'une overlay côté navigateur.
   // PAS d'auth admin parce que la page tourne dans OBS sur la machine du

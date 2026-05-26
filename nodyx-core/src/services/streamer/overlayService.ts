@@ -32,6 +32,74 @@ export function isOverlayType(s: string): s is OverlayType {
 export type AlertBoxTheme = 'cyber' | 'soft' | 'retro' | 'neon' | 'holographic' | 'minimal' | 'custom'
 export const ALERT_BOX_THEMES: readonly AlertBoxTheme[] = ['cyber', 'soft', 'retro', 'neon', 'holographic', 'minimal', 'custom']
 
+// ── Goal Bar ────────────────────────────────────────────────────────────────
+// Barre de progression vers un objectif. 4 modes :
+//   - followers_total   : helix /channels/followers → .total
+//   - subs_session      : COUNT des channel.subscribe + subscription.gift
+//                          depuis le started_at de la session ouverte
+//   - bits_session      : SUM des bits de channel.cheer depuis la session
+//   - custom            : current saisi manuellement par l'admin (cfg.customCurrent)
+
+export type GoalType = 'followers_total' | 'subs_session' | 'bits_session' | 'custom'
+export const GOAL_TYPES: readonly GoalType[] = ['followers_total', 'subs_session', 'bits_session', 'custom']
+
+export type GoalBarTheme = 'cyber' | 'soft' | 'retro' | 'neon' | 'minimal' | 'custom'
+export const GOAL_BAR_THEMES: readonly GoalBarTheme[] = ['cyber', 'soft', 'retro', 'neon', 'minimal', 'custom']
+
+export interface GoalBarCustomTheme {
+  bgColor?:     string | null
+  textColor?:   string | null
+  barBgColor?:  string | null    // arrière-plan de la barre vide
+}
+
+export interface GoalBarConfig {
+  goalType:      GoalType
+  target:        number
+  label:         string        // ex: "100 followers ce mois", "Subathon goal"
+  accentColor:   string        // hex, fallback cyan
+  customCurrent: number        // utilisé uniquement si goalType === 'custom'
+  theme:         GoalBarTheme
+  customTheme?:  GoalBarCustomTheme
+}
+
+export const DEFAULT_GOAL_BAR_CONFIG: GoalBarConfig = {
+  goalType:      'followers_total',
+  target:        100,
+  label:         'Objectif followers',
+  accentColor:   '#06b6d4',
+  customCurrent: 0,
+  theme:         'cyber',
+}
+
+export function withGoalBarDefaults(raw: Record<string, unknown> | undefined): GoalBarConfig {
+  const cfg = raw ?? {}
+  const goalType = GOAL_TYPES.includes(cfg.goalType as GoalType)
+    ? cfg.goalType as GoalType
+    : DEFAULT_GOAL_BAR_CONFIG.goalType
+  const target = typeof cfg.target === 'number' && cfg.target > 0
+    ? Math.min(1_000_000_000, cfg.target)
+    : DEFAULT_GOAL_BAR_CONFIG.target
+  const label = typeof cfg.label === 'string' && cfg.label.trim().length > 0
+    ? cfg.label.slice(0, 80)
+    : DEFAULT_GOAL_BAR_CONFIG.label
+  const accentColor = typeof cfg.accentColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(cfg.accentColor)
+    ? cfg.accentColor
+    : DEFAULT_GOAL_BAR_CONFIG.accentColor
+  const customCurrent = typeof cfg.customCurrent === 'number' && cfg.customCurrent >= 0
+    ? cfg.customCurrent
+    : DEFAULT_GOAL_BAR_CONFIG.customCurrent
+  const theme = GOAL_BAR_THEMES.includes(cfg.theme as GoalBarTheme)
+    ? cfg.theme as GoalBarTheme
+    : DEFAULT_GOAL_BAR_CONFIG.theme
+  const ct = (cfg.customTheme ?? {}) as Partial<GoalBarCustomTheme>
+  const customTheme: GoalBarCustomTheme = {
+    bgColor:    typeof ct.bgColor    === 'string' ? ct.bgColor    : null,
+    textColor:  typeof ct.textColor  === 'string' ? ct.textColor  : null,
+    barBgColor: typeof ct.barBgColor === 'string' ? ct.barBgColor : null,
+  }
+  return { goalType, target, label, accentColor, customCurrent, theme, customTheme }
+}
+
 export type AlertPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'center'
 export const ALERT_POSITIONS: readonly AlertPosition[] = ['top-right', 'top-left', 'bottom-right', 'bottom-left', 'center']
 
