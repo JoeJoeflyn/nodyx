@@ -68,9 +68,11 @@ import {
   revokeOverlay,
   updateOverlayConfig,
   withGoalBarDefaults,
+  withTickerDefaults,
   type OverlayType,
 } from '../services/streamer/overlayService'
 import { computeGoalBarState } from '../services/streamer/goalBarState'
+import { fetchTickerEvents } from '../services/streamer/tickerState'
 import { ProviderError } from '../services/streamer/providers/_types'
 
 // ── Helpers env ──────────────────────────────────────────────────────────────
@@ -716,6 +718,19 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
     const cfg   = withGoalBarDefaults(overlay.config)
     const state = await computeGoalBarState(cfg)
     return reply.send({ ok: true, state })
+  })
+
+  // GET /overlay/ticker/:token/state — public — events initiaux + config pour
+  // bootstrap d'un event_ticker. Les nouveaux events arrivent ensuite via
+  // socket sur la room overlay-type:event_ticker (dispatch déjà existant pour
+  // alert_box, on étend pour le ticker).
+  server.get<{ Params: { token: string } }>('/overlay/ticker/:token/state', async (request, reply) => {
+    const overlay = await findOverlayByToken(request.params.token)
+    if (!overlay)                              return reply.code(404).send({ ok: false, error: 'not_found' })
+    if (overlay.overlayType !== 'event_ticker') return reply.code(400).send({ ok: false, error: 'wrong_overlay_type' })
+    const cfg    = withTickerDefaults(overlay.config)
+    const events = await fetchTickerEvents(cfg, 30)
+    return reply.send({ ok: true, config: cfg, events })
   })
 
   // GET /overlay/lookup/:token — public — bootstrap d'une overlay côté navigateur.

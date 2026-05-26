@@ -726,6 +726,12 @@ export async function ingestEvent(args: {
       if (STREAM_TIMER_EVENT_TYPES.has(args.eventType)) {
         dispatchOverlayEvent(io, { kind: 'stream_timer', eventType: args.eventType, payload: args.payload, occurredAt: now })
       }
+      // Event ticker reçoit les 5 événements à afficher dans le bandeau
+      // défilant (même set que l'alert box). Le client filtre côté page
+      // selon sa config enabledEvents.
+      if (ALERT_BOX_EVENT_TYPES.has(args.eventType)) {
+        dispatchOverlayEvent(io, { kind: 'event_ticker', eventType: args.eventType, payload: args.payload, occurredAt: now })
+      }
     }
   } catch (err) {
     console.error('[streamerHub] overlay dispatch failed', err)

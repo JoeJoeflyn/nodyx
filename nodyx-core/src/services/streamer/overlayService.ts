@@ -100,6 +100,80 @@ export function withGoalBarDefaults(raw: Record<string, unknown> | undefined): G
   return { goalType, target, label, accentColor, customCurrent, theme, customTheme }
 }
 
+// ── Event Ticker ───────────────────────────────────────────────────────────
+// Bandeau défilant en bas d'écran qui montre les derniers events sous forme
+// de tokens colorés (couleurs par event type, cohérent avec alert box).
+
+export type TickerTheme = 'cyber' | 'soft' | 'retro' | 'neon' | 'minimal' | 'custom'
+export const TICKER_THEMES: readonly TickerTheme[] = ['cyber', 'soft', 'retro', 'neon', 'minimal', 'custom']
+
+export type TickerPeriod = 'recent' | 'session' | '24h'
+export const TICKER_PERIODS: readonly TickerPeriod[] = ['recent', 'session', '24h']
+
+export type TickerEventKey =
+  | 'channel.follow'
+  | 'channel.subscribe'
+  | 'channel.subscription.gift'
+  | 'channel.cheer'
+  | 'channel.raid'
+
+const ALL_TICKER_EVENTS: readonly TickerEventKey[] = [
+  'channel.follow', 'channel.subscribe', 'channel.subscription.gift',
+  'channel.cheer', 'channel.raid',
+]
+
+export interface TickerCustomTheme {
+  bgColor?:   string | null
+  textColor?: string | null
+}
+
+export interface TickerConfig {
+  enabledEvents:  TickerEventKey[]    // sous-ensemble de ALL_TICKER_EVENTS
+  period:         TickerPeriod        // recent (50 derniers) | session (depuis open) | 24h
+  speedSeconds:   number              // 30-120, durée pour qu'un token traverse l'écran
+  weighted:       boolean             // raid/cheer/gift restent plus longtemps que follow
+  combo:          boolean             // 3+ events similaires en <10s deviennent un token BURST
+  theme:          TickerTheme
+  customTheme?:   TickerCustomTheme
+}
+
+export const DEFAULT_TICKER_CONFIG: TickerConfig = {
+  enabledEvents: [...ALL_TICKER_EVENTS],
+  period:        'recent',
+  speedSeconds:  60,
+  weighted:      true,
+  combo:         true,
+  theme:         'cyber',
+}
+
+export function withTickerDefaults(raw: Record<string, unknown> | undefined): TickerConfig {
+  const cfg = raw ?? {}
+  const enabledEventsRaw = Array.isArray(cfg.enabledEvents) ? cfg.enabledEvents as unknown[] : null
+  const enabledEvents = enabledEventsRaw
+    ? enabledEventsRaw.filter((e): e is TickerEventKey => ALL_TICKER_EVENTS.includes(e as TickerEventKey))
+    : [...DEFAULT_TICKER_CONFIG.enabledEvents]
+  const period = TICKER_PERIODS.includes(cfg.period as TickerPeriod)
+    ? cfg.period as TickerPeriod : DEFAULT_TICKER_CONFIG.period
+  const speedSeconds = typeof cfg.speedSeconds === 'number' && cfg.speedSeconds >= 20 && cfg.speedSeconds <= 180
+    ? cfg.speedSeconds : DEFAULT_TICKER_CONFIG.speedSeconds
+  const theme = TICKER_THEMES.includes(cfg.theme as TickerTheme)
+    ? cfg.theme as TickerTheme : DEFAULT_TICKER_CONFIG.theme
+  const ct = (cfg.customTheme ?? {}) as Partial<TickerCustomTheme>
+  const customTheme: TickerCustomTheme = {
+    bgColor:   typeof ct.bgColor   === 'string' ? ct.bgColor   : null,
+    textColor: typeof ct.textColor === 'string' ? ct.textColor : null,
+  }
+  return {
+    enabledEvents,
+    period,
+    speedSeconds,
+    weighted: typeof cfg.weighted === 'boolean' ? cfg.weighted : DEFAULT_TICKER_CONFIG.weighted,
+    combo:    typeof cfg.combo    === 'boolean' ? cfg.combo    : DEFAULT_TICKER_CONFIG.combo,
+    theme,
+    customTheme,
+  }
+}
+
 export type AlertPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'center'
 export const ALERT_POSITIONS: readonly AlertPosition[] = ['top-right', 'top-left', 'bottom-right', 'bottom-left', 'center']
 
