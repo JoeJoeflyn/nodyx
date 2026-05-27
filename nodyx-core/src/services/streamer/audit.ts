@@ -32,6 +32,7 @@ export type AuditAction =
   | 'reward_create_failed'
   | 'reward_updated'
   | 'reward_deleted'
+  | 'unlink_twitch_viewer_admin'
 
 export interface AuditEntry {
   action:    AuditAction

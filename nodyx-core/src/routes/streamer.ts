@@ -68,6 +68,10 @@ import {
   updateReward,
 } from '../services/streamer/twitchChannelPoints'
 import {
+  adminUnlinkViewer,
+  listLinkedViewers,
+} from '../services/streamer/linkedViewersService'
+import {
   createOverlay,
   findOverlayByToken,
   isOverlayType,
@@ -612,6 +616,37 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
         metadata:  { predictionId: request.params.id, newStatus: status, winningOutcomeId: winningOutcomeId ?? null },
       })
       return reply.send({ ok: true, prediction: r.data })
+    },
+  )
+
+  // ── Linked Viewers (Audience tab) ────────────────────────────────────
+  // Liste les membres Nodyx qui ont link leur compte Twitch via Flow A,
+  // avec leurs stats agrégées (messages chat + events). Admin can unlink.
+
+  server.get<{ Querystring: { limit?: string } }>(
+    '/twitch/linked-viewers',
+    { preHandler: adminOnly },
+    async (request) => {
+      const limit = request.query.limit ? Math.min(500, Math.max(1, parseInt(request.query.limit, 10) || 200)) : 200
+      const viewers = await listLinkedViewers(limit)
+      return { viewers }
+    },
+  )
+
+  server.delete<{ Params: { userId: string } }>(
+    '/twitch/linked-viewers/:userId',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const ok = await adminUnlinkViewer(request.params.userId)
+      if (!ok) return reply.code(404).send({ ok: false, error: 'not_linked_or_not_found' })
+      await audit({
+        action:    'unlink_twitch_viewer_admin',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { targetUserId: request.params.userId },
+      })
+      return reply.send({ ok: true })
     },
   )
 
