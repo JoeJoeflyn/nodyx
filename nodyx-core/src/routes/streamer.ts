@@ -72,6 +72,12 @@ import {
   listLinkedViewers,
 } from '../services/streamer/linkedViewersService'
 import {
+  listClipsForBroadcaster,
+  listOwnTopClips,
+  listRecentRaids,
+  type ClipsPeriod,
+} from '../services/streamer/twitchClips'
+import {
   createOverlay,
   findOverlayByToken,
   isOverlayType,
@@ -616,6 +622,42 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
         metadata:  { predictionId: request.params.id, newStatus: status, winningOutcomeId: winningOutcomeId ?? null },
       })
       return reply.send({ ok: true, prediction: r.data })
+    },
+  )
+
+  // ── Twitch Clips (Studio Live tab) ───────────────────────────────────
+
+  server.get<{ Querystring: { period?: string; limit?: string } }>(
+    '/twitch/clips/own',
+    { preHandler: adminOnly },
+    async (request) => {
+      const VALID: readonly ClipsPeriod[] = ['7d', '30d', 'all']
+      const period = (VALID as readonly string[]).includes(request.query.period ?? '')
+        ? request.query.period as ClipsPeriod
+        : '7d'
+      const limit = request.query.limit ? Math.min(100, Math.max(1, parseInt(request.query.limit, 10) || 20)) : 20
+      const clips = await listOwnTopClips(period, limit)
+      return { clips, period, limit }
+    },
+  )
+
+  server.get<{ Params: { broadcasterId: string }; Querystring: { limit?: string } }>(
+    '/twitch/clips/raider/:broadcasterId',
+    { preHandler: adminOnly },
+    async (request) => {
+      const limit = request.query.limit ? Math.min(20, Math.max(1, parseInt(request.query.limit, 10) || 5)) : 5
+      const clips = await listClipsForBroadcaster(request.params.broadcasterId, limit)
+      return { clips }
+    },
+  )
+
+  server.get<{ Querystring: { limit?: string } }>(
+    '/twitch/raids/recent',
+    { preHandler: adminOnly },
+    async (request) => {
+      const limit = request.query.limit ? Math.min(50, Math.max(1, parseInt(request.query.limit, 10) || 10)) : 10
+      const raids = await listRecentRaids(limit)
+      return { raids }
     },
   )
 

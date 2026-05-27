@@ -10,6 +10,7 @@
 	import StudioEngagement   from '$lib/components/admin/StudioEngagement.svelte'
 	import RewardsManager     from '$lib/components/admin/RewardsManager.svelte'
 	import LinkedViewersPanel from '$lib/components/admin/LinkedViewersPanel.svelte'
+	import ClipsPanel         from '$lib/components/admin/ClipsPanel.svelte'
 	import OverlayManager     from '$lib/components/admin/OverlayManager.svelte'
 	import type { PageData } from './$types'
 
@@ -613,6 +614,8 @@
 			hasPredictions={engagementHasPredictions}
 			broadcasterType={twitchProfile?.user.broadcasterType ?? ''}
 		/>
+
+		<ClipsPanel token={pageToken} />
 
 		<section class="rounded-xl border border-dashed border-slate-700/60 bg-slate-900/30 p-6 text-center space-y-1">
 			<div class="text-[11px] text-slate-500">Bientôt dans Studio Live : raid composer (chercher un streamer + lancer un raid en un clic).</div>
