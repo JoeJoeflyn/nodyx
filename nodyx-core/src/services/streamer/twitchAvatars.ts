@@ -20,10 +20,6 @@ const HELIX_BATCH_SIZE = 100
 const SENTINEL_NONE    = '__none__'
 const CACHE_TTL_NONE   = 3_600          // 1h pour les misses
 
-interface HelixUsersResponse {
-  data?: Array<{ id: string; profile_image_url: string }>
-}
-
 // ── Token freshness (même politique que les autres services) ───────────────
 
 async function getStreamerToken(): Promise<string | null> {
@@ -39,16 +35,22 @@ async function getStreamerToken(): Promise<string | null> {
 
 // ── Helix fetch batch ──────────────────────────────────────────────────────
 
-async function fetchHelixBatch(ids: string[]): Promise<Map<string, string>> {
+interface HelixUsersResponseFull {
+  data?: Array<{ id: string; login: string; profile_image_url: string }>
+}
+
+// param = 'id' pour lookup par twitch user_id, 'login' pour lookup par login.
+// Retourne map keyed selon le param choisi pour matcher l'input.
+async function fetchHelixBatch(values: string[], param: 'id' | 'login'): Promise<Map<string, string>> {
   const out = new Map<string, string>()
-  if (ids.length === 0) return out
+  if (values.length === 0) return out
 
   const token = await getStreamerToken()
   if (!token) return out
   const clientId = process.env.STREAMER_TWITCH_CLIENT_ID
   if (!clientId) return out
 
-  const url = `${TWITCH_HELIX}/users?${ids.map(id => `id=${encodeURIComponent(id)}`).join('&')}`
+  const url = `${TWITCH_HELIX}/users?${values.map(v => `${param}=${encodeURIComponent(v)}`).join('&')}`
   try {
     const res = await fetch(url, {
       headers: {
@@ -57,11 +59,11 @@ async function fetchHelixBatch(ids: string[]): Promise<Map<string, string>> {
       },
     })
     if (!res.ok) return out
-    const data = await res.json() as HelixUsersResponse
+    const data = await res.json() as HelixUsersResponseFull
     for (const u of data?.data ?? []) {
-      if (u.id && u.profile_image_url) {
-        out.set(u.id, u.profile_image_url)
-      }
+      if (!u.profile_image_url) continue
+      const key = param === 'id' ? u.id : u.login
+      if (key) out.set(key, u.profile_image_url)
     }
   } catch {
     // Network error, on retourne ce qu'on a (vide). Les events seront affichés
@@ -100,7 +102,7 @@ export async function resolveAvatars(userIds: string[]): Promise<Map<string, str
   const fetched = new Map<string, string>()
   for (let i = 0; i < missing.length; i += HELIX_BATCH_SIZE) {
     const chunk = missing.slice(i, i + HELIX_BATCH_SIZE)
-    const batch = await fetchHelixBatch(chunk)
+    const batch = await fetchHelixBatch(chunk, 'id')
     batch.forEach((url, id) => fetched.set(id, url))
   }
 
@@ -141,6 +143,56 @@ export function extractAvatarUserId(eventType: string, event: Record<string, unk
     default:
       return null
   }
+}
+
+/**
+ * Résout en lot les avatars Twitch via leur login (au lieu du user_id).
+ * Utile pour les ghost users du chat qui n'ont pas le user_id stocké en DB
+ * (ils ont juste leur login dans username = `tw_<login>`).
+ *
+ * Cache Redis distinct (streamer:avatar:login:X) pour ne pas mélanger avec
+ * le cache by id : un même user peut être touché par les deux paths selon
+ * que la source est un event EventSub (id) ou la table channel_messages (login).
+ */
+const CACHE_KEY_LOGIN = (login: string) => `streamer:avatar:login:${login.toLowerCase()}`
+
+export async function resolveAvatarsByLogin(logins: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>()
+  if (logins.length === 0) return result
+
+  const unique = Array.from(new Set(logins.filter(l => l && l.length > 0).map(l => l.toLowerCase())))
+  if (unique.length === 0) return result
+
+  const cached = await redis.mget(unique.map(CACHE_KEY_LOGIN)).catch(() => null)
+  const missing: string[] = []
+  for (let i = 0; i < unique.length; i++) {
+    const c = cached?.[i]
+    if (c === SENTINEL_NONE) continue
+    if (c)                   result.set(unique[i], c)
+    else                     missing.push(unique[i])
+  }
+  if (missing.length === 0) return result
+
+  const fetched = new Map<string, string>()
+  for (let i = 0; i < missing.length; i += HELIX_BATCH_SIZE) {
+    const chunk = missing.slice(i, i + HELIX_BATCH_SIZE)
+    const batch = await fetchHelixBatch(chunk, 'login')
+    batch.forEach((url, login) => fetched.set(login.toLowerCase(), url))
+  }
+
+  const cachePipe = redis.pipeline()
+  for (const login of missing) {
+    const url = fetched.get(login)
+    if (url) {
+      cachePipe.set(CACHE_KEY_LOGIN(login), url, 'EX', CACHE_TTL_SEC)
+      result.set(login, url)
+    } else {
+      cachePipe.set(CACHE_KEY_LOGIN(login), SENTINEL_NONE, 'EX', CACHE_TTL_NONE)
+    }
+  }
+  await cachePipe.exec().catch(() => {})
+
+  return result
 }
 
 /**

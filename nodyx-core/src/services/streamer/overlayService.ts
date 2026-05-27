@@ -100,6 +100,70 @@ export function withGoalBarDefaults(raw: Record<string, unknown> | undefined): G
   return { goalType, target, label, accentColor, customCurrent, theme, customTheme }
 }
 
+// ── Leaderboard ─────────────────────────────────────────────────────────────
+// Podium top 3 + liste rang 4-10. 4 catégories : subs, bits, raids, chatteurs.
+// 4 périodes : session ouverte, 7 jours, 30 jours, all-time.
+
+export type LeaderboardCategory = 'subs' | 'bits' | 'raids' | 'chatters'
+export const LEADERBOARD_CATEGORIES: readonly LeaderboardCategory[] = ['subs', 'bits', 'raids', 'chatters']
+
+export type LeaderboardPeriod = 'session' | '7d' | '30d' | 'all'
+export const LEADERBOARD_PERIODS: readonly LeaderboardPeriod[] = ['session', '7d', '30d', 'all']
+
+export type LeaderboardTheme = 'cyber' | 'soft' | 'retro' | 'neon' | 'minimal' | 'custom'
+export const LEADERBOARD_THEMES: readonly LeaderboardTheme[] = ['cyber', 'soft', 'retro', 'neon', 'minimal', 'custom']
+
+export interface LeaderboardCustomTheme {
+  bgColor?:   string | null
+  textColor?: string | null
+}
+
+export interface LeaderboardConfig {
+  category:        LeaderboardCategory
+  period:          LeaderboardPeriod
+  topN:            number              // 5 à 10, longueur de la liste sous le podium
+  showOnOffline:   boolean             // mode "récap" : auto-trigger fullscreen quand stream.offline
+  theme:           LeaderboardTheme
+  customTheme?:    LeaderboardCustomTheme
+}
+
+export const DEFAULT_LEADERBOARD_CONFIG: LeaderboardConfig = {
+  category:      'subs',
+  period:        '7d',
+  topN:          10,
+  showOnOffline: true,
+  theme:         'cyber',
+}
+
+export function withLeaderboardDefaults(raw: Record<string, unknown> | undefined): LeaderboardConfig {
+  const cfg = raw ?? {}
+  const category = LEADERBOARD_CATEGORIES.includes(cfg.category as LeaderboardCategory)
+    ? cfg.category as LeaderboardCategory
+    : DEFAULT_LEADERBOARD_CONFIG.category
+  const period = LEADERBOARD_PERIODS.includes(cfg.period as LeaderboardPeriod)
+    ? cfg.period as LeaderboardPeriod
+    : DEFAULT_LEADERBOARD_CONFIG.period
+  const topN = typeof cfg.topN === 'number' && cfg.topN >= 3 && cfg.topN <= 20
+    ? Math.floor(cfg.topN)
+    : DEFAULT_LEADERBOARD_CONFIG.topN
+  const theme = LEADERBOARD_THEMES.includes(cfg.theme as LeaderboardTheme)
+    ? cfg.theme as LeaderboardTheme
+    : DEFAULT_LEADERBOARD_CONFIG.theme
+  const ct = (cfg.customTheme ?? {}) as Partial<LeaderboardCustomTheme>
+  const customTheme: LeaderboardCustomTheme = {
+    bgColor:   typeof ct.bgColor   === 'string' ? ct.bgColor   : null,
+    textColor: typeof ct.textColor === 'string' ? ct.textColor : null,
+  }
+  return {
+    category,
+    period,
+    topN,
+    showOnOffline: typeof cfg.showOnOffline === 'boolean' ? cfg.showOnOffline : DEFAULT_LEADERBOARD_CONFIG.showOnOffline,
+    theme,
+    customTheme,
+  }
+}
+
 // ── Event Ticker ───────────────────────────────────────────────────────────
 // Bandeau défilant en bas d'écran qui montre les derniers events sous forme
 // de tokens colorés (couleurs par event type, cohérent avec alert box).

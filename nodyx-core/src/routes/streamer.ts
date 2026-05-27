@@ -68,11 +68,13 @@ import {
   revokeOverlay,
   updateOverlayConfig,
   withGoalBarDefaults,
+  withLeaderboardDefaults,
   withTickerDefaults,
   type OverlayType,
 } from '../services/streamer/overlayService'
 import { computeGoalBarState } from '../services/streamer/goalBarState'
 import { fetchTickerEvents } from '../services/streamer/tickerState'
+import { computeLeaderboard } from '../services/streamer/leaderboardState'
 import { ProviderError } from '../services/streamer/providers/_types'
 
 // ── Helpers env ──────────────────────────────────────────────────────────────
@@ -718,6 +720,19 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
     const cfg   = withGoalBarDefaults(overlay.config)
     const state = await computeGoalBarState(cfg)
     return reply.send({ ok: true, state })
+  })
+
+  // GET /overlay/leaderboard/:token/state — public — top N viewers par
+  // catégorie + période. Recalculé à chaque appel (pas de cache : la donnée
+  // bouge à chaque event reçu, et le coût SQL reste bas sur les indexes
+  // event_type + occurred_at qui existent déjà).
+  server.get<{ Params: { token: string } }>('/overlay/leaderboard/:token/state', async (request, reply) => {
+    const overlay = await findOverlayByToken(request.params.token)
+    if (!overlay)                             return reply.code(404).send({ ok: false, error: 'not_found' })
+    if (overlay.overlayType !== 'leaderboard') return reply.code(400).send({ ok: false, error: 'wrong_overlay_type' })
+    const cfg   = withLeaderboardDefaults(overlay.config)
+    const state = await computeLeaderboard(cfg)
+    return reply.send({ ok: true, config: cfg, state })
   })
 
   // GET /overlay/ticker/:token/state — public — events initiaux + config pour

@@ -686,14 +686,77 @@ export async function ingestEvent(args: {
   // visibilité dans l'UI chat existante. Author = user "Nodyx" système
   // auto-créé (cf streamerChat.ensureSystemUser). Best-effort : si la
   // résolution échoue, l'event reste persisté en DB.
-  try {
-    await pushEventToChat({
-      provider:  args.provider,
-      eventType: args.eventType,
-      payload:   args.payload,
-    })
-  } catch (err) {
-    console.error('[streamerHub] pushEventToChat failed', err)
+  //
+  // stream.online et stream.offline ont leur propre formatage enrichi
+  // (carte avec avatar/banner/titre/jeu pour l'annonce, podium + stats
+  // agrégées pour le recap). On bypass pushEventToChat pour eux.
+  if (args.eventType === 'stream.online') {
+    try {
+      const { getTwitchProfile } = await import('./twitchProfile')
+      const { formatStreamOnlineAnnouncement, pushSystemMessageToChat } = await import('./streamerChat')
+      const profile = await getTwitchProfile({ forceRefresh: true })   // refresh pour avoir titre/jeu en cours
+      if (profile) {
+        const html = formatStreamOnlineAnnouncement({
+          displayName:    profile.user.displayName,
+          login:          profile.user.login,
+          avatarUrl:      profile.user.avatarUrl,
+          bannerUrl:      profile.user.profileBannerUrl,
+          thumbnailUrl:   profile.stream.thumbnailUrl,
+          title:          profile.stream.title,
+          gameName:       profile.stream.gameName,
+          gameBoxArtUrl:  profile.stream.gameBoxArtUrl,
+        })
+        await pushSystemMessageToChat(html)
+      }
+    } catch (err) {
+      console.error('[streamerHub] stream.online enriched announce failed, falling back to plain text', err)
+      try { await pushEventToChat({ provider: args.provider, eventType: args.eventType, payload: args.payload }) } catch {}
+    }
+  } else if (args.eventType === 'stream.offline') {
+    try {
+      const sessionRow = await db.query<{ started_at: string; ended_at: string | null }>(
+        `SELECT started_at, ended_at FROM streamer_sessions
+         WHERE provider = $1 ORDER BY started_at DESC LIMIT 1`,
+        [args.provider],
+      ).then(r => r.rows[0])
+      if (sessionRow && sessionRow.ended_at) {
+        const { computeStreamRecap } = await import('./streamSessionRecap')
+        const { getTwitchProfile } = await import('./twitchProfile')
+        const { formatStreamRecap, pushSystemMessageToChat } = await import('./streamerChat')
+        const [recap, profile] = await Promise.all([
+          computeStreamRecap({ startedAt: sessionRow.started_at, endedAt: sessionRow.ended_at }),
+          getTwitchProfile().catch(() => null),
+        ])
+        const html = formatStreamRecap({
+          streamerName:        profile?.user.displayName ?? 'Streamer',
+          startedAt:           recap.startedAt,
+          endedAt:             recap.endedAt,
+          topChatters:         recap.topChatters,
+          totalMessages:       recap.totalMessages,
+          topBitsDonors:       recap.topBitsDonors,
+          totalBits:           recap.totalBits,
+          subsCount:           recap.subsCount,
+          giftSubsTotal:       recap.giftSubsTotal,
+          raidsCount:          recap.raidsCount,
+          raidersTotalViewers: recap.raidersTotalViewers,
+          followersCount:      recap.followersCount,
+        })
+        await pushSystemMessageToChat(html)
+      }
+    } catch (err) {
+      console.error('[streamerHub] stream.offline recap failed, falling back to plain text', err)
+      try { await pushEventToChat({ provider: args.provider, eventType: args.eventType, payload: args.payload }) } catch {}
+    }
+  } else {
+    try {
+      await pushEventToChat({
+        provider:  args.provider,
+        eventType: args.eventType,
+        payload:   args.payload,
+      })
+    } catch (err) {
+      console.error('[streamerHub] pushEventToChat failed', err)
+    }
   }
 
   // Live broadcast to the admin dashboard. Only admin sockets join the

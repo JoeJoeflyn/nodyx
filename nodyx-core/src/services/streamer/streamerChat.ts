@@ -461,6 +461,170 @@ export async function pushTwitchChatMessage(args: {
   }
 }
 
+// ── Stream lifecycle messages enrichis (announce + recap) ─────────────────
+
+// Échappe pour ne pas casser le HTML inline qu'on injecte en content.
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+interface StreamAnnounceArgs {
+  displayName:    string
+  login:          string
+  avatarUrl:      string | null
+  bannerUrl:      string | null      // offline_image_url, fallback si pas de thumbnail
+  thumbnailUrl:   string | null      // screenshot live (préféré pour la banner)
+  title:          string | null
+  gameName:       string | null
+  gameBoxArtUrl:  string | null      // box-art du jeu, ~144x192
+}
+
+// Logo Twitch officiel en SVG inline (forme officielle, couleur configurable)
+const TWITCH_LOGO_SVG = `<svg viewBox="0 0 24 28" width="20" height="22" fill="currentColor"><path d="M5 0L0 5v18h6v5l5-5h4l9-9V0H5zm17 13l-4 4h-6l-4 4v-4H4V3h18v10zM18 6h-2v6h2V6zm-5 0h-2v6h2V6z"/></svg>`
+
+export function formatStreamOnlineAnnouncement(p: StreamAnnounceArgs): string {
+  const safeName    = escapeHtml(p.displayName || p.login || 'Streamer')
+  const safeTitle   = p.title ? escapeHtml(p.title) : null
+  const safeGame    = p.gameName ? escapeHtml(p.gameName) : null
+  const safeAvatar  = p.avatarUrl ? escapeHtml(p.avatarUrl) : null
+  const safeLogin   = p.login ? escapeHtml(p.login) : null
+  const safeBoxArt  = p.gameBoxArtUrl ? escapeHtml(p.gameBoxArtUrl) : null
+  const twitchUrl   = safeLogin ? `https://twitch.tv/${safeLogin}` : null
+
+  // Préfère le thumbnail live (screenshot actuel) ; fallback sur banner statique
+  const heroImage = p.thumbnailUrl ?? p.bannerUrl
+  const safeHero  = heroImage ? escapeHtml(heroImage) : null
+
+  const heroBg = safeHero
+    ? `background-image: linear-gradient(180deg, rgba(15,23,42,0.3) 0%, rgba(15,23,42,0.92) 90%), url('${safeHero}'); background-size: cover; background-position: center;`
+    : `background: linear-gradient(135deg, #5b21b6, #1e293b);`
+
+  // Le contenu, qui sera enveloppé dans <a> si on a un login Twitch valide
+  const innerContent = [
+    `<div style="position:relative; border-radius:14px; overflow:hidden; border:1px solid rgba(244,63,94,0.4); ${heroBg} min-height:200px; padding:14px 18px 16px; cursor:${twitchUrl ? 'pointer' : 'default'};">`,
+
+      // Logo Twitch top-left
+      `<div style="display:inline-flex; align-items:center; gap:6px; color:#9146ff; font-weight:800; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; opacity:0.95;">${TWITCH_LOGO_SVG}<span>Twitch</span></div>`,
+
+      // Pastille EN DIRECT, en haut à droite
+      `<div style="position:absolute; top:12px; right:12px; display:inline-flex; align-items:center; gap:6px; padding:3px 10px; background:#f43f5e; color:#fff; border-radius:999px; font-size:10px; font-weight:800; letter-spacing:0.14em; box-shadow:0 0 0 2px rgba(244,63,94,0.25);"><span style="width:6px; height:6px; background:#fff; border-radius:50%; display:inline-block; box-shadow:0 0 6px #fff;"></span> EN DIRECT</div>`,
+
+      // Bloc principal en bas : avatar + texte + box-art à droite
+      `<div style="display:flex; align-items:flex-end; gap:14px; margin-top:110px;">`,
+        safeAvatar
+          ? `<img src="${safeAvatar}" alt="" style="width:64px; height:64px; border-radius:50%; border:3px solid #f43f5e; box-shadow:0 4px 16px rgba(244,63,94,0.4); flex-shrink:0;" />`
+          : '',
+        `<div style="flex:1; min-width:0;">`,
+          `<div style="font-size:18px; font-weight:800; color:#fff; line-height:1.2; text-shadow:0 2px 8px rgba(0,0,0,0.6);">${safeName}</div>`,
+          safeTitle ? `<div style="font-size:13px; color:#f1f5f9; margin-top:4px; opacity:0.95; text-shadow:0 1px 4px rgba(0,0,0,0.7);">${safeTitle}</div>` : '',
+          safeGame ? `<div style="font-size:12px; color:#06b6d4; margin-top:4px; font-weight:600; text-shadow:0 1px 4px rgba(0,0,0,0.6);">🎮 ${safeGame}</div>` : '',
+        `</div>`,
+        safeBoxArt
+          ? `<img src="${safeBoxArt}" alt="${safeGame ?? ''}" style="width:54px; height:72px; object-fit:cover; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5); flex-shrink:0; border:1px solid rgba(255,255,255,0.08);" />`
+          : '',
+      `</div>`,
+
+    `</div>`,
+  ].join('')
+
+  // Wrap dans <a> pour rendre toute la carte cliquable → twitch.tv/login
+  if (twitchUrl) {
+    return `<a href="${twitchUrl}" target="_blank" rel="noopener noreferrer" style="display:block; margin:8px 0; text-decoration:none; color:inherit;" title="Ouvrir ${twitchUrl} dans un nouvel onglet">${innerContent}</a>`
+  }
+  return `<div style="margin:8px 0;">${innerContent}</div>`
+}
+
+interface StreamRecapArgs {
+  streamerName:        string
+  startedAt:           string
+  endedAt:             string
+  topChatters:         Array<{ name: string; score: number; avatar: string | null }>
+  totalMessages:       number
+  topBitsDonors:       Array<{ name: string; score: number; avatar: string | null }>
+  totalBits:           number
+  subsCount:           number
+  giftSubsTotal:       number
+  raidsCount:          number
+  raidersTotalViewers: number
+  followersCount:      number
+}
+
+function durationFr(startIso: string, endIso: string): string {
+  const ms = Math.max(0, new Date(endIso).getTime() - new Date(startIso).getTime())
+  const h  = Math.floor(ms / 3_600_000)
+  const m  = Math.floor((ms % 3_600_000) / 60_000)
+  if (h > 0) return `${h}h ${m.toString().padStart(2, '0')}m`
+  return `${m}m`
+}
+
+function formatTopList(entries: Array<{ name: string; score: number; avatar: string | null }>, unit: string): string {
+  if (entries.length === 0) return `<div style="font-size:12px; color:#64748b; padding:6px 0;">— Personne sur le podium —</div>`
+  const MEDALS = ['🥇', '🥈', '🥉']
+  return `<ol style="list-style:none; padding:0; margin:6px 0 0;">${entries.map((e, i) => {
+    const name = escapeHtml(e.name)
+    const ava  = e.avatar ? `<img src="${escapeHtml(e.avatar)}" alt="" style="width:24px; height:24px; border-radius:50%; vertical-align:middle; margin-right:8px; object-fit:cover;" />` : ''
+    return `<li style="padding:4px 8px; margin-bottom:2px; background:rgba(255,255,255,0.03); border-radius:6px; font-size:13px; color:#e2e8f0; display:flex; align-items:center; gap:6px;"><span style="font-size:16px;">${MEDALS[i] ?? '•'}</span>${ava}<span style="flex:1;">${name}</span><strong style="color:#06b6d4; font-variant-numeric: tabular-nums;">${e.score.toLocaleString('fr-FR')} ${escapeHtml(unit)}</strong></li>`
+  }).join('')}</ol>`
+}
+
+export function formatStreamRecap(p: StreamRecapArgs): string {
+  const dateStr = new Date(p.startedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+  const duration = durationFr(p.startedAt, p.endedAt)
+  return [
+    `<div class="streamer-recap" style="margin:8px 0; border-radius:14px; padding:18px; background:linear-gradient(135deg, rgba(15,23,42,0.95), rgba(30,41,59,0.95)); border:1px solid rgba(99,102,241,0.4);">`,
+      `<div style="text-align:center; margin-bottom:14px;">`,
+        `<div style="font-size:20px; font-weight:800; color:#fff;">📊 Récap de stream</div>`,
+        `<div style="font-size:13px; color:#94a3b8; margin-top:2px;">${escapeHtml(p.streamerName)} · ${dateStr} · ${duration}</div>`,
+      `</div>`,
+
+      `<div style="margin-bottom:14px;">`,
+        `<div style="font-size:13px; font-weight:700; color:#f1f5f9; letter-spacing:0.02em;">💬 Top chatteurs</div>`,
+        formatTopList(p.topChatters, 'msg'),
+        `<div style="font-size:11px; color:#64748b; margin-top:4px; text-align:right;">Total : <strong style="color:#cbd5e1;">${p.totalMessages.toLocaleString('fr-FR')}</strong> messages</div>`,
+      `</div>`,
+
+      `<div style="margin-bottom:14px;">`,
+        `<div style="font-size:13px; font-weight:700; color:#f1f5f9; letter-spacing:0.02em;">💎 Top bits</div>`,
+        formatTopList(p.topBitsDonors, 'bits'),
+        `<div style="font-size:11px; color:#64748b; margin-top:4px; text-align:right;">Total : <strong style="color:#cbd5e1;">${p.totalBits.toLocaleString('fr-FR')}</strong> bits</div>`,
+      `</div>`,
+
+      `<div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06); font-size:12px;">`,
+        `<div style="padding:6px 8px; background:rgba(168,85,247,0.08); border-radius:6px;"><span style="color:#a855f7;">⭐ Subs offerts :</span> <strong style="color:#fff;">${p.giftSubsTotal}</strong></div>`,
+        `<div style="padding:6px 8px; background:rgba(168,85,247,0.08); border-radius:6px;"><span style="color:#a855f7;">⭐ Subs directs :</span> <strong style="color:#fff;">${p.subsCount}</strong></div>`,
+        `<div style="padding:6px 8px; background:rgba(239,68,68,0.08); border-radius:6px;"><span style="color:#ef4444;">🚀 Raids :</span> <strong style="color:#fff;">${p.raidsCount}</strong>${p.raidersTotalViewers > 0 ? ` <span style="color:#94a3b8;">(${p.raidersTotalViewers} viewers)</span>` : ''}</div>`,
+        `<div style="padding:6px 8px; background:rgba(6,182,212,0.08); border-radius:6px;"><span style="color:#06b6d4;">♥ Nouveaux follows :</span> <strong style="color:#fff;">${p.followersCount}</strong></div>`,
+      `</div>`,
+    `</div>`,
+  ].join('')
+}
+
+// Push d'un message HTML brut comme system user dans #streamer-events.
+// Utilisé par les announces lifecycle stream.online/offline qui formatent
+// elles-mêmes un HTML enrichi (carte streamer, recap, etc).
+export async function pushSystemMessageToChat(content: string): Promise<void> {
+  const communityId = await getInstanceCommunityId()
+  if (!communityId) return
+
+  const [channelId, systemUserId] = await Promise.all([
+    ensureStreamerEventsChannel(communityId),
+    ensureSystemUser(communityId),
+  ])
+  if (!channelId || !systemUserId) return
+
+  const message = await Channel.addMessage({
+    channel_id: channelId,
+    author_id:  systemUserId,
+    content:    content.slice(0, 10_000),
+  })
+  if (io) io.to(`channel:${channelId}`).emit('chat:message', message)
+}
+
 // ── Push event to chat ──────────────────────────────────────────────────────
 
 export async function pushEventToChat(args: {

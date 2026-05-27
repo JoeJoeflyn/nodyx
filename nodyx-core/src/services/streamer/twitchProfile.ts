@@ -24,13 +24,15 @@ export interface TwitchProfile {
     totalViewCount:    number | null  // helix retourne 0 si caché, on garde tel quel
   }
   stream: {
-    isLive:       boolean
-    gameName:     string | null
-    title:        string | null
-    viewerCount:  number | null
-    startedAt:    string | null
-    thumbnailUrl: string | null
-    language:     string | null
+    isLive:        boolean
+    gameName:      string | null
+    gameId:        string | null
+    gameBoxArtUrl: string | null            // resolu à 144x192, helix /games
+    title:         string | null
+    viewerCount:   number | null
+    startedAt:     string | null
+    thumbnailUrl:  string | null
+    language:      string | null
   }
   followers: {
     total: number | null   // null si helix renvoie une erreur de scope
@@ -89,6 +91,7 @@ interface HelixStreamsResponse {
     id:            string
     user_id:       string
     user_name:     string
+    game_id:       string
     game_name:     string
     type:          string
     title:         string
@@ -115,6 +118,12 @@ interface HelixChannelsResponse {
     delay:                 number
     tags?:                 string[]
   }>
+}
+
+// /games?id=X expose le box_art_url du jeu pour l'afficher en card visuel.
+// Les URLs box_art viennent avec placeholders {width}x{height}, on résout 144x192.
+interface HelixGamesResponse {
+  data?: Array<{ id: string; name: string; box_art_url: string; igdb_id?: string }>
 }
 
 interface HelixFollowersResponse {
@@ -150,6 +159,19 @@ export async function getTwitchProfile(options?: { forceRefresh?: boolean }): Pr
   const s = streams?.data?.[0]  ?? null
   const c = channels?.data?.[0] ?? null
 
+  // Fetch le box-art du jeu en cours si on a un game_id. Optionnel : si helix
+  // échoue ou si game_id absent (chaine sans catégorie), on laisse null et
+  // le frontend affiche juste le nom du jeu sans image.
+  const gameId = c?.game_id || s?.game_id || null
+  let gameBoxArtUrl: string | null = null
+  if (gameId) {
+    const games = await helixGetRaw<HelixGamesResponse>(`/games?id=${encodeURIComponent(gameId)}`, tok.token)
+    const g = games?.data?.[0]
+    if (g?.box_art_url) {
+      gameBoxArtUrl = g.box_art_url.replace('{width}', '144').replace('{height}', '192')
+    }
+  }
+
   const profile: TwitchProfile = {
     user: {
       id:                u.id,
@@ -163,18 +185,20 @@ export async function getTwitchProfile(options?: { forceRefresh?: boolean }): Pr
       totalViewCount:    typeof u.view_count === 'number' ? u.view_count : null,
     },
     stream: {
-      isLive:       !!s,
+      isLive:        !!s,
       // Source de vérité pour title/gameName : /channels (persistant), pas
       // /streams (uniquement live). Fallback sur s.* puis null si tout vide.
-      gameName:     c?.game_name || s?.game_name || null,
-      title:        c?.title     || s?.title     || null,
-      viewerCount:  s?.viewer_count ?? null,
-      startedAt:    s?.started_at ?? null,
+      gameName:      c?.game_name || s?.game_name || null,
+      gameId:        gameId,
+      gameBoxArtUrl,
+      title:         c?.title     || s?.title     || null,
+      viewerCount:   s?.viewer_count ?? null,
+      startedAt:     s?.started_at ?? null,
       // Twitch retourne une URL avec placeholders {width}x{height}. On résout en 640x360.
-      thumbnailUrl: s?.thumbnail_url
+      thumbnailUrl:  s?.thumbnail_url
         ? s.thumbnail_url.replace('{width}', '640').replace('{height}', '360')
         : null,
-      language:     c?.broadcaster_language || s?.language || null,
+      language:      c?.broadcaster_language || s?.language || null,
     },
     followers: {
       total: typeof followers?.total === 'number' ? followers.total : null,
