@@ -4,46 +4,10 @@
 	import { onMount } from 'svelte'
 	import Tooltip from '$lib/components/ui/Tooltip.svelte'
 	import QRCode from 'qrcode'
+	import type { Deck, DeckAction, DeckActionType as ActionType, DeckButton, DeckLayout } from '$lib/types/deck'
 
 	// Nodyx Deck — éditeur WYSIWYG pour un deck unique. Grille à gauche, panel
 	// d'édition de bouton à droite. Save = PATCH du layout entier (JSONB).
-
-	type ActionType = 'noop' | 'top_clips' | 'vod_marker' | 'chat_message' | 'trigger_command'
-
-	interface DeckAction {
-		type:         ActionType
-		overlayId?:   string
-		period?:      '7d' | '30d' | 'all'
-		count?:       number
-		description?: string
-		text?:        string
-		commandName?: string
-	}
-
-	interface DeckButton {
-		id:       string
-		x:        number
-		y:        number
-		w:        number
-		h:        number
-		label:    string
-		icon:     string
-		gradient: string
-		action:   DeckAction
-	}
-
-	interface DeckLayout {
-		rows:    number
-		cols:    number
-		buttons: DeckButton[]
-	}
-
-	interface Deck {
-		id:     string
-		label:  string
-		token:  string
-		layout: DeckLayout
-	}
 
 	interface Props {
 		deck:     Deck

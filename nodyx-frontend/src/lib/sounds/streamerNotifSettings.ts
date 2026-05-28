@@ -47,7 +47,7 @@ function load(): StreamerNotifSettings {
 		if (!raw) return clone(DEFAULTS)
 		const parsed = JSON.parse(raw) as Partial<StreamerNotifSettings>
 		const events = { ...DEFAULTS.events }
-		const inEvts = parsed.events ?? {}
+		const inEvts = (parsed.events ?? {}) as Partial<Record<StreamerEventKey, Partial<PerEvent>>>
 		for (const k of Object.keys(events) as StreamerEventKey[]) {
 			const v = inEvts[k]
 			if (v && typeof v === 'object') {

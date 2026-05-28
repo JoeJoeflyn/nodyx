@@ -4,26 +4,13 @@
 	import { onMount } from 'svelte'
 	import Tooltip from '$lib/components/ui/Tooltip.svelte'
 	import DeckEditor from './DeckEditor.svelte'
+	import type { Deck } from '$lib/types/deck'
 
 	interface Props {
 		token: string
 	}
 
 	let { token }: Props = $props()
-
-	interface Deck {
-		id:         string
-		token:      string
-		label:      string
-		layout: {
-			rows:    number
-			cols:    number
-			buttons: Array<{ id: string; label: string }>
-		}
-		createdAt:  string
-		updatedAt:  string
-		lastSeenAt: string | null
-	}
 
 	let decks    = $state<Deck[]>([])
 	let loading  = $state(true)
@@ -100,7 +87,7 @@
 		}
 	}
 
-	function fmtRelative(iso: string | null): string {
+	function fmtRelative(iso: string | null | undefined): string {
 		if (!iso) return 'jamais'
 		const diff = Date.now() - new Date(iso).getTime()
 		const m = Math.floor(diff / 60_000)

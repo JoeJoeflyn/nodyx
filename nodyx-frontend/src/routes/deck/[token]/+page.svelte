@@ -80,7 +80,7 @@
 		toastT = setTimeout(() => { toast = null }, 2800)
 	}
 
-	function vibrate(ms: number): void {
+	function vibrate(ms: number | number[]): void {
 		if (!browser) return
 		const n = navigator as Navigator & { vibrate?: (ms: number | number[]) => boolean }
 		if (typeof n.vibrate === 'function') n.vibrate(ms)
