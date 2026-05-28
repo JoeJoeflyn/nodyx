@@ -186,6 +186,87 @@ interface HelixCreateMarkerResponse {
   }>
 }
 
+// ── 4. User + Channel lookup (utilisés par les chat commands !so) ──────────
+// GET /users?login=xxx : récupère id + display_name + profile_image_url.
+// GET /channels?broadcaster_id=xxx : récupère le dernier title + game name.
+// Pas de scope spécifique requis (endpoints publics).
+
+export interface TwitchUserInfo {
+  id:                string
+  login:             string
+  displayName:       string
+  profileImageUrl:   string
+}
+
+interface HelixUsersResponse {
+  data?: Array<{
+    id:                string
+    login:             string
+    display_name:      string
+    profile_image_url: string
+  }>
+}
+
+export async function getUserByLogin(login: string): Promise<HelixResult<TwitchUserInfo | null>> {
+  const ctx = await getStreamerCtx()
+  if (!ctx) return { ok: false, status: 401, reason: 'no_streamer' }
+  const cleaned = login.trim().replace(/^@/, '').toLowerCase()
+  if (!/^[a-z0-9_]{2,32}$/.test(cleaned)) return { ok: false, status: 400, reason: 'invalid_login' }
+  const r = await helixFetch<HelixUsersResponse>(
+    `/users?login=${encodeURIComponent(cleaned)}`,
+    { method: 'GET', token: ctx.token },
+  )
+  if (!r.ok) return r
+  const u = r.data.data?.[0]
+  if (!u) return { ok: true, data: null }
+  return {
+    ok: true,
+    data: {
+      id:               u.id,
+      login:            u.login,
+      displayName:      u.display_name,
+      profileImageUrl:  u.profile_image_url,
+    },
+  }
+}
+
+export interface TwitchChannelInfo {
+  broadcasterId:    string
+  title:            string
+  gameName:         string
+  gameId:           string
+}
+
+interface HelixChannelsResponse {
+  data?: Array<{
+    broadcaster_id:    string
+    title:             string
+    game_name:         string
+    game_id:           string
+  }>
+}
+
+export async function getChannelByBroadcasterId(broadcasterId: string): Promise<HelixResult<TwitchChannelInfo | null>> {
+  const ctx = await getStreamerCtx()
+  if (!ctx) return { ok: false, status: 401, reason: 'no_streamer' }
+  const r = await helixFetch<HelixChannelsResponse>(
+    `/channels?broadcaster_id=${encodeURIComponent(broadcasterId)}`,
+    { method: 'GET', token: ctx.token },
+  )
+  if (!r.ok) return r
+  const c = r.data.data?.[0]
+  if (!c) return { ok: true, data: null }
+  return {
+    ok: true,
+    data: {
+      broadcasterId:  c.broadcaster_id,
+      title:          c.title,
+      gameName:       c.game_name,
+      gameId:         c.game_id,
+    },
+  }
+}
+
 export async function createMarker(args: {
   description?: string | undefined
 }): Promise<HelixResult<CreatedMarker>> {

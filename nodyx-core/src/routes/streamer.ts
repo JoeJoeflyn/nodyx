@@ -94,6 +94,38 @@ import { computeGoalBarState } from '../services/streamer/goalBarState'
 import { fetchTickerEvents } from '../services/streamer/tickerState'
 import { computeLeaderboard } from '../services/streamer/leaderboardState'
 import { ProviderError } from '../services/streamer/providers/_types'
+import {
+  listTimers,
+  getTimer,
+  createTimer,
+  updateTimer,
+  deleteTimer,
+  previewTimer,
+  adminSendNow,
+  isTriggerMode,
+  type TriggerMode,
+} from '../services/streamer/chatTimersService'
+import {
+  listCommands as listCustomCommands,
+  getCommand as getCustomCommand,
+  createCommand as createCustomCommand,
+  updateCommand as updateCustomCommand,
+  deleteCommand as deleteCustomCommand,
+  normalizeName as normalizeCommandName,
+} from '../services/streamer/chatCommandsService'
+import { getHardcodedCommandNames } from '../services/streamer/streamerHubService'
+import {
+  listDecks,
+  getDeck,
+  createDeck,
+  updateDeck,
+  revokeDeck,
+  findDeckByToken,
+  touchDeckSeen,
+  executeAction as executeDeckAction,
+  sanitizeLayout as sanitizeDeckLayout,
+  type DeckActionPayload,
+} from '../services/streamer/deckService'
 
 // ── Helpers env ──────────────────────────────────────────────────────────────
 
@@ -742,6 +774,414 @@ export const streamerAdminPlugin: FastifyPluginAsync = async (server) => {
         metadata:  { targetUserId: request.params.userId },
       })
       return reply.send({ ok: true })
+    },
+  )
+
+  // ── Chat Timers (Bot Chat tab) ──────────────────────────────────────────
+  // CRUD sur les chat timers et helpers preview / send-now. Le scheduler
+  // interne tourne en background et picke automatiquement les rows enabled.
+
+  server.get('/chat-timers', { preHandler: adminOnly }, async () => {
+    const timers = await listTimers()
+    return { timers }
+  })
+
+  interface TimerCreateBody {
+    label:            string
+    enabled?:         boolean
+    messageTemplate:  string
+    intervalMinutes:  number
+    minChatMessages:  number
+    liveOnly:         boolean
+    triggerMode?:     string
+  }
+
+  server.post<{ Body: TimerCreateBody }>(
+    '/chat-timers',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const b = request.body
+      if (!b?.label?.trim())            return reply.code(400).send({ ok: false, error: 'label_required' })
+      if (!b?.messageTemplate?.trim())  return reply.code(400).send({ ok: false, error: 'template_required' })
+      if (!Number.isFinite(b.intervalMinutes)  || b.intervalMinutes  < 1)  return reply.code(400).send({ ok: false, error: 'interval_too_short' })
+      if (!Number.isFinite(b.minChatMessages) || b.minChatMessages < 0) return reply.code(400).send({ ok: false, error: 'min_messages_invalid' })
+
+      const triggerMode: TriggerMode = isTriggerMode(b.triggerMode) ? b.triggerMode : 'recurring'
+      // Pour les modes 'recurring', l'intervalle ne peut pas être trop court
+      // sinon spam. Pour 'once_per_live', c'est un délai d'accueil et 1 min
+      // suffit; pour 'once', c'est ignoré.
+      if (triggerMode === 'recurring' && b.intervalMinutes < 5) {
+        return reply.code(400).send({ ok: false, error: 'interval_too_short' })
+      }
+
+      const timer = await createTimer({
+        label:            b.label.trim().slice(0, 100),
+        enabled:          b.enabled ?? true,
+        messageTemplate:  b.messageTemplate.trim().slice(0, 500),
+        intervalMinutes:  Math.min(1440, Math.floor(b.intervalMinutes)),
+        minChatMessages:  Math.min(1000, Math.floor(b.minChatMessages)),
+        liveOnly:         !!b.liveOnly,
+        triggerMode,
+        createdBy:        request.user!.userId,
+      })
+      await audit({
+        action:    'chat_timer_created',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { timerId: timer.id, label: timer.label },
+      })
+      return reply.send({ ok: true, timer })
+    },
+  )
+
+  interface TimerUpdateBody {
+    label?:            string
+    enabled?:          boolean
+    messageTemplate?:  string
+    intervalMinutes?:  number
+    minChatMessages?:  number
+    liveOnly?:         boolean
+    triggerMode?:      string
+  }
+
+  server.patch<{ Params: { id: string }; Body: TimerUpdateBody }>(
+    '/chat-timers/:id',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const b = request.body ?? {}
+      const patch: Parameters<typeof updateTimer>[1] = {}
+      if (b.label !== undefined) {
+        const v = b.label.trim()
+        if (!v) return reply.code(400).send({ ok: false, error: 'label_required' })
+        patch.label = v.slice(0, 100)
+      }
+      if (b.messageTemplate !== undefined) {
+        const v = b.messageTemplate.trim()
+        if (!v) return reply.code(400).send({ ok: false, error: 'template_required' })
+        patch.messageTemplate = v.slice(0, 500)
+      }
+      if (b.intervalMinutes !== undefined) {
+        if (!Number.isFinite(b.intervalMinutes) || b.intervalMinutes < 1) return reply.code(400).send({ ok: false, error: 'interval_too_short' })
+        patch.intervalMinutes = Math.min(1440, Math.floor(b.intervalMinutes))
+      }
+      if (b.minChatMessages !== undefined) {
+        if (!Number.isFinite(b.minChatMessages) || b.minChatMessages < 0) return reply.code(400).send({ ok: false, error: 'min_messages_invalid' })
+        patch.minChatMessages = Math.min(1000, Math.floor(b.minChatMessages))
+      }
+      if (b.enabled  !== undefined) patch.enabled  = !!b.enabled
+      if (b.liveOnly !== undefined) patch.liveOnly = !!b.liveOnly
+      if (b.triggerMode !== undefined) {
+        if (!isTriggerMode(b.triggerMode)) return reply.code(400).send({ ok: false, error: 'invalid_trigger_mode' })
+        patch.triggerMode = b.triggerMode
+      }
+      // Garde-fou : si on passe à 'recurring' (ou si on update interval avec mode recurring),
+      // l'intervalle doit être >= 5 min pour éviter le spam.
+      if ((patch.triggerMode === 'recurring' || (b.triggerMode === undefined && patch.intervalMinutes !== undefined))
+        && patch.intervalMinutes !== undefined
+        && patch.intervalMinutes < 5) {
+        // Note : on ne sait pas le triggerMode courant sans relire la row. On
+        // bloque uniquement si l'admin a explicitement set triggerMode=recurring
+        // dans cette requête. Pour les autres cas, le check de cohérence est
+        // côté UI.
+        if (patch.triggerMode === 'recurring') {
+          return reply.code(400).send({ ok: false, error: 'interval_too_short' })
+        }
+      }
+
+      const timer = await updateTimer(request.params.id, patch)
+      if (!timer) return reply.code(404).send({ ok: false, error: 'not_found' })
+
+      await audit({
+        action:    'chat_timer_updated',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { timerId: timer.id, fields: Object.keys(patch) },
+      })
+      return reply.send({ ok: true, timer })
+    },
+  )
+
+  server.delete<{ Params: { id: string } }>(
+    '/chat-timers/:id',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const existed = await getTimer(request.params.id)
+      const ok = await deleteTimer(request.params.id)
+      if (!ok) return reply.code(404).send({ ok: false, error: 'not_found' })
+      await audit({
+        action:    'chat_timer_deleted',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { timerId: request.params.id, label: existed?.label },
+      })
+      return reply.send({ ok: true })
+    },
+  )
+
+  server.post<{ Body: { template: string } }>(
+    '/chat-timers/preview',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const tpl = (request.body?.template ?? '').slice(0, 500)
+      if (!tpl.trim()) return reply.code(400).send({ ok: false, error: 'template_required' })
+      const rendered = await previewTimer(tpl)
+      return reply.send({ ok: true, rendered })
+    },
+  )
+
+  server.post<{ Params: { id: string } }>(
+    '/chat-timers/:id/send-now',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const r = await adminSendNow(request.params.id)
+      if (!r.ok && r.reason === 'not_found') return reply.code(404).send({ ok: false, error: 'not_found' })
+      await audit({
+        action:    'chat_timer_send_now',
+        status:    r.ok ? 'success' : 'failed',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { timerId: request.params.id, reason: r.reason },
+      })
+      return reply.send(r)
+    },
+  )
+
+  // ── Chat Commands custom (Bot Chat tab) ─────────────────────────────────
+  // CRUD sur les commandes éditables. Les noms hardcoded (!nodyx, !uptime,
+  // !commands, !topclips, !so, !highlight) sont protégés : on refuse la
+  // création/rename qui les shadowerait.
+
+  server.get('/chat-commands', { preHandler: adminOnly }, async () => {
+    const [commands, hardcoded] = await Promise.all([
+      listCustomCommands(),
+      Promise.resolve(getHardcodedCommandNames()),
+    ])
+    return { commands, hardcoded }
+  })
+
+  interface CommandCreateBody {
+    name:              string
+    enabled?:          boolean
+    responseTemplate:  string
+    modOnly:           boolean
+    cooldownSeconds:   number
+  }
+
+  server.post<{ Body: CommandCreateBody }>(
+    '/chat-commands',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const b = request.body
+      if (!b?.responseTemplate?.trim())  return reply.code(400).send({ ok: false, error: 'template_required' })
+      const name = normalizeCommandName(b?.name ?? '')
+      if (!name) return reply.code(400).send({ ok: false, error: 'invalid_name' })
+      if (getHardcodedCommandNames().includes(name)) {
+        return reply.code(409).send({ ok: false, error: 'name_reserved_hardcoded' })
+      }
+      const cdSec = Math.min(3600, Math.max(5, Math.floor(b.cooldownSeconds || 30)))
+
+      try {
+        const cmd = await createCustomCommand({
+          name,
+          enabled:           b.enabled ?? true,
+          responseTemplate:  b.responseTemplate.trim().slice(0, 500),
+          modOnly:           !!b.modOnly,
+          cooldownSeconds:   cdSec,
+          createdBy:         request.user!.userId,
+        })
+        await audit({
+          action:    'chat_command_created',
+          status:    'success',
+          userId:    request.user!.userId,
+          ipAddress: request.ip,
+          metadata:  { commandId: cmd.id, name: cmd.name },
+        })
+        return reply.send({ ok: true, command: cmd })
+      } catch (err) {
+        const msg = (err as { message?: string }).message ?? ''
+        if (msg.includes('duplicate key')) return reply.code(409).send({ ok: false, error: 'name_already_used' })
+        throw err
+      }
+    },
+  )
+
+  interface CommandUpdateBody {
+    name?:              string
+    enabled?:           boolean
+    responseTemplate?:  string
+    modOnly?:           boolean
+    cooldownSeconds?:   number
+  }
+
+  server.patch<{ Params: { id: string }; Body: CommandUpdateBody }>(
+    '/chat-commands/:id',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const b = request.body ?? {}
+      const patch: Parameters<typeof updateCustomCommand>[1] = {}
+      if (b.name !== undefined) {
+        const n = normalizeCommandName(b.name)
+        if (!n) return reply.code(400).send({ ok: false, error: 'invalid_name' })
+        if (getHardcodedCommandNames().includes(n)) {
+          return reply.code(409).send({ ok: false, error: 'name_reserved_hardcoded' })
+        }
+        patch.name = n
+      }
+      if (b.responseTemplate !== undefined) {
+        const v = b.responseTemplate.trim()
+        if (!v) return reply.code(400).send({ ok: false, error: 'template_required' })
+        patch.responseTemplate = v.slice(0, 500)
+      }
+      if (b.modOnly  !== undefined) patch.modOnly = !!b.modOnly
+      if (b.enabled  !== undefined) patch.enabled = !!b.enabled
+      if (b.cooldownSeconds !== undefined) {
+        const n = Math.min(3600, Math.max(5, Math.floor(b.cooldownSeconds)))
+        patch.cooldownSeconds = n
+      }
+      try {
+        const cmd = await updateCustomCommand(request.params.id, patch)
+        if (!cmd) return reply.code(404).send({ ok: false, error: 'not_found' })
+        await audit({
+          action:    'chat_command_updated',
+          status:    'success',
+          userId:    request.user!.userId,
+          ipAddress: request.ip,
+          metadata:  { commandId: cmd.id, fields: Object.keys(patch) },
+        })
+        return reply.send({ ok: true, command: cmd })
+      } catch (err) {
+        const msg = (err as { message?: string }).message ?? ''
+        if (msg.includes('duplicate key')) return reply.code(409).send({ ok: false, error: 'name_already_used' })
+        throw err
+      }
+    },
+  )
+
+  server.delete<{ Params: { id: string } }>(
+    '/chat-commands/:id',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const existed = await getCustomCommand(request.params.id)
+      const ok = await deleteCustomCommand(request.params.id)
+      if (!ok) return reply.code(404).send({ ok: false, error: 'not_found' })
+      await audit({
+        action:    'chat_command_deleted',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { commandId: request.params.id, name: existed?.name },
+      })
+      return reply.send({ ok: true })
+    },
+  )
+
+  // ── Nodyx Deck (mobile tactile Stream Deck) ─────────────────────────────
+  // Liste / création / update / revoke côté admin + endpoint public pour la
+  // page mobile (lookup par token + exec d'action).
+
+  server.get('/decks', { preHandler: adminOnly }, async () => {
+    const decks = await listDecks()
+    return { decks }
+  })
+
+  server.post<{ Body: { label?: string } }>(
+    '/decks',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const label = (request.body?.label ?? '').trim() || 'Mon Deck'
+      const deck = await createDeck({ label, createdBy: request.user!.userId })
+      await audit({
+        action:    'deck_created',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { deckId: deck.id, label: deck.label },
+      })
+      return reply.send({ ok: true, deck })
+    },
+  )
+
+  server.patch<{ Params: { id: string }; Body: { label?: string; layout?: unknown } }>(
+    '/decks/:id',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const b = request.body ?? {}
+      const patch: { label?: string; layout?: unknown } = {}
+      if (typeof b.label === 'string') patch.label = b.label.trim().slice(0, 100)
+      if (b.layout !== undefined)      patch.layout = sanitizeDeckLayout(b.layout)
+      const deck = await updateDeck(request.params.id, patch)
+      if (!deck) return reply.code(404).send({ ok: false, error: 'not_found' })
+      await audit({
+        action:    'deck_updated',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { deckId: deck.id, fields: Object.keys(patch) },
+      })
+      return reply.send({ ok: true, deck })
+    },
+  )
+
+  server.delete<{ Params: { id: string } }>(
+    '/decks/:id',
+    { preHandler: adminOnly },
+    async (request, reply) => {
+      const ok = await revokeDeck(request.params.id)
+      if (!ok) return reply.code(404).send({ ok: false, error: 'not_found' })
+      await audit({
+        action:    'deck_revoked',
+        status:    'success',
+        userId:    request.user!.userId,
+        ipAddress: request.ip,
+        metadata:  { deckId: request.params.id },
+      })
+      return reply.send({ ok: true })
+    },
+  )
+
+  // Public : lookup d'un deck par token (utilisé par la page mobile au boot).
+  // Retourne label + layout uniquement. Pas d'auth admin requise (le token
+  // EST l'auth).
+  server.get<{ Params: { token: string } }>('/deck/lookup/:token', async (request, reply) => {
+    const deck = await findDeckByToken(request.params.token)
+    if (!deck) return reply.code(404).send({ ok: false, error: 'not_found_or_revoked' })
+    void touchDeckSeen(deck.id)  // best-effort, ne bloque pas
+    return reply.send({
+      ok:     true,
+      deck: {
+        id:     deck.id,
+        label:  deck.label,
+        layout: deck.layout,
+      },
+    })
+  })
+
+  // Public : exec d'une action. Body = { buttonId } pour retrouver l'action
+  // par référence dans le layout (évite de faire confiance au client pour le
+  // payload de l'action). Token-gated, mais rate-limited côté Fastify global.
+  server.post<{ Params: { token: string }; Body: { buttonId?: string } }>(
+    '/deck/:token/action',
+    async (request, reply) => {
+      const deck = await findDeckByToken(request.params.token)
+      if (!deck) return reply.code(404).send({ ok: false, error: 'not_found' })
+
+      const buttonId = (request.body?.buttonId ?? '').toString()
+      const button = deck.layout.buttons.find(b => b.id === buttonId)
+      if (!button) return reply.code(404).send({ ok: false, error: 'button_not_found' })
+
+      const result = await executeDeckAction(button.action as DeckActionPayload, `deck:${deck.label}`)
+      void touchDeckSeen(deck.id)
+      await audit({
+        action:    'deck_action_executed',
+        status:    result.ok ? 'success' : 'failed',
+        userId:    null,
+        ipAddress: request.ip,
+        metadata:  { deckId: deck.id, buttonId, actionType: button.action.type, message: result.message },
+      })
+      return reply.send(result)
     },
   )
 

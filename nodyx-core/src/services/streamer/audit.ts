@@ -33,6 +33,17 @@ export type AuditAction =
   | 'reward_updated'
   | 'reward_deleted'
   | 'unlink_twitch_viewer_admin'
+  | 'chat_timer_created'
+  | 'chat_timer_updated'
+  | 'chat_timer_deleted'
+  | 'chat_timer_send_now'
+  | 'chat_command_created'
+  | 'chat_command_updated'
+  | 'chat_command_deleted'
+  | 'deck_created'
+  | 'deck_updated'
+  | 'deck_revoked'
+  | 'deck_action_executed'
 
 export interface AuditEntry {
   action:    AuditAction

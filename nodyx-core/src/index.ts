@@ -36,6 +36,7 @@ import canvasRoutes          from './routes/canvas'
 import twitchRoutes           from './routes/twitch'
 import { streamerAdminPlugin, streamerEventsubPlugin } from './routes/streamer'
 import { startChatOutboundWorker } from './services/streamer/twitchChatBridge'
+import { startChatTimersScheduler } from './services/streamer/chatTimersService'
 import { NODYX_VERSION } from './utils/version'
 import { setIO }              from './socket/io'
 import { registerSocketIO } from './socket/index'
@@ -230,6 +231,7 @@ const start = async () => {
     startScheduler(io)
     startChatOutboundWorker()
     console.log('📨 Streamer chat outbound worker prêt')
+    startChatTimersScheduler()
   } catch (err) {
     server.log.error(err)
     process.exit(1)

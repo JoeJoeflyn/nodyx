@@ -261,12 +261,23 @@
 	<!-- ══ Tab : Mes top clips ════════════════════════════════════════════ -->
 	{#if tab === 'own'}
 		<div class="flex items-center justify-between gap-3 flex-wrap">
-			<div class="text-[11px] uppercase tracking-widest font-semibold text-slate-400">Période</div>
-			<div class="inline-flex rounded-lg border border-slate-700/60 bg-slate-950/40 p-0.5">
-				<button type="button" onclick={() => ownPeriod = '7d'}   class="px-3 py-1 text-xs font-medium rounded-md transition-colors {ownPeriod === '7d'   ? 'bg-indigo-500/20 text-indigo-200' : 'text-slate-500 hover:text-slate-300'}">7 jours</button>
-				<button type="button" onclick={() => ownPeriod = '30d'}  class="px-3 py-1 text-xs font-medium rounded-md transition-colors {ownPeriod === '30d'  ? 'bg-indigo-500/20 text-indigo-200' : 'text-slate-500 hover:text-slate-300'}">30 jours</button>
-				<button type="button" onclick={() => ownPeriod = 'all'}  class="px-3 py-1 text-xs font-medium rounded-md transition-colors {ownPeriod === 'all'  ? 'bg-indigo-500/20 text-indigo-200' : 'text-slate-500 hover:text-slate-300'}">Total</button>
+			<div class="flex items-center gap-3 flex-wrap">
+				<div class="text-[11px] uppercase tracking-widest font-semibold text-slate-400">Période</div>
+				<div class="inline-flex rounded-lg border border-slate-700/60 bg-slate-950/40 p-0.5">
+					<button type="button" onclick={() => ownPeriod = '7d'}   class="px-3 py-1 text-xs font-medium rounded-md transition-colors {ownPeriod === '7d'   ? 'bg-indigo-500/20 text-indigo-200' : 'text-slate-500 hover:text-slate-300'}">7 jours</button>
+					<button type="button" onclick={() => ownPeriod = '30d'}  class="px-3 py-1 text-xs font-medium rounded-md transition-colors {ownPeriod === '30d'  ? 'bg-indigo-500/20 text-indigo-200' : 'text-slate-500 hover:text-slate-300'}">30 jours</button>
+					<button type="button" onclick={() => ownPeriod = 'all'}  class="px-3 py-1 text-xs font-medium rounded-md transition-colors {ownPeriod === 'all'  ? 'bg-indigo-500/20 text-indigo-200' : 'text-slate-500 hover:text-slate-300'}">Total</button>
+				</div>
 			</div>
+			{#if ownClips.length > 0 && clipsOverlays.length > 0}
+				<button type="button"
+					onclick={() => triggerClips({ period: ownPeriod === '7d' ? 'top_own_7d' : ownPeriod === '30d' ? 'top_own_30d' : 'top_own_all', count: 5 })}
+					disabled={triggering}
+					class="text-[11px] bg-cyan-500/15 hover:bg-cyan-500/25 disabled:opacity-30 border border-cyan-500/40 text-cyan-200 px-3 py-1.5 rounded transition-colors inline-flex items-center gap-1.5">
+					<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.84a1 1 0 011.04.06l9 6a1 1 0 010 1.66l-9 6A1 1 0 016 16V4a1 1 0 01.3-.84z"/></svg>
+					Lancer dans overlay (Top 5)
+				</button>
+			{/if}
 		</div>
 
 		{#if ownLoading}

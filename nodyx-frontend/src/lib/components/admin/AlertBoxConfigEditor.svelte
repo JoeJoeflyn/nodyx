@@ -3,6 +3,8 @@
 	import { browser } from '$app/environment'
 	import AlertThemePreview from './AlertThemePreview.svelte'
 	import MediaSoundPicker  from './MediaSoundPicker.svelte'
+	import Tooltip           from '$lib/components/ui/Tooltip.svelte'
+	import { PRESET_LIBRARY, isPresetUrl, playPreset, presetUrl, presetKeyOf, type PresetKey } from '$lib/sounds/presetSounds'
 
 	type AlertTheme = 'cyber' | 'soft' | 'retro' | 'neon' | 'holographic' | 'minimal' | 'custom'
 	type AlertPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'center'
@@ -135,6 +137,13 @@
 
 	function previewSound(url: string | null | undefined): void {
 		if (!url) return
+
+		// Cas spécial : preset Nodyx synthétisé en WebAudio (zéro réseau, zéro
+		// fichier). Court-circuit avant les checks mixed-content / Audio API.
+		if (isPresetUrl(url)) {
+			playPreset(presetKeyOf(url)!, Math.min(1, Math.max(0, config.soundVolume)))
+			return
+		}
 
 		// Détection précoce : mixed-content. Si Nodyx est en HTTPS et le son
 		// en HTTP, le navigateur bloque silencieusement.
@@ -392,10 +401,39 @@
 							{/if}
 						</div>
 					{/if}
+					<!-- Bibliothèque de sons Nodyx (synthétisés WebAudio, zéro réseau) -->
+					<div>
+						<div class="flex items-center gap-1.5 mb-1">
+							<span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400">Son Nodyx</span>
+							<Tooltip text="Bibliothèque de sons générés en pur WebAudio (aucun fichier téléchargé, fonctionne offline). Choisis un preset, ou laisse 'Aucun' pour utiliser uniquement ton URL custom ci-dessous."/>
+						</div>
+						<div class="flex flex-wrap gap-1">
+							{#each PRESET_LIBRARY as p (p.key)}
+								{@const isSelected = cfg.soundUrl === presetUrl(p.key) || (p.key === 'none' && !cfg.soundUrl)}
+								<button type="button" disabled={!cfg.enabled}
+									onclick={() => {
+										if (p.key === 'none') config.events[key].soundUrl = null
+										else {
+											config.events[key].soundUrl = presetUrl(p.key)
+											playPreset(p.key, Math.min(1, Math.max(0, config.soundVolume)))
+										}
+									}}
+									title={p.hint}
+									class="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded border transition-colors disabled:opacity-30
+										{isSelected ? 'bg-cyan-500/25 border-cyan-500/60 text-cyan-100' : 'bg-slate-800/40 border-slate-700/60 text-slate-300 hover:bg-slate-700/60'}">
+									<span>{p.emoji}</span>
+									<span>{p.label}</span>
+								</button>
+							{/each}
+						</div>
+					</div>
+
+					<!-- URL custom ou médiathèque -->
 					<div class="flex items-center gap-2">
-						<input type="url" bind:value={config.events[key].soundUrl}
+						<input type="url" value={isPresetUrl(config.events[key].soundUrl) ? '' : (config.events[key].soundUrl ?? '')}
+							oninput={(e) => { config.events[key].soundUrl = e.currentTarget.value || null }}
 							disabled={!cfg.enabled}
-							placeholder="URL son (mp3 / wav) ou choisis depuis la médiathèque →"
+							placeholder="…ou URL son personnalisé (mp3 / wav) / médiathèque →"
 							class="flex-1 rounded bg-slate-950 border border-slate-700/60 focus:border-cyan-500/60 focus:ring-2 focus:ring-cyan-500/20 px-2.5 py-1.5 text-[11px] text-white placeholder-slate-600 outline-none transition-colors disabled:opacity-40 font-mono"/>
 						<button type="button" onclick={() => openPickerFor(key)}
 							disabled={!cfg.enabled}

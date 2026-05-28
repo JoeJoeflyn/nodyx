@@ -5,6 +5,7 @@
 	import { PUBLIC_API_URL } from '$env/static/public'
 	import { fly, fade, scale } from 'svelte/transition'
 	import { backOut, cubicOut } from 'svelte/easing'
+	import { playAlertSound } from '$lib/sounds/presetSounds'
 
 	// Page transparente conçue pour être collée comme Browser Source dans OBS.
 	// Le token dans l'URL EST l'auth : il bootstrappe la config via REST et
@@ -214,15 +215,8 @@
 		// Joue le son associé à l'event s'il y en a un. OBS Browser Source
 		// autorise le playback audio si "Control audio via OBS" est coché.
 		// Modern browsers bloquent l'autoplay sans user gesture, mais OBS bypass.
-		if (cfg.soundUrl) playSound(cfg.soundUrl)
-	}
-
-	function playSound(url: string): void {
-		try {
-			const audio = new Audio(url)
-			audio.volume = Math.min(1, Math.max(0, config.soundVolume))
-			audio.play().catch(() => { /* autoplay bloqué hors OBS, on swallow */ })
-		} catch { /* URL invalide ou format non supporté */ }
+		// playAlertSound gère unifié URL classique + presets "nodyx:<key>".
+		if (cfg.soundUrl) playAlertSound(cfg.soundUrl, config.soundVolume)
 	}
 
 	// ── Animation d'entrée selon config ──────────────────────────────────────

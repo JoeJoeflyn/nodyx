@@ -27,10 +27,15 @@
 		mp4Url?:      string | null    // URL mp4 signée via GraphQL backend
 	}
 
+	// OBS Browser Source autorise nativement l'autoplay (CEF avec --autoplay-policy
+	// =no-user-gesture-required). Pas besoin du gate. On le détecte via le user-
+	// agent pour bypass automatiquement.
+	const isOBS = browser && /OBS\/|obs-browser/i.test(navigator.userAgent)
+
 	let status        = $state<'loading' | 'idle' | 'playing' | 'invalid' | 'error'>('loading')
 	let queue         = $state<Clip[]>([])
 	let currentIdx    = $state(0)
-	let userActivated = $state(false)
+	let userActivated = $state(isOBS)         // pre-activated dans OBS
 	let pageVisible   = $state(true)            // sera mis à jour via visibilitychange
 	let mountKey      = $state(0)               // bump pour forcer remount iframe
 	let videoEl:        HTMLVideoElement | null = $state(null)

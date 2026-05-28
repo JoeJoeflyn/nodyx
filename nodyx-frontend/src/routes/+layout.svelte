@@ -7,6 +7,7 @@
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { initSocket, unreadCountStore, chatMentionStore, dmUnreadStore, onlineMembersStore, getSocket } from '$lib/socket';
+	import StreamerNotifListener from '$lib/components/streamer/StreamerNotifListener.svelte';
 	import { tryAutoConnect } from '$lib/socket';
 	import type { UserStatus } from '$lib/socket';
 	import { resolveTheme, themeToVars } from '$lib/profileThemes';
@@ -250,8 +251,13 @@
 
 	// Routes /overlay/* sont des pages OBS browser source : fullscreen
 	// transparent, AUCUN chrome Nodyx (ni nav, ni sidebar, ni members bar).
+	// Routes /deck/* sont des pages mobile-first tactiles (Nodyx Deck) : même
+	// principe, on veut tout l'écran pour la grille de boutons.
 	// On bypass complètement le rendu du layout pour ces routes.
-	const isOverlayRoute = $derived($page.url.pathname.startsWith('/overlay/'))
+	const isOverlayRoute = $derived(
+		$page.url.pathname.startsWith('/overlay/') ||
+		$page.url.pathname.startsWith('/deck/'),
+	)
 
 	// Active channel ID from URL (used on /chat to highlight the current channel)
 	const activeChatChannelId = $derived($page.url.searchParams.get('channel') ?? null)
@@ -456,6 +462,11 @@
 	{@render children()}
 {:else}
 <div class="min-h-screen flex flex-col" style="{appVars}; background: var(--p-bg); color: var(--p-text)">
+
+	<!-- Listener Streamer Hub : joue les sons de notif pour les admins/owners. -->
+	{#if data.user?.role}
+		<StreamerNotifListener role={data.user.role} />
+	{/if}
 
 	<!-- ══ MAINTENANCE BANNER (sticky top, hidden when no op in progress) ════════ -->
 	<MaintenanceBanner />

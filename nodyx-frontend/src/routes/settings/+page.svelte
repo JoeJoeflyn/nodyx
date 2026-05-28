@@ -7,6 +7,25 @@
     import { t, locale, LOCALES, type Locale } from '$lib/i18n';
     import { get } from 'svelte/store';
     import { soundSettings } from '$lib/soundSettings';
+    import { streamerNotifSettings, testStreamerNotif, type StreamerEventKey } from '$lib/sounds/streamerNotifSettings';
+    import { PRESET_LIBRARY } from '$lib/sounds/presetSounds';
+
+    // Tableau d'event types Streamer pour le rendu UI. Labels en clair pour le streamer.
+    const STREAMER_EVENT_ROWS: Array<{ key: StreamerEventKey; label: string; sub: string }> = [
+        { key: 'channel.follow',            label: 'Follow',           sub: "Quelqu'un suit ta chaîne Twitch." },
+        { key: 'channel.subscribe',         label: 'Sub',              sub: "Nouveau / renouvellement d'abonnement." },
+        { key: 'channel.subscription.gift', label: 'Sub offert',       sub: "Un viewer offre un ou plusieurs subs." },
+        { key: 'channel.cheer',             label: 'Bits (cheer)',     sub: "Don de bits dans le chat Twitch." },
+        { key: 'channel.raid',              label: 'Raid reçu',        sub: "Un autre streamer te raid avec ses viewers." },
+    ]
+    // On expose la library de presets pour le <select>.
+    const STREAMER_PRESETS = PRESET_LIBRARY
+
+    // Visibilité de la section Notifs Streamer : owners/admins seulement.
+    const isStreamerNotifVisible = $derived(() => {
+        const u = $page.data.user as { role?: string } | null | undefined
+        return u?.role === 'owner' || u?.role === 'admin'
+    })
 
     // ── Sons ──────────────────────────────────────────────────────────────────
     const sounds       = $derived($soundSettings)
@@ -1203,6 +1222,100 @@
             </div>
             {/if}
 
+            <!-- ── Sous-section : Notifications Streamer (Twitch) ── -->
+            {#if isStreamerNotifVisible()}
+            {@const cur = $streamerNotifSettings}
+            <div class="s-pane-header" style="margin-top: 28px; --accent:#a855f7; --accent-bg:rgba(168,85,247,0.10); --accent-border:rgba(168,85,247,0.25)">
+                <div class="s-pane-icon" style="background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="s-pane-title">Notifications Streamer (Twitch)</h2>
+                    <p class="s-pane-desc">Reçois un son côté Nodyx pour follow, sub, raid, cheer. Utile quand tu coupes le retour audio de ton live.</p>
+                </div>
+            </div>
+
+            <div class="s-card">
+                <div class="s-row">
+                    <div class="s-row-info">
+                        <div class="s-row-title">Notifs Streamer activées</div>
+                        <div class="s-row-sub">Écoute les events Twitch de ton instance en direct.</div>
+                    </div>
+                    <button
+                        onclick={() => streamerNotifSettings.update(s => ({ ...s, masterEnabled: !s.masterEnabled }))}
+                        class="s-toggle {cur.masterEnabled ? 'on' : 'off'}"
+                        aria-label="Activer les notifs streamer">
+                        <span class="s-toggle-thumb"></span>
+                    </button>
+                </div>
+
+                {#if cur.masterEnabled}
+                <div class="s-row" style="margin-top: 8px; align-items: center; gap: 12px">
+                    <div class="s-row-info">
+                        <div class="s-row-title">Volume</div>
+                    </div>
+                    <div class="sound-volume-wrap">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#6b7280;flex-shrink:0">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        </svg>
+                        <input
+                            type="range" min="0" max="1" step="0.05"
+                            value={cur.volume}
+                            oninput={(e) => streamerNotifSettings.update(s => ({ ...s, volume: parseFloat((e.target as HTMLInputElement).value) }))}
+                            class="sound-slider"
+                        />
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#a855f7;flex-shrink:0">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                        </svg>
+                        <span class="sound-vol-label">{Math.round(cur.volume * 100)}%</span>
+                    </div>
+                </div>
+                {/if}
+            </div>
+
+            {#if cur.masterEnabled}
+            <div class="s-card">
+                {#each STREAMER_EVENT_ROWS as ev, i (ev.key)}
+                {@const evCfg = cur.events[ev.key]}
+                {#if i > 0}<div class="s-divider"></div>{/if}
+                <div class="s-row">
+                    <div class="s-row-info">
+                        <div class="s-row-title">{ev.label}</div>
+                        <div class="s-row-sub">{ev.sub}</div>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <select
+                            value={evCfg.preset}
+                            onchange={(e) => {
+                                const v = (e.target as HTMLSelectElement).value as typeof evCfg.preset
+                                streamerNotifSettings.update(s => ({ ...s, events: { ...s.events, [ev.key]: { ...s.events[ev.key], preset: v } } }))
+                            }}
+                            class="streamer-preset-select"
+                            aria-label="Son de l'event {ev.label}">
+                            {#each STREAMER_PRESETS as p (p.key)}
+                                <option value={p.key}>{p.emoji} {p.label}</option>
+                            {/each}
+                        </select>
+                        <button onclick={() => testStreamerNotif(ev.key)} class="sound-test-btn" title="Tester ce son">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 3 19 12 5 21 5 3"/>
+                            </svg>
+                        </button>
+                        <button
+                            onclick={() => streamerNotifSettings.update(s => ({ ...s, events: { ...s.events, [ev.key]: { ...s.events[ev.key], enabled: !s.events[ev.key].enabled } } }))}
+                            class="s-toggle {evCfg.enabled ? 'on' : 'off'}"
+                            aria-label="Activer son {ev.label}">
+                            <span class="s-toggle-thumb"></span>
+                        </button>
+                    </div>
+                </div>
+                {/each}
+            </div>
+            {/if}
+            {/if}
+
             <div class="s-card s-card-muted">
                 <p class="s-hint-text">Sons générés via Web Audio API — aucun fichier téléchargé, aucune latence réseau. Les réglages sont sauvegardés localement dans votre navigateur.</p>
             </div>
@@ -1873,6 +1986,19 @@
 }
 .sound-test-btn:hover { background: rgba(251,146,60,0.16); border-color: rgba(251,146,60,0.35); }
 .s-divider { border: none; border-top: 1px solid rgba(255,255,255,0.05); margin: 10px 0; }
+
+/* Streamer notif preset selector */
+.streamer-preset-select {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(168, 85, 247, 0.30);
+    color: #e5e7eb;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.streamer-preset-select:focus { border-color: rgba(168, 85, 247, 0.6); }
 
 /* ── Spinner ─────────────────────────────────────────────────────────────── */
 .s-spin {

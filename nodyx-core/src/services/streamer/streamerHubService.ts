@@ -631,6 +631,16 @@ export async function ingestEvent(args: {
   // resterait propre pour les vrais events). On les pousse direct dans
   // #twitch-chat où ils sont déjà persistés via channel_messages.
   if (args.eventType === 'channel.chat.message') {
+    // Command parser : !topclips et autres bots commands déclenchent des
+    // actions Nodyx (overlays, etc) avant qu'on ne push le message dans
+    // #twitch-chat. Non-blocking : si le handler plante, le message passe
+    // quand même normalement.
+    handleChatCommand(args.payload).catch(err =>
+      console.error('[streamerHub] chat command handler failed', err))
+    // Compteur de messages chat pour les chat timers (anti-spam chat vide).
+    // Best-effort, ne bloque pas le flow inbound.
+    import('./chatTimersService').then(m => m.bumpChatMessageCounter())
+      .catch(() => {})
     try {
       await pushTwitchChatMessage({
         provider: args.provider,
@@ -856,3 +866,323 @@ function extractTwitchUserId(eventType: string, payload: Record<string, unknown>
       return null
   }
 }
+
+// ── Chat commands ─────────────────────────────────────────────────────────
+// Parse les messages chat Twitch pour déclencher des actions Nodyx via les
+// préfixes ! classiques. Cooldown Redis pour éviter le spam.
+
+interface ChatBadge { set_id: string; id: string }
+interface ChatEventPayload {
+  event?: {
+    broadcaster_user_id?: string
+    chatter_user_id?:     string
+    chatter_user_name?:   string
+    message?:             { text?: string }
+    badges?:              ChatBadge[]
+  }
+}
+
+const CHAT_CMD_COOLDOWN_SEC = 30
+function cooldownKey(cmd: string): string { return `streamer:chatcmd:cooldown:${cmd}` }
+
+interface ChatCmdContext {
+  triggeredBy: string
+  args:        string[]   // tokens après le nom de la commande
+}
+
+interface ChatCommandDef {
+  name:        string                                          // ex. "!nodyx"
+  modOnly:     boolean                                         // true = streamer/mod uniquement
+  description: string                                          // pour !commands
+  handler:     (ctx: ChatCmdContext) => Promise<void>
+}
+
+// Liste figée des noms hardcoded (utilisée par le service custom pour
+// refuser la création d'une command qui shadowerait une command native).
+export function getHardcodedCommandNames(): readonly string[] {
+  return CHAT_COMMANDS.map(c => c.name)
+}
+
+const CHAT_COMMANDS: ChatCommandDef[] = [
+  { name: '!nodyx',     modOnly: false, description: "Lien d'invite vers la communauté Nodyx",     handler: execNodyxCommand },
+  { name: '!uptime',    modOnly: false, description: "Durée écoulée depuis le début du stream",    handler: execUptimeCommand },
+  { name: '!commands',  modOnly: false, description: "Liste les commandes disponibles",            handler: execCommandsCommand },
+  { name: '!topclips',  modOnly: true,  description: "Lance le top des clips dans l'overlay OBS",  handler: ctx => execTopClipsCommand(ctx.triggeredBy) },
+  { name: '!so',        modOnly: true,  description: "Shoutout : !so @streamer pour highlighter une chaine",  handler: execShoutoutCommand },
+  { name: '!highlight', modOnly: true,  description: "Place un marker dans la VOD au moment courant",          handler: execHighlightCommand },
+]
+
+async function handleChatCommand(payload: Record<string, unknown>): Promise<void> {
+  const p = payload as ChatEventPayload
+  const evt = p.event
+  if (!evt) return
+
+  const raw = evt.message?.text?.trim() ?? ''
+  if (!raw.startsWith('!')) return
+  const tokens      = raw.split(/\s+/)
+  const cmdName     = tokens[0].toLowerCase()
+  const args        = tokens.slice(1)
+  const chatterName = evt.chatter_user_name ?? '?'
+
+  const cmd = CHAT_COMMANDS.find(c => c.name === cmdName)
+
+  // Helper local pour le check streamer/mod
+  const isStreamerOrMod = (): boolean => {
+    const chatter     = evt.chatter_user_id     ?? ''
+    const broadcaster = evt.broadcaster_user_id ?? ''
+    const badges      = evt.badges ?? []
+    const isStreamer  = chatter && broadcaster && chatter === broadcaster
+    const isMod       = badges.some(b => b.set_id === 'moderator' || b.set_id === 'broadcaster')
+    return !!isStreamer || isMod
+  }
+
+  if (cmd) {
+    console.log(`[chat-cmd] received "${cmd.name}" from ${chatterName}`)
+    if (cmd.modOnly && !isStreamerOrMod()) {
+      console.log(`[chat-cmd] denied (not streamer or mod): ${chatterName} on ${cmd.name}`)
+      return
+    }
+    await cmd.handler({ triggeredBy: chatterName, args }).catch(err =>
+      console.error(`[chat-cmd] handler for ${cmd.name} failed`, err))
+    return
+  }
+
+  // Fallback : commande custom en DB ?
+  try {
+    const { findCustomCommand } = await import('./chatCommandsService')
+    const custom = await findCustomCommand(cmdName)
+    if (!custom) {
+      console.log(`[chat-cmd] unknown command: "${raw}"`)
+      return
+    }
+    console.log(`[chat-cmd] received custom "${custom.name}" from ${chatterName}`)
+    if (custom.modOnly && !isStreamerOrMod()) {
+      console.log(`[chat-cmd] denied (custom modOnly): ${chatterName} on ${custom.name}`)
+      return
+    }
+    // Cooldown spécifique à la command custom (clé séparée des hardcoded).
+    const cdKey = `streamer:chatcmd:cooldown:custom:${custom.id}`
+    const onCd = await redis.get(cdKey).catch(() => null)
+    if (onCd) {
+      console.log(`[chat-cmd] custom "${custom.name}" on cooldown, ignored`)
+      return
+    }
+    // Render template via le même helper que les timers.
+    const { previewTimer } = await import('./chatTimersService')
+    const rendered = (await previewTimer(custom.responseTemplate).catch(() => '')).trim()
+    if (!rendered) return
+    await sendBotMessage(rendered)
+    await redis.set(cdKey, '1', 'EX', custom.cooldownSeconds).catch(() => {})
+  } catch (err) {
+    console.error('[chat-cmd] custom command dispatch failed', err)
+  }
+}
+
+// ── Helpers d'envoi côté Twitch (utilisés par toutes les commands) ─────────
+
+async function sendBotMessage(text: string): Promise<void> {
+  try {
+    const { relayMessageToTwitch } = await import('./twitchChatBridge')
+    await relayMessageToTwitch({
+      provider:       'twitch',
+      authorUsername: 'Nodyx',
+      authorUserId:   null,
+      text,
+    })
+  } catch (err) {
+    console.error('[chat-cmd] sendBotMessage failed', err)
+  }
+}
+
+// ── !nodyx : invite vers l'instance Nodyx ──────────────────────────────────
+
+async function execNodyxCommand(_ctx: ChatCmdContext): Promise<void> {
+  const onCd = await redis.get(cooldownKey('nodyx')).catch(() => null)
+  if (onCd) return
+
+  const url = (process.env.FRONTEND_URL ?? '').replace(/\/$/, '')
+  if (!url) {
+    console.log('[chat-cmd] !nodyx ignored: FRONTEND_URL not set')
+    return
+  }
+  await sendBotMessage(`Rejoins la communauté sur Nodyx : ${url} — salons, voice, événements, hors-Twitch et open-source`)
+  await redis.set(cooldownKey('nodyx'), '1', 'EX', CHAT_CMD_COOLDOWN_SEC).catch(() => {})
+}
+
+// ── !uptime : durée du stream en cours ─────────────────────────────────────
+
+async function execUptimeCommand(_ctx: ChatCmdContext): Promise<void> {
+  const onCd = await redis.get(cooldownKey('uptime')).catch(() => null)
+  if (onCd) return
+
+  const r = await db.query<{ started_at: Date }>(
+    `SELECT started_at FROM streamer_sessions
+     WHERE provider = 'twitch' AND ended_at IS NULL
+     ORDER BY started_at DESC LIMIT 1`,
+  ).catch(() => null)
+
+  const session = r?.rows[0]
+  if (!session) {
+    await sendBotMessage('Pas de stream en cours actuellement')
+  } else {
+    const ms      = Date.now() - new Date(session.started_at).getTime()
+    const totalMin = Math.max(0, Math.floor(ms / 60_000))
+    const h        = Math.floor(totalMin / 60)
+    const m        = totalMin % 60
+    const formatted = h > 0 ? `${h}h ${m}min` : `${m}min`
+    await sendBotMessage(`Stream en live depuis ${formatted}`)
+  }
+  await redis.set(cooldownKey('uptime'), '1', 'EX', CHAT_CMD_COOLDOWN_SEC).catch(() => {})
+}
+
+// ── !commands : liste des commandes disponibles ─────────────────────────────
+
+async function execCommandsCommand(_ctx: ChatCmdContext): Promise<void> {
+  const onCd = await redis.get(cooldownKey('commands')).catch(() => null)
+  if (onCd) return
+
+  const publicNames = CHAT_COMMANDS.filter(c => !c.modOnly).map(c => c.name).join(' ')
+  await sendBotMessage(`Commandes : ${publicNames}`)
+  await redis.set(cooldownKey('commands'), '1', 'EX', CHAT_CMD_COOLDOWN_SEC).catch(() => {})
+}
+
+// ── !so : shoutout d'un autre streamer (mod/streamer only) ─────────────────
+
+async function execShoutoutCommand(ctx: ChatCmdContext): Promise<void> {
+  const onCd = await redis.get(cooldownKey('so')).catch(() => null)
+  if (onCd) {
+    console.log(`[chat-cmd] !so on cooldown, ignored from ${ctx.triggeredBy}`)
+    return
+  }
+
+  const target = ctx.args[0]
+  if (!target) {
+    await sendBotMessage(`Usage : !so @streamer`)
+    return
+  }
+
+  const { getUserByLogin, getChannelByBroadcasterId } = await import('./twitchStreamControl')
+  const userRes = await getUserByLogin(target)
+  if (!userRes.ok || !userRes.data) {
+    console.log(`[chat-cmd] !so: user "${target}" not found`)
+    return
+  }
+  const user = userRes.data
+
+  const chanRes = await getChannelByBroadcasterId(user.id)
+  const game  = chanRes.ok && chanRes.data ? chanRes.data.gameName : ''
+  const title = chanRes.ok && chanRes.data ? chanRes.data.title    : ''
+
+  const url = `https://twitch.tv/${user.login}`
+  let msg = `Allez follow @${user.displayName} : ${url}`
+  if (game)  msg += ` — actuellement sur ${game}`
+  if (title) msg += ` (${title.slice(0, 80)})`
+
+  await sendBotMessage(msg)
+  await redis.set(cooldownKey('so'), '1', 'EX', CHAT_CMD_COOLDOWN_SEC).catch(() => {})
+}
+
+// ── !highlight : place un marker VOD au moment courant (mod/streamer only) ─
+
+async function execHighlightCommand(ctx: ChatCmdContext): Promise<void> {
+  const onCd = await redis.get(cooldownKey('highlight')).catch(() => null)
+  if (onCd) {
+    console.log(`[chat-cmd] !highlight on cooldown, ignored from ${ctx.triggeredBy}`)
+    return
+  }
+
+  const description = ctx.args.join(' ').trim().slice(0, 140) || `Highlight by ${ctx.triggeredBy}`
+
+  const { createMarker } = await import('./twitchStreamControl')
+  const r = await createMarker({ description })
+  if (!r.ok) {
+    // 404 = stream offline, on l'annonce poliment côté chat
+    if (r.status === 404) {
+      await sendBotMessage(`Impossible de placer un marker : pas de stream en cours`)
+    } else if (r.status === 403) {
+      console.log(`[chat-cmd] !highlight: missing scope channel:manage:broadcast`)
+    } else {
+      console.log(`[chat-cmd] !highlight failed: ${r.status} ${r.reason}`)
+    }
+    return
+  }
+
+  // Audit log côté admin (réutilise l'action existante du Studio Live)
+  await audit({
+    action:    'vod_marker_created',
+    status:    'success',
+    userId:    null,
+    metadata:  { description, viaChat: true, triggeredBy: ctx.triggeredBy, markerId: r.data.id },
+  })
+
+  const m  = Math.floor(r.data.positionSeconds / 60)
+  const s  = Math.floor(r.data.positionSeconds % 60)
+  const ts = `${m}:${s.toString().padStart(2, '0')}`
+  await sendBotMessage(`Moment marqué dans la VOD à ${ts}`)
+  await redis.set(cooldownKey('highlight'), '1', 'EX', CHAT_CMD_COOLDOWN_SEC).catch(() => {})
+}
+
+async function execTopClipsCommand(triggeredBy: string): Promise<void> {
+  const onCd = await redis.get(cooldownKey("topclips")).catch(() => null)
+  if (onCd) {
+    console.log(`[chat-cmd] !topclips on cooldown, ignored from ${triggeredBy}`)
+    return
+  }
+
+  const { listOverlays } = await import("./overlayService")
+  const overlays = await listOverlays().catch(() => [])
+  const target = overlays.find(o => o.overlayType === "clips_player" && !o.revokedAt)
+  if (!target) {
+    console.log("[chat-cmd] !topclips ignored: no clips_player overlay configured")
+    return
+  }
+
+  const { listOwnTopClips } = await import("./twitchClips")
+  const { getClipMp4Url } = await import("./twitchClipExtraction")
+
+  // Fallback en cascade : 7d → 30d → all, pour toujours trouver quelque
+  // chose tant qu'il y a au moins un clip sur la chaine.
+  let clips = await listOwnTopClips("7d", 5)
+  let period: '7d' | '30d' | 'all' = '7d'
+  if (clips.length === 0) { clips = await listOwnTopClips("30d", 5); period = '30d' }
+  if (clips.length === 0) { clips = await listOwnTopClips("all", 5); period = 'all' }
+  if (clips.length === 0) {
+    console.log("[chat-cmd] !topclips: no clips found on the channel at all")
+    return
+  }
+  console.log(`[chat-cmd] !topclips: ${clips.length} clips found via period ${period}`)
+
+  const enriched = await Promise.all(clips.map(async c => ({
+    id:           c.id,
+    embedUrl:     c.embedUrl,
+    title:        c.title,
+    creatorName:  c.creatorName,
+    duration:     c.duration,
+    thumbnailUrl: c.thumbnailUrl,
+    viewCount:    c.viewCount,
+    mp4Url:       await getClipMp4Url(c.id),
+  })))
+
+  if (io) {
+    io.of("/overlay").to(`overlay:${target.id}`).emit("clips:play", { clips: enriched })
+    console.log(`[chat-cmd] !topclips triggered by ${triggeredBy}, ${enriched.length} clips → overlay ${target.id}`)
+  }
+
+  // Feedback chat : on poste un message côté Twitch pour que les viewers voient
+  // que la commande a bien été reçue et que les clips démarrent dans l'overlay.
+  const label = period === '7d' ? '7 jours' : period === '30d' ? '30 jours' : 'total'
+  try {
+    const { relayMessageToTwitch } = await import('./twitchChatBridge')
+    await relayMessageToTwitch({
+      provider:       'twitch',
+      authorUsername: 'Nodyx',
+      authorUserId:   null,
+      text:           `Top ${enriched.length} clip${enriched.length > 1 ? 's' : ''} en cours dans l'overlay (période : ${label})`,
+    }).catch(err => console.error('[chat-cmd] feedback chat failed', err))
+  } catch (err) {
+    console.error('[chat-cmd] feedback chat import failed', err)
+  }
+
+  await redis.set(cooldownKey("topclips"), "1", "EX", CHAT_CMD_COOLDOWN_SEC).catch(() => {})
+}
+

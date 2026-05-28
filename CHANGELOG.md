@@ -9,6 +9,98 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ---
 
+## [2.6.0] — 2026-05-28
+
+### Streamer Hub : Bot Chat (timers, commands natives et custom)
+
+Suite logique du chat bridge livré en 2.5.0. Le streamer dispose maintenant d'un véritable bot configurable côté Nodyx, qui réutilise le pipeline de relay Twitch existant.
+
+**Chat timers (messages bot récurrents)**
+- Nouvelle table `streamer_chat_timers` (migration 093) avec scheduler interne tick 60 secondes
+- Trois modes de déclenchement (migration 094) : récurrent, une fois par live (idéal phrase d'accueil après go-live), une seule fois avec auto désactivation
+- Anti-spam chat vide via compteur Redis incrémenté à chaque message inbound, reset après envoi
+- Template avec variables `{nodyx_url}`, `{streamer}`, `{uptime}` et aliases tolérants `{url}`, `{lien}`, `{link}`, `{chaine}`, `{channel}`, `{duree}`, `{duration}`
+- UI admin tab Bot Chat avec recettes pré-faites : Bienvenue, Pub Nodyx, Schedule, Réseaux, Annonce
+- Bouton aperçu rendu + bouton envoyer maintenant pour tester en direct
+
+**Chat commands**
+- Six commandes natives : `!nodyx` (lien instance), `!uptime` (durée stream live), `!commands` (liste publique), `!so @streamer` (shoutout via Helix lookup), `!highlight` (marker VOD + audit), `!topclips` (existant, refactoré)
+- Commandes custom éditables admin (migration 095) avec validation regex stricte sur le nom (`![a-z0-9_-]{1,30}`), cooldown personnalisable 5 à 3600 secondes, mod-only togglable
+- Réservation des noms hardcoded : impossible de créer une commande custom qui shadowerait `!nodyx` ou `!topclips`
+- UI admin avec presets prêts à l'emploi (`!discord`, `!schedule`, `!social`, `!lurk`, `!soutien`, `!projet`)
+- Dispatcher unifié dans `streamerHubService.handleChatCommand` : hardcoded d'abord, fallback DB ensuite, même pipeline cooldown Redis
+
+### Streamer Hub : Nodyx Deck (Stream Deck tactile)
+
+Nouvelle face du hub : un panneau de boutons mobile-first qui remplace un device Stream Deck physique. Une URL token-auth, une grille configurable, plein écran sans chrome.
+
+**Backend**
+- Migration 096 : table `streamer_decks` avec layout en JSONB (rows, cols, buttons) pour évoluer sans migration
+- Quatre types d'actions V1 : `top_clips` (overlay cible + période + count), `vod_marker` (description optionnelle), `chat_message` (texte libre via relay), `trigger_command` (déclenche une command custom par nom)
+- Sanitization stricte côté serveur : un layout malformé est silencieusement nettoyé, jamais rejeté
+- Token unguessable 43 chars base64url, révocable, `last_seen_at` trackée
+
+**Page mobile `/deck/[token]`**
+- Plein écran sans aucun chrome Nodyx (bypass layout cascade comme les overlays OBS)
+- Grille adaptative landscape/portrait, boutons avec gradient animé, effet pressed scale + ring glow
+- Haptic feedback via Vibration API (20 ms au tap, 30/40/30 ms en confirmation OK)
+- Toast slide-in fade-out 2.8 s pour chaque action
+- Screen Wake Lock API : l'écran reste allumé tant que le deck est ouvert, re-demande automatique au foreground après mise en arrière-plan
+- Indicateur cliquable pour toggle le wake lock
+
+**Éditeur admin WYSIWYG**
+- Mockup mobile en preview live à droite du panneau d'édition
+- Bibliothèque emoji 36 entrées + champ libre, palette 8 gradients pré-fabs (Cyber, Néon, Inferno, Forest, Minimal, Sunset, Ocean, Amber), gradient custom au format `hex/hex`
+- Trois packs de presets de deck : Démarrage, Modération, Engagement
+- Boutons redimensionnables (1 à 4 cellules) et déplaçables dans la grille
+- Modal de partage : QR code 280px, Web Share API native, envoi par mail, copie URL
+
+### Streamer Hub : Sound Library (presets WebAudio)
+
+Nouvelle bibliothèque de sons d'alerte synthétisés en pur WebAudio.
+
+- Nouveau module `lib/sounds/presetSounds.ts` avec six presets : Carillon, Ding, Pop, Cloche, Retro 8-bit, Fanfare, plus une option "Aucun" silencieuse
+- Aucun fichier audio bundlé, aucune charge réseau, latence inférieure à 5 ms
+- Helper unifié `playAlertSound(soundUrl, volume)` qui accepte soit une URL classique (médiathèque, externe), soit un préfixe `nodyx:<preset>`
+- Intégration overlay alert_box : rangée de chips presets par event, preview au clic, fonctionne avec ou sans URL personnalisée en parallèle
+- AudioContext singleton avec resume automatique au premier user gesture (Safari, Chrome autoplay policy)
+
+### Streamer Hub : Notifications sonores admin
+
+Le streamer qui coupe son retour audio OBS (pour éviter l'écho micro) ne ratait plus ses follow / sub / cheer / raid : un son joue maintenant côté Nodyx.
+
+- Nouvelle sous-section "Notifications Streamer (Twitch)" dans `/settings` Sons, visible uniquement pour owners et admins
+- Toggle master + slider volume + par event un sélecteur de preset, un bouton tester et un toggle individuel
+- Persisté en localStorage par device : un streamer peut configurer différemment son ordi et son tel
+- Listener global `StreamerNotifListener` monté dans le layout racine qui joint la room `admin:streamer-hub` via Socket.IO et joue le son configuré sur réception d'un `streamer:event` matching
+- Défauts intelligents : pop pour follow, fanfare pour sub et sub gift, ding pour cheer, cloche pour raid
+
+### UX : composant Tooltip et propagation des presets
+
+Premier pas vers une expérience néophyte friendly.
+
+- Nouveau composant `lib/components/ui/Tooltip.svelte` réutilisable, pure CSS, accessible (focus, aria-label), 3 positions, 3 variantes (info, tip, warn)
+- Tooltips sur tous les champs techniques du tab Bot Chat : modes de déclenchement, intervalle, min messages chat, live only, cooldown, mod-only, variables disponibles
+- Bandeaux "Recettes prêtes à l'emploi" sur Timers et Commandes custom : un clic pour pré-remplir un timer ou une commande avec des défauts intelligents, ajustables avant enregistrement
+
+### Backend
+
+- Audit log enrichi de 11 nouveaux event types : `chat_timer_created/updated/deleted/send_now`, `chat_command_created/updated/deleted`, `deck_created/updated/revoked/action_executed`
+- Service `twitchStreamControl` exporté avec deux nouveaux helpers Helix : `getUserByLogin(login)` et `getChannelByBroadcasterId(broadcasterId)` réutilisés par la command `!so`
+- `streamerHubService.getHardcodedCommandNames()` exporté pour permettre au service custom commands de refuser les noms réservés
+
+### Installer (déjà mergé sur main)
+
+- `install.sh` ligne 2317 : heap cap Node scalé selon la RAM totale (commit 6c06839)
+  - moins de 1.5 GB : 768 MB
+  - 1.5 à 3 GB : 1536 MB
+  - 3 à 8 GB : 2048 MB
+  - 8 GB et plus : 4096 MB
+- Corrige les OOM lors du build SvelteKit constatés sur hosts récents : le cap 1024 MB précédent crashait à environ 1015 MB sur les builds Vite 4500+ modules
+- Même logique appliquée au bloc rebuild du chemin update via `free -m`
+
+---
+
 ## [2.5.0] — 2026-05-10
 
 ### Streamer Hub — Phase 2 : chat unifié Twitch ↔ Nodyx (spec 015)

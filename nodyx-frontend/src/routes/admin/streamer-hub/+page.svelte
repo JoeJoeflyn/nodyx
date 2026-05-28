@@ -11,6 +11,9 @@
 	import RewardsManager     from '$lib/components/admin/RewardsManager.svelte'
 	import LinkedViewersPanel from '$lib/components/admin/LinkedViewersPanel.svelte'
 	import ClipsPanel         from '$lib/components/admin/ClipsPanel.svelte'
+	import ChatTimersPanel    from '$lib/components/admin/ChatTimersPanel.svelte'
+	import ChatCommandsPanel  from '$lib/components/admin/ChatCommandsPanel.svelte'
+	import DeckPanel          from '$lib/components/admin/DeckPanel.svelte'
 	import OverlayManager     from '$lib/components/admin/OverlayManager.svelte'
 	import type { PageData } from './$types'
 
@@ -149,13 +152,15 @@
 	// récompenses / overlays / audience / config. Synchronisation #hash dans
 	// l'URL pour deep-link (ex: /admin/streamer-hub#tab=studio). Si pas
 	// connecté, on force "config" pour que l'utilisateur voie le bouton Connect.
-	type TabId = 'overview' | 'studio' | 'rewards' | 'overlays' | 'audience' | 'config'
+	type TabId = 'overview' | 'studio' | 'rewards' | 'overlays' | 'bot' | 'deck' | 'audience' | 'config'
 
 	const TABS: Array<{ id: TabId; label: string; iconPath: string; soon?: boolean }> = [
 		{ id: 'overview', label: 'Vue d\'ensemble', iconPath: 'M3 7a4 4 0 014-4h10a4 4 0 014 4v10a4 4 0 01-4 4H7a4 4 0 01-4-4V7z M9 9h6v6H9z' },
 		{ id: 'studio',   label: 'Studio Live',     iconPath: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
 		{ id: 'rewards',  label: 'Récompenses',     iconPath: 'M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zM5 21h14a2 2 0 002-2v-9a2 2 0 00-2-2H5a2 2 0 00-2 2v9a2 2 0 002 2z' },
 		{ id: 'overlays', label: 'Overlays OBS',    iconPath: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' },
+		{ id: 'bot',      label: 'Bot Chat',         iconPath: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },
+		{ id: 'deck',     label: 'Stream Deck',      iconPath: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
 		{ id: 'audience', label: 'Audience',        iconPath: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
 		{ id: 'config',   label: 'Configuration',   iconPath: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
 	]
@@ -634,6 +639,19 @@
 	<!-- ══ Tab: Overlays OBS ═══════════════════════════════════════════════ -->
 	{#if isConnected && activeTab === 'overlays'}
 		<OverlayManager token={pageToken} />
+	{/if}
+
+	<!-- ══ Tab: Bot Chat (chat timers + commandes custom) ════════════════ -->
+	{#if isConnected && activeTab === 'bot'}
+		<div class="space-y-6">
+			<ChatTimersPanel   token={pageToken} />
+			<ChatCommandsPanel token={pageToken} />
+		</div>
+	{/if}
+
+	<!-- ══ Tab: Stream Deck ═══════════════════════════════════════════════ -->
+	{#if isConnected && activeTab === 'deck'}
+		<DeckPanel token={pageToken} />
 	{/if}
 
 	<!-- ══ Tab: Audience (Linked Viewers) ════════════════════════════════ -->
