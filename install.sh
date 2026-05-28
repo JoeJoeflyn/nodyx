@@ -950,7 +950,13 @@ _nodyx_upgrade() {
 
   info "$(t frontend_rebuild)"
   cd "${dir}/nodyx-frontend"
-  export NODE_OPTIONS="--max-old-space-size=1024"
+  # Heap cap scaled to total RAM (see fresh-install path for the rationale)
+  _RB_RAM_MB=$(free -m 2>/dev/null | awk '/^Mem/{print $2}' || echo 4096)
+  if   [[ "$_RB_RAM_MB" -lt 1500 ]]; then export NODE_OPTIONS="--max-old-space-size=768"
+  elif [[ "$_RB_RAM_MB" -lt 3000 ]]; then export NODE_OPTIONS="--max-old-space-size=1536"
+  elif [[ "$_RB_RAM_MB" -lt 8000 ]]; then export NODE_OPTIONS="--max-old-space-size=2048"
+  else                                    export NODE_OPTIONS="--max-old-space-size=4096"
+  fi
   npm install --no-fund --no-audit --silent || die "$(t npm_install_frontend_fail)"
   npm run build || die "$(t frontend_build_fail)"
   unset NODE_OPTIONS
@@ -2314,13 +2320,25 @@ if [[ "$(uname -m)" == "aarch64" ]]; then
   fi
 fi
 
-# On low RAM (RPi 1 GB), cap Node heap to avoid OOM during build
+# Node heap cap adapté à la RAM totale. SvelteKit 5 + Vite (4500+ modules)
+# dépasse facilement 1 Go de heap : il faut au moins 1.5 Go pour finir le
+# build sans OOM. On scale linéairement selon ce que la machine a.
+#  < 1.5 GB  → 768 MB  (RPi 1 GB, build lent mais possible avec swap)
+#  1.5–3 GB  → 1536 MB (RPi 4 2-4 GB / micro-VPS)
+#  3–8 GB    → 2048 MB (VPS standard 4 GB)
+#  ≥ 8 GB    → 4096 MB (machines modernes, build rapide sans contention)
 if [[ "$_RAM_TOTAL_MB" -lt 1500 ]]; then
-  export NODE_OPTIONS="--max-old-space-size=512"
+  export NODE_OPTIONS="--max-old-space-size=768"
   info "$(printf "$(t front_low_ram_node_cap)" "${_RAM_TOTAL_MB}")"
   _RPI_LABEL="$(t front_build_label_rpi)"
+elif [[ "$_RAM_TOTAL_MB" -lt 3000 ]]; then
+  export NODE_OPTIONS="--max-old-space-size=1536"
+  _RPI_LABEL=""
+elif [[ "$_RAM_TOTAL_MB" -lt 8000 ]]; then
+  export NODE_OPTIONS="--max-old-space-size=2048"
+  _RPI_LABEL=""
 else
-  export NODE_OPTIONS="--max-old-space-size=1024"
+  export NODE_OPTIONS="--max-old-space-size=4096"
   _RPI_LABEL=""
 fi
 run_bg "$(printf "$(t front_build_label)" "${_RPI_LABEL}")" \
