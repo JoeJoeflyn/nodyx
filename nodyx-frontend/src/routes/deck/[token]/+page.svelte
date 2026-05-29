@@ -240,12 +240,16 @@
 			const r = parseFloat(localStorage.getItem(lsKey('ratio')) ?? '')
 			if (!Number.isNaN(r)) splitRatio = Math.min(0.8, Math.max(0.2, r))
 		} catch { /* ignore */ }
-		// Suit l'orientation pour basculer l'axe du split.
-		const mq = window.matchMedia('(orientation: landscape)')
-		isLandscape = mq.matches
-		const onOrient = () => { isLandscape = mq.matches }
-		mq.addEventListener('change', onOrient)
-		return () => mq.removeEventListener('change', onOrient)
+		// Suit l'orientation pour basculer l'axe du split. resize + orientationchange
+		// couvrent la rotation mobile ET le redimensionnement desktop.
+		const computeOrient = () => { isLandscape = window.innerWidth > window.innerHeight }
+		computeOrient()
+		window.addEventListener('resize', computeOrient)
+		window.addEventListener('orientationchange', computeOrient)
+		return () => {
+			window.removeEventListener('resize', computeOrient)
+			window.removeEventListener('orientationchange', computeOrient)
+		}
 	})
 
 	onDestroy(() => {
@@ -343,8 +347,11 @@
 					</div>
 				</div>
 			{:else}
-				<div class="h-full p-3 grid gap-2"
-					style="grid-template-columns: repeat({d.layout.cols}, minmax(0, 1fr)); grid-template-rows: repeat({d.layout.rows}, minmax(0, 1fr));">
+				<!-- On ne dessine que les rangées réellement occupées : évite un grand
+				     vide sous les boutons quand le deck a des rangées vides (surtout en mode mixte). -->
+				{@const usedRows = Math.max(1, ...d.layout.buttons.map(b => b.y + b.h))}
+				<div class="h-full p-3 grid gap-2 content-start"
+					style="grid-template-columns: repeat({d.layout.cols}, minmax(0, 1fr)); grid-template-rows: repeat({usedRows}, minmax(0, 1fr));">
 					{#each d.layout.buttons as b (b.id)}
 						{@const g = gradientStyle(b.gradient)}
 						<button type="button" onclick={() => press(b)} disabled={pressing !== null}
