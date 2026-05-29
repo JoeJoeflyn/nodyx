@@ -359,17 +359,19 @@
 									<textarea bind:value={cfgValues[f.key]} rows="2" placeholder={f.placeholder ?? ''}
 										class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></textarea>
 								{:else if f.type === 'secret'}
-									<div class="flex gap-2">
+									<div class="flex gap-2 items-center">
 										<input
 											type={secretShown[f.key] ? 'text' : 'password'}
 											bind:value={cfgValues[f.key]}
 											oninput={() => markSecretTouched(f.key)}
 											autocomplete="off"
-											placeholder={f.isSet ? '•••••••• (défini, laisser vide = inchangé)' : 'non défini'}
+											placeholder={f.isSet ? 'Saisir une nouvelle valeur pour remplacer' : 'non défini'}
 											class="flex-1 rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+										<!-- L'œil révèle uniquement ce que vous tapez (un secret stocké n'est jamais renvoyé). -->
 										<button type="button" onclick={() => secretShown[f.key] = !secretShown[f.key]}
-											aria-label={secretShown[f.key] ? 'Masquer' : 'Afficher'} title={secretShown[f.key] ? 'Masquer' : 'Afficher'}
-											class="px-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-white transition-colors">
+											disabled={!cfgValues[f.key]}
+											aria-label={secretShown[f.key] ? 'Masquer' : 'Afficher'} title={cfgValues[f.key] ? (secretShown[f.key] ? 'Masquer la saisie' : 'Afficher la saisie') : 'Rien à afficher'}
+											class="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
 											{#if secretShown[f.key]}
 												<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
 											{:else}
@@ -377,12 +379,16 @@
 											{/if}
 										</button>
 										{#if f.isSet}
+											<span class="text-[11px] px-2 py-1 rounded bg-green-900/30 border border-green-800/50 text-green-400 shrink-0">défini</span>
 											<button type="button" onclick={() => clearSecret(f.key)} title="Retirer ce secret"
-												class="px-3 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 transition-colors shrink-0">
+												class="px-3 py-2 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 transition-colors shrink-0">
 												Retirer
 											</button>
 										{/if}
 									</div>
+									{#if f.isSet}
+										<p class="text-[11px] text-amber-500/80 mt-1">Une clé enregistrée n'est jamais réaffichée (sécurité). Laissez vide pour la conserver, saisissez-en une nouvelle pour la remplacer, ou Retirer pour l'effacer.</p>
+									{/if}
 								{:else}
 									<input type={f.type === 'number' ? 'number' : 'text'} bind:value={cfgValues[f.key]} placeholder={f.placeholder ?? ''}
 										class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
