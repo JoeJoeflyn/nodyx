@@ -82,12 +82,15 @@
 
 {#if variant === 'forum'}
 	<!--
-		Forum variant: displayed to the left of each post in a thread.
-		Fixed width, does not expand.
+		Forum variant: à côté de chaque post.
+		Desktop (sm+) : colonne verticale fixe w-28 à gauche du contenu.
+		Mobile : bandeau horizontal pleine largeur EN-TÊTE du post (avatar à gauche,
+		infos empilées à droite), pour ne pas écraser le contenu. Le wrapper des
+		infos passe en `sm:contents` afin que le rendu desktop reste identique.
 	-->
-	<aside class="flex flex-col items-center gap-2 w-28 shrink-0 text-center">
+	<aside class="flex w-full items-center gap-3 text-left shrink-0 sm:flex-col sm:w-28 sm:items-center sm:gap-2 sm:text-center">
 		<!-- Avatar -->
-		<a href="/users/{username}" class="block" aria-label={tFn('profile.card_aria_label', { name: displayName || username })}>
+		<a href="/users/{username}" class="block shrink-0" aria-label={tFn('profile.card_aria_label', { name: displayName || username })}>
 			{#if avatarUrl}
 				<img
 					src={avatarUrl}
@@ -103,6 +106,9 @@
 				</div>
 			{/if}
 		</a>
+
+		<!-- Groupe infos : empilé à droite de l'avatar en mobile, fondu dans la colonne en desktop -->
+		<div class="flex flex-1 flex-col gap-1 min-w-0 items-start sm:contents">
 
 		<!-- Username -->
 		<a
@@ -148,6 +154,8 @@
 		<span class="text-xs text-gray-500">
 			{tFn('profile.member_since_label')}<br />{memberSinceFormatted()}
 		</span>
+
+		</div><!-- /groupe infos -->
 	</aside>
 
 {:else if variant === 'full'}

@@ -389,7 +389,7 @@
 			</div>
 		{/if}
 
-		<article class="flex flex-wrap sm:flex-nowrap gap-4 border border-white/[.06] bg-gray-900/60 p-4 hover:border-indigo-900/50 transition-colors duration-200">
+		<article class="flex flex-col sm:flex-row gap-4 border border-white/[.06] bg-gray-900/60 p-4 hover:border-indigo-900/50 transition-colors duration-200">
 			<!-- Profil auteur -->
 			<ProfileCard
 				username={post.author_username}
