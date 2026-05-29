@@ -1,0 +1,104 @@
+// ─── Registry des settings éditables depuis l'admin (spec 017) ────────────────
+// Source unique de vérité : décrit chaque variable configurable. Pilote à la
+// fois la validation backend (settings.ts) ET le rendu du formulaire frontend
+// (renvoyé par GET /api/v1/admin/settings).
+//
+// Tier :
+//   1 = vital/bootstrap (reste dans .env, édition Phase 3 avec redémarrage)
+//   2 = redémarrage requis (lu au module-init)
+//   3 = hot-applicable (relu à chaque appel → effet immédiat via process.env)
+//
+// Phase 1 ne déclare que des réglages tier 3 non-secrets : identité de
+// l'instance + indexing. Zéro secret, zéro redémarrage, zéro risque de brick.
+
+export type SettingGroup = 'identity' | 'federation' | 'email' | 'integrations' | 'security' | 'advanced'
+export type SettingType  = 'string' | 'multiline' | 'number' | 'boolean' | 'enum' | 'secret'
+export type SettingTier  = 1 | 2 | 3
+
+export interface SettingDescriptor {
+  key:          string
+  group:        SettingGroup
+  type:         SettingType
+  tier:         SettingTier
+  secret:       boolean
+  labelFr:      string
+  labelEn:      string
+  helpFr?:      string
+  helpEn?:      string
+  enumValues?:  string[]
+  placeholder?: string
+  // Retourne un message d'erreur (FR) si invalide, sinon null. Reçoit la valeur
+  // brute (string) telle que saisie. Une valeur vide est gérée par `optional`.
+  optional?:    boolean
+  validate?:    (raw: string) => string | null
+}
+
+function maxLen(n: number) {
+  return (raw: string): string | null =>
+    raw.length > n ? `Trop long (max ${n} caractères)` : null
+}
+
+const ISO_LANGS = ['fr', 'en', 'de', 'es', 'it', 'pt', 'nl']
+
+export const SETTINGS_REGISTRY: SettingDescriptor[] = [
+  // ── Identité de la communauté ──────────────────────────────────────────────
+  {
+    key: 'NODYX_COMMUNITY_NAME', group: 'identity', type: 'string', tier: 3, secret: false,
+    labelFr: "Nom de l'instance", labelEn: 'Instance name',
+    helpFr: 'Affiché dans le titre, les balises meta, les emails.',
+    helpEn: 'Shown in the title, meta tags, emails.',
+    validate: (v) => v.trim().length === 0 ? 'Le nom ne peut pas être vide' : maxLen(100)(v),
+  },
+  {
+    key: 'NODYX_COMMUNITY_DESCRIPTION', group: 'identity', type: 'multiline', tier: 3, secret: false,
+    labelFr: 'Description courte', labelEn: 'Short description',
+    helpFr: 'Utilisée pour le SEO, la page d’accueil, le RSS.',
+    helpEn: 'Used for SEO, the homepage, the RSS feed.',
+    optional: true, validate: maxLen(500),
+  },
+  {
+    key: 'NODYX_COMMUNITY_LANGUAGE', group: 'identity', type: 'enum', tier: 3, secret: false,
+    enumValues: ISO_LANGS,
+    labelFr: 'Langue principale', labelEn: 'Primary language',
+    helpFr: 'Recherche full-text PostgreSQL + attribut HTML lang.',
+    helpEn: 'PostgreSQL full-text search + HTML lang attribute.',
+    validate: (v) => ISO_LANGS.includes(v) ? null : `Langue non supportée (${ISO_LANGS.join(', ')})`,
+  },
+  {
+    key: 'NODYX_COMMUNITY_COUNTRY', group: 'identity', type: 'string', tier: 3, secret: false,
+    placeholder: 'FR',
+    labelFr: 'Pays', labelEn: 'Country',
+    helpFr: 'Code ISO 3166-1 alpha-2 (ex : FR), pour les balises meta geo.',
+    helpEn: 'ISO 3166-1 alpha-2 code (e.g. FR), for geo meta tags.',
+    optional: true,
+    validate: (v) => /^[A-Za-z]{2}$/.test(v) ? null : 'Doit être un code pays à 2 lettres (ex : FR)',
+  },
+  {
+    key: 'NODYX_MAX_MEMBERS', group: 'identity', type: 'number', tier: 3, secret: false,
+    placeholder: 'illimité',
+    labelFr: 'Limite de membres', labelEn: 'Member limit',
+    helpFr: 'Vide = illimité. Les comptes bannis ne sont pas comptés.',
+    helpEn: 'Empty = unlimited. Banned accounts are not counted.',
+    optional: true,
+    validate: (v) => /^\d+$/.test(v) && Number(v) > 0 ? null : 'Doit être un entier positif (ou vide)',
+  },
+
+  // ── Fédération ───────────────────────────────────────────────────────────────
+  {
+    key: 'NODYX_GLOBAL_INDEXING', group: 'federation', type: 'boolean', tier: 3, secret: false,
+    labelFr: 'Indexation globale (nodyx.org/discover)', labelEn: 'Global indexing (nodyx.org/discover)',
+    helpFr: 'Opt-in : annonce vos sujets publics dans la recherche cross-instances.',
+    helpEn: 'Opt-in: announces your public topics in cross-instance search.',
+    validate: (v) => v === 'true' || v === 'false' ? null : 'Doit être true ou false',
+  },
+]
+
+const BY_KEY = new Map(SETTINGS_REGISTRY.map(d => [d.key, d]))
+
+export function getDescriptor(key: string): SettingDescriptor | undefined {
+  return BY_KEY.get(key)
+}
+
+export function isEditableKey(key: string): boolean {
+  return BY_KEY.has(key)
+}

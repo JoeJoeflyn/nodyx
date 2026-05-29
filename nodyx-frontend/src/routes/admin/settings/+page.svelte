@@ -17,6 +17,29 @@
 	let smtpTesting     = $state(false)
 	let smtpTestResult  = $state<{ ok: boolean; message: string } | null>(null)
 
+	// ── Config éditable (spec 017 — settings DB, plus besoin de SSH) ───────────
+	type CfgField = {
+		key: string; group: string; type: string; tier: number; secret: boolean
+		labelFr: string; helpFr?: string; enumValues?: string[]; placeholder?: string
+		value?: string; isSet?: boolean
+	}
+	let cfg        = $state<CfgField[] | null>(null)
+	let cfgValues  = $state<Record<string, string>>({})
+	let cfgErrors  = $state<Record<string, string>>({})
+	let cfgSaving  = $state(false)
+	let cfgSaved   = $state(false)
+	let cfgRestart = $state(false)
+
+	const cfgByGroup = $derived(
+		(cfg ?? []).reduce<Record<string, CfgField[]>>((acc, f) => {
+			(acc[f.group] ??= []).push(f); return acc
+		}, {})
+	)
+	const GROUP_LABELS: Record<string, string> = {
+		identity:   "Identité de l'instance",
+		federation: 'Fédération',
+	}
+
 	onMount(async () => {
 		const token = ($page.data as any).token as string | null
 		if (!token) return
@@ -26,7 +49,49 @@
 			})
 			if (res.ok) smtp = await res.json()
 		} catch {}
+		try {
+			const res = await fetch('/api/v1/admin/settings', {
+				headers: { Authorization: `Bearer ${token}` }
+			})
+			if (res.ok) {
+				const json = await res.json()
+				cfg = json.settings as CfgField[]
+				const init: Record<string, string> = {}
+				for (const f of cfg) if (!f.secret) init[f.key] = f.value ?? ''
+				cfgValues = init
+			}
+		} catch {}
 	})
+
+	async function saveConfig() {
+		const token = ($page.data as any).token as string | null
+		if (!token || !cfg) return
+		cfgSaving = true
+		cfgSaved = false
+		cfgErrors = {}
+		// On n'envoie que les non-secrets éditables.
+		const updates: Record<string, string> = {}
+		for (const f of cfg) if (!f.secret) updates[f.key] = cfgValues[f.key] ?? ''
+		try {
+			const res = await fetch('/api/v1/admin/settings', {
+				method: 'PUT',
+				headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+				body: JSON.stringify({ updates }),
+			})
+			const json = await res.json()
+			if (res.ok) {
+				cfgSaved = true
+				cfgRestart = !!json.restartRequired
+				setTimeout(() => { cfgSaved = false }, 3000)
+			} else {
+				cfgErrors = json.errors ?? {}
+			}
+		} catch {
+			cfgErrors = { _global: 'Impossible de contacter le serveur' }
+		} finally {
+			cfgSaving = false
+		}
+	}
 
 	async function sendSmtpTest() {
 		const token = ($page.data as any).token as string | null
@@ -212,36 +277,77 @@
 		</form>
 	</div>
 
-	<!-- ── Identity ─────────────────────────────────────────────────────────── -->
-	<div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6 mb-5">
-		<h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-5">Identité de la communauté</h2>
-		<div class="space-y-4">
-			{#each [
-				{ key: 'NODYX_COMMUNITY_NAME',        label: 'Nom',        value: i.name,        desc: 'Affiché dans la navbar et la Galaxy Bar' },
-				{ key: 'NODYX_COMMUNITY_DESCRIPTION', label: 'Description', value: i.description, desc: 'Sous-titre de la homepage et méta SEO' },
-				{ key: 'NODYX_COMMUNITY_SLUG',        label: 'Slug',       value: i.slug,        desc: 'Identifiant URL, correspond à la communauté en base' },
-				{ key: 'NODYX_COMMUNITY_LANGUAGE',    label: 'Langue',     value: i.language,    desc: 'Code ISO 639-1 (ex: fr, en, de)' },
-				{ key: 'NODYX_COMMUNITY_COUNTRY',     label: 'Pays',       value: i.country,     desc: 'Code ISO 3166-1 alpha-2 (ex: FR, US, DE)' },
-			] as field}
-				<div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
-					<div class="sm:w-44 sm:shrink-0">
-						<p class="text-sm font-medium text-gray-300">{field.label}</p>
-						<p class="text-xs text-gray-600 font-mono mt-0.5">{field.key}</p>
-					</div>
-					<div class="flex-1">
-						<div class="rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200 font-mono">
-							{#if field.value}
-								{field.value}
-							{:else}
-								<span class="text-gray-600 font-sans italic">non défini</span>
-							{/if}
+	<!-- ── Config éditable (identité + fédération) ──────────────────────────── -->
+	{#if cfg === null}
+		<div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6 mb-5 text-sm text-gray-600">Chargement de la configuration…</div>
+	{:else}
+		<div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6 mb-5">
+			{#each Object.entries(cfgByGroup) as [group, fields]}
+				<h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-1 {group !== 'identity' ? 'mt-8' : ''}">{GROUP_LABELS[group] ?? group}</h2>
+				<p class="text-xs text-gray-600 mb-5">Modifiable directement ici, plus besoin d'éditer le .env en SSH.</p>
+				<div class="space-y-4">
+					{#each fields as f (f.key)}
+						<div class="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
+							<div class="sm:w-48 sm:shrink-0 sm:pt-2">
+								<p class="text-sm font-medium text-gray-300">{f.labelFr}</p>
+								<p class="text-xs text-gray-600 font-mono mt-0.5">{f.key}</p>
+							</div>
+							<div class="flex-1">
+								{#if f.type === 'boolean'}
+									<label class="inline-flex items-center gap-2 cursor-pointer select-none">
+										<input type="checkbox"
+											checked={cfgValues[f.key] === 'true'}
+											onchange={(e) => cfgValues[f.key] = (e.target as HTMLInputElement).checked ? 'true' : 'false'}
+											class="w-4 h-4 rounded accent-indigo-600" />
+										<span class="text-sm text-gray-300">{cfgValues[f.key] === 'true' ? 'Activé' : 'Désactivé'}</span>
+									</label>
+								{:else if f.type === 'enum'}
+									<select bind:value={cfgValues[f.key]}
+										class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+										{#each f.enumValues ?? [] as opt}<option value={opt}>{opt}</option>{/each}
+									</select>
+								{:else if f.type === 'multiline'}
+									<textarea bind:value={cfgValues[f.key]} rows="2" placeholder={f.placeholder ?? ''}
+										class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></textarea>
+								{:else}
+									<input type={f.type === 'number' ? 'number' : 'text'} bind:value={cfgValues[f.key]} placeholder={f.placeholder ?? ''}
+										class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+								{/if}
+								{#if f.helpFr}<p class="text-xs text-gray-600 mt-1">{f.helpFr}</p>{/if}
+								{#if cfgErrors[f.key]}<p class="text-xs text-red-400 mt-1">{cfgErrors[f.key]}</p>{/if}
+							</div>
 						</div>
-						<p class="text-xs text-gray-600 mt-1">{field.desc}</p>
-					</div>
+					{/each}
 				</div>
 			{/each}
+
+			<!-- Slug : géré en .env pour l'instant (lié à la résolution de la communauté en base) -->
+			<div class="mt-6 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+				<div class="sm:w-48 sm:shrink-0">
+					<p class="text-sm font-medium text-gray-500">Slug</p>
+					<p class="text-xs text-gray-600 font-mono mt-0.5">NODYX_COMMUNITY_SLUG</p>
+				</div>
+				<div class="flex-1">
+					<div class="rounded-lg bg-gray-800/60 border border-gray-700 px-3 py-2 text-sm text-gray-400 font-mono">{i.slug || '—'}</div>
+					<p class="text-xs text-gray-600 mt-1">Identifiant URL lié à la communauté en base. Reste géré dans le .env pour éviter toute désynchronisation.</p>
+				</div>
+			</div>
+
+			{#if cfgErrors._global}
+				<p class="mt-5 text-sm text-red-400 bg-red-900/30 border border-red-800/50 rounded-lg px-4 py-2">{cfgErrors._global}</p>
+			{/if}
+			{#if cfgSaved}
+				<p class="mt-5 text-sm text-green-400 bg-green-900/30 border border-green-800/50 rounded-lg px-4 py-2">
+					Configuration enregistrée ✓ {cfgRestart ? '— un redémarrage est requis pour certains réglages.' : '— appliqué immédiatement.'}
+				</p>
+			{/if}
+
+			<button type="button" onclick={saveConfig} disabled={cfgSaving}
+				class="mt-6 px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-semibold text-white transition-colors">
+				{cfgSaving ? 'Enregistrement…' : 'Enregistrer la configuration'}
+			</button>
 		</div>
-	</div>
+	{/if}
 
 	<!-- ── Live stats ───────────────────────────────────────────────────────── -->
 	<div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6 mb-5">
@@ -345,16 +451,13 @@
 		{/if}
 	</div>
 
-	<!-- ── How to edit ──────────────────────────────────────────────────────── -->
+	<!-- ── Reste de la config ───────────────────────────────────────────────── -->
 	<div class="rounded-xl border border-indigo-900/40 bg-indigo-950/20 p-5">
-		<h3 class="text-sm font-semibold text-indigo-300 mb-2">Modifier la configuration</h3>
-		<p class="text-xs text-gray-400 mb-3">
-			Éditez le fichier <code class="text-indigo-400">.env</code> à la racine du projet, puis redémarrez le serveur :
+		<h3 class="text-sm font-semibold text-indigo-300 mb-2">Le reste de la configuration</h3>
+		<p class="text-xs text-gray-400">
+			L'identité et la fédération sont désormais éditables directement ci-dessus, sans toucher au <code class="text-indigo-400">.env</code>.
+			Les intégrations avec secrets (SMTP, Twitch, push, etc.) arrivent dans l'interface dans une prochaine étape ;
+			pour l'instant elles restent dans le <code class="text-indigo-400">.env</code>. Les variables vitales (base de données, JWT) y restent volontairement.
 		</p>
-		<pre class="text-xs text-gray-300 bg-gray-900 rounded-lg p-4 overflow-x-auto border border-gray-800">NODYX_COMMUNITY_NAME=Ma Communauté
-NODYX_COMMUNITY_DESCRIPTION=Description...
-NODYX_COMMUNITY_LANGUAGE=fr
-NODYX_COMMUNITY_COUNTRY=FR
-NODYX_COMMUNITY_SLUG=ma-communaute</pre>
 	</div>
 </div>

@@ -8,6 +8,7 @@ import { getRandomFortune } from './fortunes'
 import { db, redis } from './config/database'
 import authRoutes          from './routes/auth'
 import adminRoutes         from './routes/admin'
+import settingsRoutes      from './routes/settings'
 import communityRoutes     from './routes/communities'
 import forumRoutes         from './routes/forums'
 import instanceRoutes      from './routes/instance'
@@ -42,6 +43,7 @@ import { setIO }              from './socket/io'
 import { registerSocketIO } from './socket/index'
 import { registerOverlayNamespace } from './socket/overlay'
 import { runMigrations }    from './scripts/migrate'
+import { loadSettingsIntoEnv } from './config/settings'
 import { initOctoGuard }    from './services/octoguard'
 import { octoguardAdminPlugin, reportsPublicPlugin } from './routes/octoguard'
 import { startScheduler }  from './scheduler'
@@ -141,6 +143,7 @@ server.addHook('onRequest', maintenanceGuard)
 
 server.register(authRoutes,      { prefix: '/api/v1/auth' })
 server.register(adminRoutes,     { prefix: '/api/v1/admin' })
+server.register(settingsRoutes,  { prefix: '/api/v1/admin/settings' })
 server.register(octoguardAdminPlugin, { prefix: '/api/v1/admin/octoguard' })
 server.register(reportsPublicPlugin,  { prefix: '/api/v1/reports' })
 server.register(communityRoutes, { prefix: '/api/v1/communities' })
@@ -190,6 +193,11 @@ const start = async () => {
   }
 
   await runMigrations()
+
+  // Settings admin (spec 017) : injecte les réglages DB dans process.env APRÈS
+  // les migrations (la table existe) et AVANT que quoi que ce soit les lise au
+  // boot. Table vide = no-op, le .env reste seul maître.
+  await loadSettingsIntoEnv()
 
   // OctoGuard : charge les règles auto-mod avant de servir le chat.
   // Désactivé par défaut (OCTOGUARD_ENABLED!=true), donc no-op sauf
