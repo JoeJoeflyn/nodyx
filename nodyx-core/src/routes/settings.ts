@@ -38,4 +38,31 @@ export default async function settingsRoutes(app: FastifyInstance) {
       restartRequired: result.restartRequired,
     })
   })
+
+  // POST /test/twitch — vérifie les credentials Twitch courants (client_credentials
+  // grant). Utilise les valeurs déjà appliquées dans process.env (donc reflète ce
+  // qui vient d'être sauvé). Ne renvoie jamais le secret.
+  app.post('/test/twitch', { preHandler: [rateLimit, adminOnly] }, async (_request, reply) => {
+    const clientId     = process.env.TWITCH_CLIENT_ID
+    const clientSecret = process.env.TWITCH_CLIENT_SECRET
+    if (!clientId || !clientSecret) {
+      return reply.code(400).send({ ok: false, message: 'Client ID et Client Secret requis' })
+    }
+    try {
+      const res = await fetch('https://id.twitch.tv/oauth2/token', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id:     clientId,
+          client_secret: clientSecret,
+          grant_type:    'client_credentials',
+        }),
+      })
+      if (res.ok) return reply.send({ ok: true, message: 'Identifiants Twitch valides' })
+      const body = await res.json().catch(() => ({})) as { message?: string }
+      return reply.code(400).send({ ok: false, message: body.message ?? `Twitch a refusé (HTTP ${res.status})` })
+    } catch {
+      return reply.code(502).send({ ok: false, message: 'Impossible de contacter Twitch' })
+    }
+  })
 }

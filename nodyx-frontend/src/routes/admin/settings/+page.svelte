@@ -23,12 +23,18 @@
 		labelFr: string; helpFr?: string; enumValues?: string[]; placeholder?: string
 		value?: string; isSet?: boolean
 	}
-	let cfg        = $state<CfgField[] | null>(null)
-	let cfgValues  = $state<Record<string, string>>({})
-	let cfgErrors  = $state<Record<string, string>>({})
-	let cfgSaving  = $state(false)
-	let cfgSaved   = $state(false)
-	let cfgRestart = $state(false)
+	let cfg           = $state<CfgField[] | null>(null)
+	let cfgValues     = $state<Record<string, string>>({})
+	let cfgErrors     = $state<Record<string, string>>({})
+	let cfgSaving     = $state(false)
+	let cfgSaved      = $state(false)
+	let cfgRestart    = $state(false)
+	let secretShown   = $state<Record<string, boolean>>({})   // œil : afficher la saisie en clair
+	let secretTouched = $state<Record<string, boolean>>({})   // n'envoyer que les secrets modifiés
+
+	// Test Twitch
+	let twitchTesting    = $state(false)
+	let twitchTestResult = $state<{ ok: boolean; message: string } | null>(null)
 
 	const cfgByGroup = $derived(
 		(cfg ?? []).reduce<Record<string, CfgField[]>>((acc, f) => {
@@ -36,8 +42,20 @@
 		}, {})
 	)
 	const GROUP_LABELS: Record<string, string> = {
-		identity:   "Identité de l'instance",
-		federation: 'Fédération',
+		identity:     "Identité de l'instance",
+		federation:   'Fédération',
+		email:        'Email (SMTP)',
+		integrations: 'Intégrations',
+	}
+	const GROUP_ORDER = ['identity', 'federation', 'email', 'integrations']
+	const orderedGroups = $derived(
+		GROUP_ORDER.filter(g => cfgByGroup[g]?.length).map(g => [g, cfgByGroup[g]] as const)
+	)
+
+	function markSecretTouched(key: string) { secretTouched[key] = true }
+	function clearSecret(key: string) {
+		cfgValues[key] = ''
+		secretTouched[key] = true   // envoi d'une valeur vide => retrait côté serveur
 	}
 
 	onMount(async () => {
@@ -49,6 +67,10 @@
 			})
 			if (res.ok) smtp = await res.json()
 		} catch {}
+		await loadCfg(token)
+	})
+
+	async function loadCfg(token: string) {
 		try {
 			const res = await fetch('/api/v1/admin/settings', {
 				headers: { Authorization: `Bearer ${token}` }
@@ -57,11 +79,13 @@
 				const json = await res.json()
 				cfg = json.settings as CfgField[]
 				const init: Record<string, string> = {}
-				for (const f of cfg) if (!f.secret) init[f.key] = f.value ?? ''
+				// Les secrets ne sont jamais préremplis : champ vide, on affiche juste "défini".
+				for (const f of cfg) init[f.key] = f.secret ? '' : (f.value ?? '')
 				cfgValues = init
+				secretTouched = {}
 			}
 		} catch {}
-	})
+	}
 
 	async function saveConfig() {
 		const token = ($page.data as any).token as string | null
@@ -69,9 +93,15 @@
 		cfgSaving = true
 		cfgSaved = false
 		cfgErrors = {}
-		// On n'envoie que les non-secrets éditables.
 		const updates: Record<string, string> = {}
-		for (const f of cfg) if (!f.secret) updates[f.key] = cfgValues[f.key] ?? ''
+		for (const f of cfg) {
+			if (f.secret) {
+				// On n'envoie un secret QUE si l'admin l'a modifié (saisie ou retrait).
+				if (secretTouched[f.key]) updates[f.key] = cfgValues[f.key] ?? ''
+			} else {
+				updates[f.key] = cfgValues[f.key] ?? ''
+			}
+		}
 		try {
 			const res = await fetch('/api/v1/admin/settings', {
 				method: 'PUT',
@@ -82,6 +112,7 @@
 			if (res.ok) {
 				cfgSaved = true
 				cfgRestart = !!json.restartRequired
+				await loadCfg(token)   // rafraîchit l'état "défini" des secrets
 				setTimeout(() => { cfgSaved = false }, 3000)
 			} else {
 				cfgErrors = json.errors ?? {}
@@ -90,6 +121,24 @@
 			cfgErrors = { _global: 'Impossible de contacter le serveur' }
 		} finally {
 			cfgSaving = false
+		}
+	}
+
+	async function testTwitch() {
+		const token = ($page.data as any).token as string | null
+		if (!token) return
+		twitchTesting = true
+		twitchTestResult = null
+		try {
+			const res = await fetch('/api/v1/admin/settings/test/twitch', {
+				method: 'POST', headers: { Authorization: `Bearer ${token}` },
+			})
+			const json = await res.json()
+			twitchTestResult = { ok: !!json.ok, message: json.message ?? (json.ok ? 'OK' : 'Échec') }
+		} catch {
+			twitchTestResult = { ok: false, message: 'Impossible de contacter le serveur' }
+		} finally {
+			twitchTesting = false
 		}
 	}
 
@@ -282,7 +331,7 @@
 		<div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6 mb-5 text-sm text-gray-600">Chargement de la configuration…</div>
 	{:else}
 		<div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6 mb-5">
-			{#each Object.entries(cfgByGroup) as [group, fields]}
+			{#each orderedGroups as [group, fields]}
 				<h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-1 {group !== 'identity' ? 'mt-8' : ''}">{GROUP_LABELS[group] ?? group}</h2>
 				<p class="text-xs text-gray-600 mb-5">Modifiable directement ici, plus besoin d'éditer le .env en SSH.</p>
 				<div class="space-y-4">
@@ -309,6 +358,31 @@
 								{:else if f.type === 'multiline'}
 									<textarea bind:value={cfgValues[f.key]} rows="2" placeholder={f.placeholder ?? ''}
 										class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"></textarea>
+								{:else if f.type === 'secret'}
+									<div class="flex gap-2">
+										<input
+											type={secretShown[f.key] ? 'text' : 'password'}
+											bind:value={cfgValues[f.key]}
+											oninput={() => markSecretTouched(f.key)}
+											autocomplete="off"
+											placeholder={f.isSet ? '•••••••• (défini, laisser vide = inchangé)' : 'non défini'}
+											class="flex-1 rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
+										<button type="button" onclick={() => secretShown[f.key] = !secretShown[f.key]}
+											aria-label={secretShown[f.key] ? 'Masquer' : 'Afficher'} title={secretShown[f.key] ? 'Masquer' : 'Afficher'}
+											class="px-3 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-white transition-colors">
+											{#if secretShown[f.key]}
+												<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+											{:else}
+												<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+											{/if}
+										</button>
+										{#if f.isSet}
+											<button type="button" onclick={() => clearSecret(f.key)} title="Retirer ce secret"
+												class="px-3 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 transition-colors shrink-0">
+												Retirer
+											</button>
+										{/if}
+									</div>
 								{:else}
 									<input type={f.type === 'number' ? 'number' : 'text'} bind:value={cfgValues[f.key]} placeholder={f.placeholder ?? ''}
 										class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
@@ -320,6 +394,22 @@
 					{/each}
 				</div>
 			{/each}
+
+			<!-- Test de connexion Twitch (utilise les identifiants enregistrés) -->
+			{#if cfg.some(f => f.key === 'TWITCH_CLIENT_ID')}
+				<div class="mt-4 flex flex-wrap items-center gap-3">
+					<button type="button" onclick={testTwitch} disabled={twitchTesting}
+						class="px-4 py-1.5 rounded-lg bg-gray-800 border border-gray-700 hover:border-indigo-500 disabled:opacity-50 text-xs font-medium text-gray-200 transition-colors">
+						{twitchTesting ? 'Test en cours…' : 'Tester la connexion Twitch'}
+					</button>
+					<span class="text-[11px] text-gray-600">Enregistrez d'abord, puis testez.</span>
+					{#if twitchTestResult}
+						<span class="text-sm {twitchTestResult.ok ? 'text-green-400' : 'text-red-400'}">
+							{twitchTestResult.ok ? '✓' : '✕'} {twitchTestResult.message}
+						</span>
+					{/if}
+				</div>
+			{/if}
 
 			<!-- Slug : géré en .env pour l'instant (lié à la résolution de la communauté en base) -->
 			<div class="mt-6 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">

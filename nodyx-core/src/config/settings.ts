@@ -17,22 +17,43 @@ import {
   getDescriptor,
   type SettingDescriptor,
 } from './settingsRegistry'
+import { encryptSecret, decryptSecret } from './settingsCrypto'
 
 // ── Chargement au boot ───────────────────────────────────────────────────────
 
+interface SettingRow {
+  key:        string
+  value:      string | null
+  value_enc:  Buffer | null
+  salt:       Buffer | null
+  iv:         Buffer | null
+  tag:        Buffer | null
+  is_secret:  boolean
+}
+
 export async function loadSettingsIntoEnv(): Promise<void> {
   try {
-    const { rows } = await db.query<{ key: string; value: string | null; is_secret: boolean }>(
-      `SELECT key, value, is_secret FROM instance_settings`,
+    const { rows } = await db.query<SettingRow>(
+      `SELECT key, value, value_enc, salt, iv, tag, is_secret FROM instance_settings`,
     )
     let applied = 0
     for (const row of rows) {
-      // Phase 1 : uniquement les non-secrets. Les secrets (is_secret = true)
-      // seront déchiffrés ici en Phase 2 via services/streamer/crypto.ts.
-      if (row.is_secret) continue
-      if (row.value === null) continue
-      process.env[row.key] = row.value
-      applied++
+      try {
+        if (row.is_secret) {
+          // Déchiffrement à la volée (Phase 2). Une erreur sur UN secret ne doit
+          // pas faire tomber tout le boot.
+          if (!row.value_enc || !row.salt || !row.iv || !row.tag) continue
+          process.env[row.key] = decryptSecret({
+            ciphertext: row.value_enc, salt: row.salt, iv: row.iv, tag: row.tag,
+          })
+        } else {
+          if (row.value === null) continue
+          process.env[row.key] = row.value
+        }
+        applied++
+      } catch (e) {
+        console.warn(`[settings] secret "${row.key}" indéchiffrable, ignoré:`, (e as Error).message)
+      }
     }
     if (applied > 0) console.log(`[settings] ${applied} réglage(s) DB injecté(s) dans process.env`)
   } catch (err) {
@@ -105,10 +126,10 @@ export async function setSettings(
   for (const [key, rawValue] of Object.entries(updates)) {
     const d = getDescriptor(key)
     if (!d) { errors[key] = 'Clé inconnue ou non éditable'; continue }
-    if (d.secret) { errors[key] = 'Les secrets ne sont pas gérés en Phase 1'; continue }
 
     const value = normalize(d, rawValue).trim()
     if (value === '') {
+      // Vide : pour un secret = "retirer" ; pour un non-secret optionnel = clear.
       if (!d.optional) { errors[key] = 'Valeur requise'; continue }
     } else if (d.validate) {
       const err = d.validate(value)
@@ -128,22 +149,44 @@ export async function setSettings(
     const oldValue = process.env[d.key] ?? ''
     if (oldValue === value) continue   // no-op, ne pas logger du bruit
 
-    await db.query(
-      `INSERT INTO instance_settings (key, value, is_secret, updated_by, updated_at)
-       VALUES ($1, $2, FALSE, $3, NOW())
-       ON CONFLICT (key) DO UPDATE
-         SET value = EXCLUDED.value, is_secret = FALSE,
-             updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
-      [d.key, value, actorId],
-    )
+    if (d.secret) {
+      if (value === '') {
+        // Retirer le secret : suppression de la row + on stoppe l'override.
+        await db.query(`DELETE FROM instance_settings WHERE key = $1`, [d.key])
+        delete process.env[d.key]
+      } else {
+        const blob = encryptSecret(value)
+        await db.query(
+          `INSERT INTO instance_settings (key, value, value_enc, salt, iv, tag, is_secret, updated_by, updated_at)
+           VALUES ($1, NULL, $2, $3, $4, $5, TRUE, $6, NOW())
+           ON CONFLICT (key) DO UPDATE
+             SET value = NULL, value_enc = EXCLUDED.value_enc, salt = EXCLUDED.salt,
+                 iv = EXCLUDED.iv, tag = EXCLUDED.tag, is_secret = TRUE,
+                 updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+          [d.key, blob.ciphertext, blob.salt, blob.iv, blob.tag, actorId],
+        )
+        process.env[d.key] = value
+      }
+      // On ne logge JAMAIS la valeur d'un secret.
+      void auditSettingChange(actorId, d.key, '***', value === '' ? '(retiré)' : '(défini)')
+    } else {
+      await db.query(
+        `INSERT INTO instance_settings (key, value, is_secret, updated_by, updated_at)
+         VALUES ($1, $2, FALSE, $3, NOW())
+         ON CONFLICT (key) DO UPDATE
+           SET value = EXCLUDED.value, is_secret = FALSE, value_enc = NULL,
+               salt = NULL, iv = NULL, tag = NULL,
+               updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+        [d.key, value, actorId],
+      )
+      process.env[d.key] = value
+      void auditSettingChange(actorId, d.key, oldValue, value)
+    }
 
     // Overlay immédiat : tier 3 = effet à chaud. tier ≤ 2 = process.env mis à
     // jour pour cohérence, mais nécessite un redémarrage pour être lu.
-    process.env[d.key] = value
     if (d.tier <= 2) restartRequired = true
-
     applied.push(d.key)
-    void auditSettingChange(actorId, d.key, oldValue, value)
   }
 
   return { ok: true, errors: {}, applied, restartRequired }

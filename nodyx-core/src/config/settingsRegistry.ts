@@ -91,6 +91,71 @@ export const SETTINGS_REGISTRY: SettingDescriptor[] = [
     helpEn: 'Opt-in: announces your public topics in cross-instance search.',
     validate: (v) => v === 'true' || v === 'false' ? null : 'Doit être true ou false',
   },
+
+  // ── Email (SMTP) ─────────────────────────────────────────────────────────────
+  {
+    key: 'SMTP_HOST', group: 'email', type: 'string', tier: 3, secret: false,
+    placeholder: 'smtp.exemple.com', optional: true,
+    labelFr: 'Serveur SMTP', labelEn: 'SMTP server',
+    helpFr: 'Hôte du serveur d’envoi (Gmail, Mailgun, OVH, etc.).',
+    helpEn: 'Outgoing mail server host (Gmail, Mailgun, etc.).',
+    validate: maxLen(255),
+  },
+  {
+    key: 'SMTP_PORT', group: 'email', type: 'number', tier: 3, secret: false,
+    placeholder: '587', optional: true,
+    labelFr: 'Port SMTP', labelEn: 'SMTP port',
+    helpFr: '587 (STARTTLS) ou 465 (TLS implicite).',
+    helpEn: '587 (STARTTLS) or 465 (implicit TLS).',
+    validate: (v) => /^\d+$/.test(v) && Number(v) > 0 && Number(v) <= 65535 ? null : 'Port invalide',
+  },
+  {
+    key: 'SMTP_SECURE', group: 'email', type: 'boolean', tier: 3, secret: false,
+    labelFr: 'TLS implicite (port 465)', labelEn: 'Implicit TLS (port 465)',
+    helpFr: 'Activer pour le port 465. Laisser désactivé pour le 587 (STARTTLS).',
+    helpEn: 'Enable for port 465. Leave off for 587 (STARTTLS).',
+    validate: (v) => v === 'true' || v === 'false' ? null : 'Doit être true ou false',
+  },
+  {
+    key: 'SMTP_USER', group: 'email', type: 'string', tier: 3, secret: false,
+    placeholder: 'noreply@votre-domaine.com', optional: true,
+    labelFr: 'Identifiant SMTP', labelEn: 'SMTP username',
+    helpFr: 'Souvent l’adresse email du compte d’envoi.',
+    helpEn: 'Usually the sending account email address.',
+    validate: maxLen(255),
+  },
+  {
+    key: 'SMTP_PASS', group: 'email', type: 'secret', tier: 3, secret: true,
+    optional: true,
+    labelFr: 'Mot de passe SMTP', labelEn: 'SMTP password',
+    helpFr: 'Stocké chiffré. Pour Gmail, utilisez un mot de passe d’application.',
+    helpEn: 'Stored encrypted. For Gmail, use an app password.',
+  },
+  {
+    key: 'SMTP_FROM', group: 'email', type: 'string', tier: 3, secret: false,
+    placeholder: 'noreply@votre-domaine.com', optional: true,
+    labelFr: 'Adresse expéditeur', labelEn: 'From address',
+    helpFr: 'Optionnel : reprend l’identifiant SMTP si vide.',
+    helpEn: 'Optional: falls back to SMTP username if empty.',
+    validate: maxLen(255),
+  },
+
+  // ── Intégrations ─────────────────────────────────────────────────────────────
+  {
+    key: 'TWITCH_CLIENT_ID', group: 'integrations', type: 'string', tier: 3, secret: false,
+    optional: true,
+    labelFr: 'Twitch Client ID', labelEn: 'Twitch Client ID',
+    helpFr: 'Widget stream de la homepage. App créée sur dev.twitch.tv/console/apps.',
+    helpEn: 'Homepage stream widget. App from dev.twitch.tv/console/apps.',
+    validate: maxLen(128),
+  },
+  {
+    key: 'TWITCH_CLIENT_SECRET', group: 'integrations', type: 'secret', tier: 3, secret: true,
+    optional: true,
+    labelFr: 'Twitch Client Secret', labelEn: 'Twitch Client Secret',
+    helpFr: 'Stocké chiffré. Généré à côté du Client ID sur la console Twitch.',
+    helpEn: 'Stored encrypted. Generated next to the Client ID on the Twitch console.',
+  },
 ]
 
 const BY_KEY = new Map(SETTINGS_REGISTRY.map(d => [d.key, d]))
