@@ -187,9 +187,13 @@
 	// ── QR Code (scan depuis le tel) + envoi mail (tablette / 2e écran) ────
 	let showShareModal = $state(false)
 	let qrDataUrl      = $state<string | null>(null)
+	// Le QR donne accès au deck : flouté par défaut, révélé au clic, pour éviter
+	// un leak en live par inadvertance.
+	let qrRevealed     = $state(false)
 
 	async function openShareModal(): Promise<void> {
 		showShareModal = true
+		qrRevealed = false   // toujours flouté à l'ouverture
 		if (qrDataUrl) return
 		try {
 			qrDataUrl = await QRCode.toDataURL(deckUrl, {
@@ -205,6 +209,7 @@
 
 	function closeShareModal(): void {
 		showShareModal = false
+		qrRevealed = false   // re-flouté pour la prochaine ouverture
 	}
 
 	function sendByEmail(): void {
@@ -340,15 +345,38 @@
 				<!-- Tabs internes : QR / Autre -->
 				<div>
 					<div class="text-[10px] uppercase tracking-widest font-semibold text-cyan-300 mb-1.5">Méthode rapide : QR code</div>
-					<div class="rounded-xl bg-white p-3 mx-auto" style="max-width: 280px;">
+					<div class="relative rounded-xl bg-white p-3 mx-auto overflow-hidden" style="max-width: 280px;">
 						{#if qrDataUrl}
-							<img src={qrDataUrl} alt="QR code Nodyx Deck" class="w-full h-auto block"/>
+							<img src={qrDataUrl} alt="QR code Nodyx Deck"
+								class="w-full h-auto block transition-[filter] duration-200 {qrRevealed ? '' : 'blur-xl'}"/>
 						{:else}
 							<div class="aspect-square grid place-items-center text-slate-400 text-xs">Génération…</div>
 						{/if}
+
+						<!-- Overlay anti-leak : il faut cliquer pour révéler le QR -->
+						{#if qrDataUrl && !qrRevealed}
+							<button type="button" onclick={() => qrRevealed = true}
+								class="absolute inset-0 grid place-items-center bg-slate-950/50 backdrop-blur-[2px] cursor-pointer group">
+								<span class="flex flex-col items-center gap-1.5 px-4 py-3 rounded-xl bg-slate-900/90 border border-cyan-500/40 text-white group-hover:border-cyan-400 transition-colors">
+									<svg class="w-5 h-5 text-cyan-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+									<span class="text-xs font-semibold">Cliquer pour afficher le QR</span>
+									<span class="text-[10px] text-slate-400 font-normal">Évite de le montrer en live</span>
+								</span>
+							</button>
+						{/if}
 					</div>
-					<div class="text-[11px] text-slate-400 text-center mt-2 leading-snug">
-						Ouvre l'appareil photo de ton téléphone et scanne. Pour iPhone et Android, le lien s'ouvre direct dans le navigateur.
+					<div class="flex items-center justify-center gap-2 mt-2">
+						<span class="text-[11px] text-slate-400 text-center leading-snug">
+							{#if qrRevealed}
+								Ouvre l'appareil photo de ton téléphone et scanne.
+							{:else}
+								QR masqué par sécurité (accès au deck). Clique dessus pour l'afficher.
+							{/if}
+						</span>
+						{#if qrRevealed}
+							<button type="button" onclick={() => qrRevealed = false}
+								class="text-[11px] text-cyan-300 hover:text-cyan-200 shrink-0 underline">Masquer</button>
+						{/if}
 					</div>
 				</div>
 
