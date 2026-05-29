@@ -59,6 +59,12 @@
 	let wakeLockActive    = $state(false)
 	let wakeLockUserOff   = $state(false)   // user a explicitement désactivé
 
+	// Plein écran : masque la barre d'URL du navigateur. Marche sur Android/desktop
+	// (Fullscreen API). iOS ne le supporte pas pour une page : on s'appuie sur
+	// "Ajouter à l'écran d'accueil" (meta plus bas) pour un vrai mode app.
+	let fullscreenSupported = $state(false)
+	let isFullscreen        = $state(false)
+
 	// ── Affichage : modes (boutons / chat / mixte) + chat Twitch embed ─────────
 	// Mono-écran : le streamer peut garder son chat sous les yeux sur le Deck.
 	type DeckMode = 'buttons' | 'chat' | 'mixed'
@@ -191,6 +197,21 @@
 		}
 	}
 
+	// ── Plein écran ───────────────────────────────────────────────────────────
+	function onFsChange(): void {
+		if (browser) isFullscreen = !!document.fullscreenElement
+	}
+	async function toggleFullscreen(): Promise<void> {
+		if (!browser) return
+		vibrate(15)
+		try {
+			if (document.fullscreenElement) await document.exitFullscreen()
+			else await document.documentElement.requestFullscreen()
+		} catch (e) {
+			console.warn('[deck] fullscreen indisponible', e)
+		}
+	}
+
 	// ── Modes + persistance (par deck) ────────────────────────────────────────
 	function lsKey(suffix: string): string { return `deck:${token}:${suffix}` }
 
@@ -236,6 +257,8 @@
 			requestWakeLock()
 			document.addEventListener('visibilitychange', handleVisibilityChange)
 		}
+		fullscreenSupported = !!document.fullscreenEnabled
+		document.addEventListener('fullscreenchange', onFsChange)
 		// Restaure le mode + le ratio choisis sur cet appareil.
 		try {
 			const m = localStorage.getItem(lsKey('mode'))
@@ -248,7 +271,10 @@
 	})
 
 	onDestroy(() => {
-		if (browser) document.removeEventListener('visibilitychange', handleVisibilityChange)
+		if (browser) {
+			document.removeEventListener('visibilitychange', handleVisibilityChange)
+			document.removeEventListener('fullscreenchange', onFsChange)
+		}
 		releaseWakeLock()
 	})
 </script>
@@ -257,6 +283,10 @@
 	<title>{deck?.label ?? 'Nodyx Deck'}</title>
 	<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover"/>
 	<meta name="theme-color" content="#0f172a"/>
+	<!-- "Ajouter à l'écran d'accueil" lance le Deck sans barre d'URL (iOS + Android) -->
+	<meta name="mobile-web-app-capable" content="yes"/>
+	<meta name="apple-mobile-web-app-capable" content="yes"/>
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 </svelte:head>
 
 <div class="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-hidden select-none touch-manipulation">
@@ -301,6 +331,20 @@
 					class="px-2 py-0.5 rounded transition-colors {mode === 'chat' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white'}">Chat</button>
 			</div>
 			<div class="flex items-center gap-3 shrink-0">
+				{#if fullscreenSupported}
+					<button type="button" onclick={toggleFullscreen}
+						class="text-slate-500 hover:text-cyan-300 transition-colors"
+						aria-label={isFullscreen ? 'Quitter le plein écran' : 'Passer en plein écran'}
+						title={isFullscreen ? 'Quitter le plein écran' : 'Plein écran (masque la barre du navigateur)'}>
+						<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+							{#if isFullscreen}
+								<path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25"/>
+							{:else}
+								<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/>
+							{/if}
+						</svg>
+					</button>
+				{/if}
 				{#if wakeLockSupported}
 					<button type="button" onclick={toggleWakeLock}
 						class="inline-flex items-center gap-1 transition-colors {wakeLockActive ? 'text-cyan-300 hover:text-cyan-200' : 'text-slate-500 hover:text-slate-300'}"
