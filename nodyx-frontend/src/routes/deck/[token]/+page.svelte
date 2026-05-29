@@ -65,7 +65,6 @@
 	let mode          = $state<DeckMode>('buttons')
 	let splitRatio    = $state(0.55)        // part de l'espace donnée aux BOUTONS (0.2 à 0.8)
 	let twitchChannel = $state<string | null>(null)
-	let isLandscape   = $state(false)
 	let dragging      = $state(false)
 	let splitBox  = $state<HTMLElement | null>(null) // conteneur du mode mixte (pour le drag)
 
@@ -215,7 +214,11 @@
 	function onDrag(e: PointerEvent): void {
 		if (!dragging || !splitBox) return
 		const r = splitBox.getBoundingClientRect()
-		const frac = isLandscape ? (e.clientX - r.left) / r.width : (e.clientY - r.top) / r.height
+		// L'axe se déduit des dimensions réelles du conteneur (toujours justes,
+		// quelle que soit l'orientation), pas d'une détection JS fragile.
+		const frac = r.width > r.height
+			? (e.clientX - r.left) / r.width
+			: (e.clientY - r.top) / r.height
 		splitRatio = Math.min(0.8, Math.max(0.2, frac))
 	}
 	function endDrag(): void {
@@ -240,16 +243,8 @@
 			const r = parseFloat(localStorage.getItem(lsKey('ratio')) ?? '')
 			if (!Number.isNaN(r)) splitRatio = Math.min(0.8, Math.max(0.2, r))
 		} catch { /* ignore */ }
-		// Suit l'orientation pour basculer l'axe du split. resize + orientationchange
-		// couvrent la rotation mobile ET le redimensionnement desktop.
-		const computeOrient = () => { isLandscape = window.innerWidth > window.innerHeight }
-		computeOrient()
-		window.addEventListener('resize', computeOrient)
-		window.addEventListener('orientationchange', computeOrient)
-		return () => {
-			window.removeEventListener('resize', computeOrient)
-			window.removeEventListener('orientationchange', computeOrient)
-		}
+		// L'orientation du split est gérée en CSS (variantes landscape:), pas en JS :
+		// instantané et fiable sur mobile, sans souci de timing d'event.
 	})
 
 	onDestroy(() => {
@@ -398,17 +393,18 @@
 			{:else if mode === 'buttons'}
 				{@render buttonsZone(deck)}
 			{:else}
-				<!-- Mixte : split responsive (vertical en portrait, horizontal en paysage) -->
-				<div bind:this={splitBox} class="h-full flex {isLandscape ? 'flex-row' : 'flex-col'}">
+				<!-- Mixte : split géré en CSS. Portrait = vertical (boutons haut / chat bas),
+				     paysage = horizontal (boutons gauche / chat droite). -->
+				<div bind:this={splitBox} class="h-full flex flex-col landscape:flex-row">
 					<div class="min-h-0 min-w-0 overflow-hidden" style="flex: {splitRatio} 1 0%;">
 						{@render buttonsZone(deck)}
 					</div>
-					<div role="separator" aria-orientation={isLandscape ? 'vertical' : 'horizontal'}
+					<div role="separator"
 						onpointerdown={startDrag} onpointermove={onDrag} onpointerup={endDrag} onpointercancel={endDrag}
 						class="shrink-0 touch-none flex items-center justify-center transition-colors
-							{isLandscape ? 'w-2.5 cursor-col-resize' : 'h-2.5 cursor-row-resize'}
+							h-2.5 cursor-row-resize landscape:h-auto landscape:w-2.5 landscape:cursor-col-resize
 							{dragging ? 'bg-cyan-400' : 'bg-slate-700 hover:bg-cyan-500'}">
-						<span class="rounded-full bg-white/60 {isLandscape ? 'h-10 w-0.5' : 'w-10 h-0.5'}"></span>
+						<span class="rounded-full bg-white/60 w-10 h-0.5 landscape:w-0.5 landscape:h-10"></span>
 					</div>
 					<div class="min-h-0 min-w-0 overflow-hidden" style="flex: {1 - splitRatio} 1 0%;">
 						{@render chatZone()}
