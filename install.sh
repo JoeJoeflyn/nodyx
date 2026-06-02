@@ -5,23 +5,23 @@
 #
 #  ── Installation (recommandé) ───────────────────────────────────────────────
 #
-#    curl -fsSL https://raw.githubusercontent.com/Pokled/Nodyx/main/install.sh | sudo bash
+#    curl -fsSL https://raw.githubusercontent.com/Pokled/nodyx/main/install.sh | sudo bash
 #
 #  ── Mise à jour d'une instance existante ────────────────────────────────────
 #
-#    curl -fsSL https://raw.githubusercontent.com/Pokled/Nodyx/main/install.sh | sudo bash -s -- --upgrade
+#    curl -fsSL https://raw.githubusercontent.com/Pokled/nodyx/main/install.sh | sudo bash -s -- --upgrade
 #
 #  ── Installation silencieuse (CI/CD, Ansible) ───────────────────────────────
 #
-#    curl -fsSL https://raw.githubusercontent.com/Pokled/Nodyx/main/install.sh | sudo bash -s -- \
+#    curl -fsSL https://raw.githubusercontent.com/Pokled/nodyx/main/install.sh | sudo bash -s -- \
 #      --domain=ma-communaute.fr  --name="Ma Communauté"  --slug=ma-communaute \
 #      --admin-user=admin  --admin-email=admin@ma-communaute.fr \
 #      --admin-password=MonMotDePasse  --yes
 #
 #  ── Autres options ──────────────────────────────────────────────────────────
 #
-#    wget -qO- https://raw.githubusercontent.com/Pokled/Nodyx/main/install.sh | sudo bash
-#    git clone https://github.com/Pokled/Nodyx.git && cd Nodyx && sudo bash install.sh
+#    wget -qO- https://raw.githubusercontent.com/Pokled/nodyx/main/install.sh | sudo bash
+#    git clone https://github.com/Pokled/nodyx.git && cd Nodyx && sudo bash install.sh
 #    sudo bash install.sh --help       (liste tous les flags)
 #
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -32,8 +32,8 @@ set -euo pipefail
 # Si stdin n'est pas un TTY (ex: curl|bash), on se télécharge dans /tmp et on relance.
 if [[ ! -t 0 ]]; then
   _SELF=$(mktemp /tmp/nodyx_install_XXXXXX.sh)
-  curl -fsSL https://raw.githubusercontent.com/Pokled/Nodyx/main/install.sh -o "$_SELF" 2>/dev/null \
-    || wget -qO "$_SELF" https://raw.githubusercontent.com/Pokled/Nodyx/main/install.sh
+  curl -fsSL https://raw.githubusercontent.com/Pokled/nodyx/main/install.sh -o "$_SELF" 2>/dev/null \
+    || wget -qO "$_SELF" https://raw.githubusercontent.com/Pokled/nodyx/main/install.sh
   # Drain remaining stdin avant exec : sinon le curl en amont continue d'écrire
   # dans un pipe fermé après le exec et sort en code 23 (write error).
   cat >/dev/null 2>&1 || true
@@ -45,7 +45,7 @@ fi
 # _NODYX_SELFUPDATE=1 empêche la récursion.
 if [[ -z "${_NODYX_SELFUPDATE:-}" ]] && [[ -z "${_NODYX_NO_SELFUPDATE:-}" ]]; then
   _FRESH=$(mktemp /tmp/nodyx_install_XXXXXX.sh)
-  if curl -fsSL --max-time 10 https://raw.githubusercontent.com/Pokled/Nodyx/main/install.sh \
+  if curl -fsSL --max-time 10 https://raw.githubusercontent.com/Pokled/nodyx/main/install.sh \
        -o "$_FRESH" 2>/dev/null; then
     if ! diff -q "$_FRESH" "$0" &>/dev/null 2>&1; then
       chmod +x "$_FRESH"
@@ -876,7 +876,7 @@ EOF
   echo -e "${RESET}"
   echo -e "  ${CYAN}$(printf '═%.0s' {1..52})${RESET}"
   echo -e "  ${CYAN}║${RESET}  ${BOLD}Installer v2.2${RESET}  ·  $(t banner_subtitle)    ${CYAN}║${RESET}"
-  echo -e "  ${CYAN}║${RESET}  AGPL-3.0  ·  ${CYAN}github.com/Pokled/Nodyx${RESET}            ${CYAN}║${RESET}"
+  echo -e "  ${CYAN}║${RESET}  AGPL-3.0  ·  ${CYAN}github.com/Pokled/nodyx${RESET}            ${CYAN}║${RESET}"
   echo -e "  ${CYAN}$(printf '═%.0s' {1..52})${RESET}"
   echo ""
   local _os; _os=$(grep -oP 'PRETTY_NAME="\K[^"]+' /etc/os-release 2>/dev/null || echo "Linux")
@@ -983,7 +983,7 @@ _nodyx_upgrade() {
         aarch64) _RELAY_ARCH="arm64" ;;
       esac
       if [[ -n "$_RELAY_ARCH" ]]; then
-        local _RELAY_URL="https://github.com/Pokled/Nodyx/releases/download/${NODYX_RELAY_VERSION}/nodyx-relay-linux-${_RELAY_ARCH}"
+        local _RELAY_URL="https://github.com/Pokled/nodyx/releases/download/${NODYX_RELAY_VERSION}/nodyx-relay-linux-${_RELAY_ARCH}"
         local _RELAY_TMP; _RELAY_TMP=$(mktemp /tmp/nodyx-relay.XXXXXX)
         if curl -fsSL --max-time 60 "$_RELAY_URL" -o "$_RELAY_TMP" \
              && file "$_RELAY_TMP" 2>/dev/null | grep -q ELF; then
@@ -1098,12 +1098,12 @@ _resolve_version() {
     if [[ -n "$local_ver" ]]; then echo "$local_ver"; return; fi
   fi
 
-  raw_ver="$(curl -sf --max-time 5 https://raw.githubusercontent.com/Pokled/Nodyx/main/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+  raw_ver="$(curl -sf --max-time 5 https://raw.githubusercontent.com/Pokled/nodyx/main/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
   if [[ -n "$raw_ver" ]]; then echo "$raw_ver"; return; fi
 
   api_ver="$(curl -sf --max-time 5 \
     -H 'Accept: application/vnd.github+json' \
-    https://api.github.com/repos/Pokled/Nodyx/releases/latest 2>/dev/null \
+    https://api.github.com/repos/Pokled/nodyx/releases/latest 2>/dev/null \
     | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 \
     | sed -E 's/.*"v?([^"]+)".*/\1/' || true)"
   if [[ -n "$api_ver" ]]; then echo "$api_ver"; return; fi
@@ -1859,7 +1859,7 @@ DB_PASSWORD=$(gen_pass)
 JWT_SECRET=$(gen_secret)
 TURN_SECRET=$(gen_secret)
 NODYX_DIR="/opt/nodyx"
-REPO_URL="https://github.com/Pokled/Nodyx.git"
+REPO_URL="https://github.com/Pokled/nodyx.git"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  SYSTEM PACKAGES
@@ -2065,7 +2065,7 @@ if ! $RELAY_MODE && ! $SKIP_TURN; then
   # Note: assets on v0.1.2-p2p still ship under the legacy "nexus-turn" name —
   # the Rust crate was renamed to nodyx-turn but the GitHub release predates that
   # rename. The downloaded binary is identical; we just save it as nodyx-turn.
-  _TURN_URL="https://github.com/Pokled/Nodyx/releases/download/${_TURN_VERSION}/nexus-turn-linux-${_TURN_ARCH}"
+  _TURN_URL="https://github.com/Pokled/nodyx/releases/download/${_TURN_VERSION}/nexus-turn-linux-${_TURN_ARCH}"
   info "$(printf "$(t turn_downloading)" "${_TURN_VERSION}" "${_TURN_ARCH}")"
   _TURN_TMP="$(mktemp /tmp/nodyx-turn.XXXXXX)"
   if ! curl -fsSL --max-time 60 "$_TURN_URL" -o "$_TURN_TMP"; then
@@ -2162,7 +2162,7 @@ if $RELAY_MODE; then
   esac
 
   _RELAY_VERSION="${NODYX_RELAY_VERSION}"
-  _RELAY_URL="https://github.com/Pokled/Nodyx/releases/download/${_RELAY_VERSION}/nodyx-relay-linux-${_RELAY_ARCH}"
+  _RELAY_URL="https://github.com/Pokled/nodyx/releases/download/${_RELAY_VERSION}/nodyx-relay-linux-${_RELAY_ARCH}"
 
   info "$(printf "$(t relay_downloading)" "${_RELAY_VERSION}" "${_RELAY_ARCH}")"
   _RELAY_TMP="$(mktemp /tmp/nodyx-relay.XXXXXX)"

@@ -930,43 +930,55 @@ export default async function adminRoutes(app: FastifyInstance) {
   })
 
   // ── Update check ─────────────────────────────────────────────────────────
+  // Cache Redis 1h pour éviter de pinger GitHub à chaque chargement du panel
+  // admin. Query param `?force=true` permet à l'admin de forcer un refresh
+  // (bouton "Vérifier maintenant" côté UI). Avant : TTL 6h, le panel restait
+  // "en retard" 6h après chaque release, source de confusion.
 
-  app.get('/update-check', { preHandler: [rateLimit, adminOnly] }, async (_request, reply) => {
-    const CACHE_KEY = 'update_check'
-    const CURRENT = NODYX_VERSION
+  app.get<{ Querystring: { force?: string } }>(
+    '/update-check',
+    { preHandler: [rateLimit, adminOnly] },
+    async (request, reply) => {
+      const CACHE_KEY = 'update_check'
+      const CACHE_TTL = 3600  // 1h
+      const CURRENT   = NODYX_VERSION
+      const force     = request.query.force === 'true' || request.query.force === '1'
 
-    const cached = await redis.get(CACHE_KEY).catch(() => null)
-    if (cached) return reply.send(JSON.parse(cached))
-
-    try {
-      const ghRes = await fetch('https://api.github.com/repos/Pokled/Nodyx/releases/latest', {
-        headers: { 'User-Agent': 'Nodyx-Instance/1.0', Accept: 'application/vnd.github+json' },
-        signal: AbortSignal.timeout(8000),
-      })
-      if (!ghRes.ok) throw new Error(`GitHub API ${ghRes.status}`)
-
-      const ghJson = await ghRes.json() as { tag_name: string; html_url: string }
-      const latest = (ghJson.tag_name ?? '').replace(/^v/, '')
-      const parseVer = (v: string) => v.split('.').map(Number)
-      const [cMaj, cMin, cPat] = parseVer(CURRENT)
-      const [lMaj, lMin, lPat] = parseVer(latest)
-      const has_update =
-        lMaj > cMaj ||
-        (lMaj === cMaj && lMin > cMin) ||
-        (lMaj === cMaj && lMin === cMin && lPat > cPat)
-
-      const payload = {
-        current_version: CURRENT,
-        latest_version:  latest,
-        has_update,
-        release_url: ghJson.html_url,
+      if (!force) {
+        const cached = await redis.get(CACHE_KEY).catch(() => null)
+        if (cached) return reply.send(JSON.parse(cached))
       }
-      await redis.set(CACHE_KEY, JSON.stringify(payload), 'EX', 6 * 3600).catch(() => {})
-      return reply.send(payload)
-    } catch {
-      return reply.send({ current_version: CURRENT, latest_version: null, has_update: false, release_url: null })
-    }
-  })
+
+      try {
+        const ghRes = await fetch('https://api.github.com/repos/Pokled/nodyx/releases/latest', {
+          headers: { 'User-Agent': 'Nodyx-Instance/1.0', Accept: 'application/vnd.github+json' },
+          signal: AbortSignal.timeout(8000),
+        })
+        if (!ghRes.ok) throw new Error(`GitHub API ${ghRes.status}`)
+
+        const ghJson = await ghRes.json() as { tag_name: string; html_url: string }
+        const latest = (ghJson.tag_name ?? '').replace(/^v/, '')
+        const parseVer = (v: string) => v.split('.').map(Number)
+        const [cMaj, cMin, cPat] = parseVer(CURRENT)
+        const [lMaj, lMin, lPat] = parseVer(latest)
+        const has_update =
+          lMaj > cMaj ||
+          (lMaj === cMaj && lMin > cMin) ||
+          (lMaj === cMaj && lMin === cMin && lPat > cPat)
+
+        const payload = {
+          current_version: CURRENT,
+          latest_version:  latest,
+          has_update,
+          release_url:     ghJson.html_url,
+        }
+        await redis.set(CACHE_KEY, JSON.stringify(payload), 'EX', CACHE_TTL).catch(() => {})
+        return reply.send(payload)
+      } catch {
+        return reply.send({ current_version: CURRENT, latest_version: null, has_update: false, release_url: null })
+      }
+    },
+  )
 
   // ── SMTP status + test ────────────────────────────────────────────────────
 

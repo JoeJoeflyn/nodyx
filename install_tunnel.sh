@@ -8,11 +8,11 @@
 #
 #  ── Install (recommended) ──────────────────────────────────────────────────
 #
-#    curl -fsSL https://raw.githubusercontent.com/Pokled/Nodyx/main/install_tunnel.sh | sudo bash
+#    curl -fsSL https://raw.githubusercontent.com/Pokled/nodyx/main/install_tunnel.sh | sudo bash
 #
 #  ── Upgrade ────────────────────────────────────────────────────────────────
 #
-#    curl -fsSL https://raw.githubusercontent.com/Pokled/Nodyx/main/install_tunnel.sh | sudo bash -s -- --upgrade
+#    curl -fsSL https://raw.githubusercontent.com/Pokled/nodyx/main/install_tunnel.sh | sudo bash -s -- --upgrade
 #
 #  ── Help ───────────────────────────────────────────────────────────────────
 #
@@ -31,12 +31,12 @@ _resolve_version() {
     if [[ -n "$local_ver" ]]; then echo "$local_ver"; return; fi
   fi
 
-  raw_ver="$(curl -sf --max-time 5 https://raw.githubusercontent.com/Pokled/Nodyx/main/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+  raw_ver="$(curl -sf --max-time 5 https://raw.githubusercontent.com/Pokled/nodyx/main/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
   if [[ -n "$raw_ver" ]]; then echo "$raw_ver"; return; fi
 
   api_ver="$(curl -sf --max-time 5 \
     -H 'Accept: application/vnd.github+json' \
-    https://api.github.com/repos/Pokled/Nodyx/releases/latest 2>/dev/null \
+    https://api.github.com/repos/Pokled/nodyx/releases/latest 2>/dev/null \
     | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 \
     | sed -E 's/.*"v?([^"]+)".*/\1/' || true)"
   if [[ -n "$api_ver" ]]; then echo "$api_ver"; return; fi
@@ -69,8 +69,8 @@ trap _cleanup_on_exit EXIT
 # ── Auto-relaunch if stdin is piped (curl|bash) ───────────────────────────────
 if [[ ! -t 0 ]]; then
   _SELF=$(mktemp /tmp/nodyx_tunnel_XXXXXX.sh)
-  curl -fsSL https://raw.githubusercontent.com/Pokled/Nodyx/main/install_tunnel.sh -o "$_SELF" 2>/dev/null \
-    || wget -qO "$_SELF" https://raw.githubusercontent.com/Pokled/Nodyx/main/install_tunnel.sh
+  curl -fsSL https://raw.githubusercontent.com/Pokled/nodyx/main/install_tunnel.sh -o "$_SELF" 2>/dev/null \
+    || wget -qO "$_SELF" https://raw.githubusercontent.com/Pokled/nodyx/main/install_tunnel.sh
   # Drain remaining stdin so the upstream curl finishes writing into its pipe
   # before we exec — otherwise curl exits with code 23 (write to closed pipe).
   cat >/dev/null 2>&1 || true
@@ -584,7 +584,7 @@ prompt_secret() {
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 NODYX_DIR="/opt/nodyx"
-REPO_URL="https://github.com/Pokled/Nodyx.git"
+REPO_URL="https://github.com/Pokled/nodyx.git"
 DB_NAME="nodyx"
 DB_USER="nodyx_user"
 
