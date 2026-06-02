@@ -9,7 +9,7 @@
 **The self-hosted community platform you actually own.**  
 Forum + Chat + Voice + P2P + Canvas + Homepage Builder + Widget SDK, one server, one community, forever.
 
-[![Version](https://img.shields.io/badge/version-v2.4.0-7c3aed)](CHANGELOG.md)
+[![Version](https://img.shields.io/github/v/release/Pokled/nodyx?label=version&color=7c3aed)](https://github.com/Pokled/nodyx/releases/latest)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![CI](https://github.com/Pokled/Nodyx/actions/workflows/ci.yml/badge.svg)](https://github.com/Pokled/Nodyx/actions/workflows/ci.yml)
 [![Stack](https://img.shields.io/badge/stack-Fastify%20%2B%20SvelteKit%20%2B%20PostgreSQL%20%2B%20Rust-green)](docs/en/ARCHITECTURE.md)
