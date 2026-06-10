@@ -78,6 +78,13 @@ select option {
 }
 
 /* ── Titres ───────────────────────────────────────────────────────────────── */
+/* Ancres de sommaire (#id) : décale le point d'arrivée du scroll pour que le
+   titre ciblé ne se retrouve pas masqué sous le header sticky. */
+.nodyx-prose h2[id],
+.nodyx-prose h3[id],
+.nodyx-prose h4[id] {
+    scroll-margin-top: 5rem;
+}
 .nodyx-prose h1,
 .nodyx-content .tiptap h1 {
     font-size: 1.5rem; font-weight: 700; color: white;
