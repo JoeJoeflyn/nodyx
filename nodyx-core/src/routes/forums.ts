@@ -71,6 +71,12 @@ const ALLOWED_ATTRS: sanitizeHtml.IOptions['allowedAttributes'] = {
   '*':      ['class', 'data-align', 'data-type'],
   'span':   ['class', 'style', 'data-align', 'data-type'],
   'p':      ['class', 'style', 'data-align', 'data-type'],
+  // id sur les titres : permet les sommaires à ancres (#section) dans les
+  // posts longs façon documentation. Pas d'id ailleurs pour limiter le
+  // risque de collision avec les éléments de l'app (DOM clobbering).
+  'h2':     ['class', 'id', 'style', 'data-align', 'data-type'],
+  'h3':     ['class', 'id', 'data-align', 'data-type'],
+  'h4':     ['class', 'id', 'data-align', 'data-type'],
   'a':      ['href', 'target', 'rel'],
   'img':    ['src', 'alt', 'width', 'height'],
   'iframe': ['src', 'width', 'height', 'frameborder', 'allowfullscreen', 'allow'],
