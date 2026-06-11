@@ -5,6 +5,39 @@ import { env } from '$env/dynamic/public';
 
 const DIRECTORY_URL = (env.PUBLIC_DIRECTORY_URL ?? 'https://nodyx.org') + '/api/directory';
 
+// Cache mémoire du directory, partagé entre toutes les requêtes SSR du
+// process. Le directory est un appel réseau EXTERNE (autre instance, ou
+// notre propre URL publique via Cloudflare) : sans timeout ni cache, chaque
+// page SSR payait un aller-retour Internet, et un blackhole IPv6 pouvait
+// suspendre le rendu ~25 s (incident mesuré : homepage à 27 s). On sert la
+// version en cache pendant 5 min et on borne le fetch à 2,5 s ; en cas
+// d'échec, on resert la dernière version connue (stale acceptable pour une
+// liste d'instances qui bouge rarement).
+const DIRECTORY_TTL_MS = 5 * 60 * 1000;
+let directoryCache: { data: unknown; fetchedAt: number } = { data: null, fetchedAt: 0 };
+
+async function fetchDirectoryCached(): Promise<unknown> {
+	const now = Date.now();
+	if (directoryCache.data !== null && now - directoryCache.fetchedAt < DIRECTORY_TTL_MS) {
+		return directoryCache.data;
+	}
+	try {
+		const res = await globalThis.fetch(DIRECTORY_URL, { signal: AbortSignal.timeout(2500) });
+		if (res?.ok) {
+			const json = await res.json();
+			directoryCache = { data: json, fetchedAt: now };
+			return json;
+		}
+	} catch {
+		// timeout / réseau : on retombe sur le stale ci-dessous
+	}
+	if (directoryCache.data !== null) {
+		directoryCache.fetchedAt = now - DIRECTORY_TTL_MS + 30_000; // retente dans 30 s
+		return directoryCache.data;
+	}
+	return null;
+}
+
 // URLs stored in DB may include http://localhost:3000 prefix (legacy uploads)
 // Normalize to relative path so browser fetches via Vite proxy / reverse proxy
 function normalizeUrl(url: string | null): string | null {
@@ -18,12 +51,12 @@ function normalizeUrl(url: string | null): string | null {
 export const load: LayoutServerLoad = async ({ fetch, cookies, request, url }) => {
 	const token = cookies.get('token');
 
-	const [infoRes, userRes, directoryRes, announcementRes, modulesRes] = await Promise.all([
+	const [infoRes, userRes, directoryJson, announcementRes, modulesRes] = await Promise.all([
 		apiFetch(fetch, '/instance/info'),
 		token
 			? apiFetch(fetch, '/users/me', { headers: { Authorization: `Bearer ${token}` } })
 			: Promise.resolve(null),
-		globalThis.fetch(DIRECTORY_URL).catch(() => null),
+		fetchDirectoryCached(),
 		apiFetch(fetch, '/instance/announcement').catch(() => null),
 		apiFetch(fetch, '/admin/modules/public').catch(() => null),
 	]);
@@ -47,11 +80,10 @@ export const load: LayoutServerLoad = async ({ fetch, cookies, request, url }) =
 	const nodyxVersion: string       = infoJson?.version     ?? 'unknown';
 
 	// Toutes les instances du réseau (directory), filtre l'instance courante
-	const directoryJson = (directoryRes?.ok) ? await directoryRes.json().catch(() => null) : null;
 	const allInstances: Array<{
 		slug: string; name: string; url: string;
 		logo_url: string | null; members: number; online: number; last_seen: string | null;
-	}> = (directoryJson?.instances ?? []).filter((i: { slug: string }) => i.slug !== currentSlug);
+	}> = (((directoryJson as any)?.instances) ?? []).filter((i: { slug: string }) => i.slug !== currentSlug);
 
 	if (!token || !userRes?.ok) {
 		return { user: null, communityName, communityLogoUrl, communityBannerUrl, memberCount, unreadCount: 0, token: null, networkInstances: [], directoryInstances: allInstances, activeAnnouncement, modules, demoMode, nodyxVersion };
