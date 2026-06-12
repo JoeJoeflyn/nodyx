@@ -39,6 +39,11 @@ nodyx-core/uploads/**
 # Backups locaux (archives tar.gz du Backup System)
 nodyx-core/backups/
 
+# Fichiers de vérification moteurs de recherche (propres à CHAQUE instance :
+# un self-hoster met les siens, ils ne doivent pas venir du repo)
+nodyx-frontend/static/BingSiteAuth.xml
+nodyx-frontend/static/google*.html
+
 # Hub runtime files
 nodyx-hub/.env
 nodyx-hub/hub.db
