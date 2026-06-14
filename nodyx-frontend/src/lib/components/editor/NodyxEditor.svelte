@@ -49,6 +49,10 @@
 	let imageUrl    = $state('')
 	let imageAlt    = $state('')
 	let imageAlign  = $state<'left'|'center'|'right'|'full'>('center')
+	// Position du noeud image sélectionné quand on ouvre le menu image : permet
+	// de REMPLACER l'image au lieu d'en insérer une nouvelle (la sélection se
+	// perd dès qu'on tape dans le champ URL, on la capture donc à l'ouverture).
+	let replaceImagePos = $state<number | null>(null)
 	let videoUrl    = $state('')
 
 	// Audio upload state
@@ -154,6 +158,27 @@
 			},
 		})
 
+		// ── Youtube robuste au round-trip ───────────────────────────────────
+		// TipTap sérialise une vidéo en <div data-youtube-video><iframe…/></div>.
+		// Le sanitizer backend ne garde pas `data-youtube-video` sur le <div>,
+		// donc au rechargement l'extension ne reconnaissait plus son wrapper et
+		// JETAIT l'iframe (vidéos qui disparaissent à la réédition). On ajoute
+		// une règle parseHTML qui reparse aussi un <iframe> nu d'origine YouTube.
+		const RobustYoutube = Youtube.extend({
+			parseHTML() {
+				return [
+					...(this.parent?.() ?? []),
+					{
+						tag: 'iframe[src]',
+						getAttrs: (el: any) => {
+							const src = el?.getAttribute?.('src') ?? ''
+							return /(?:youtube(?:-nocookie)?\.com|youtu\.be)/.test(src) ? {} : false
+						},
+					},
+				]
+			},
+		})
+
 		// ── Heading anchors ──────────────────────────────────────────────────
 		// Attribut id sur les titres : posé automatiquement par le bouton
 		// Sommaire, préservé au round-trip HTML. Le sanitizer backend ne
@@ -182,7 +207,11 @@
 		const TocBox = Node.create({
 			name: 'tocBox',
 			group: 'block',
-			content: 'block+',
+			// paragraph+ uniquement : le sommaire ne contient que du texte (titre +
+			// liens d'ancres). Interdit aux images/vidéos/blocs de s'y faire aspirer
+			// au backspace (ProseMirror joignait un bloc image dans cette boîte
+			// isolante, l'image disparaissait alors dans un conteneur invisible).
+			content: 'paragraph+',
 			isolating: true,
 			selectable: true,
 			draggable: true,
@@ -328,7 +357,7 @@
 				TextAlign.configure({ types: ['heading', 'paragraph', 'image'] }),
 				Link.configure({ openOnClick: false, autolink: true }),
 				AlignableImage,
-				Youtube.configure({ nocookie: true }),
+				RobustYoutube.configure({ nocookie: true }),
 				Table.configure({ resizable: false }),
 				TableRow, TableCell, TableHeader,
 				Color, TextStyle,
@@ -409,11 +438,44 @@
 		linkUrl = ''; showLink = false
 	}
 
+	// Ouvre/ferme le menu image. À l'ouverture, si une image est sélectionnée
+	// (NodeSelection), on capture sa position et on pré-remplit le formulaire :
+	// valider remplacera cette image au lieu d'en insérer une nouvelle.
+	function toggleImagePopup() {
+		const opening = !showImage
+		showColor = showEmoji = showLink = showVideo = showAudio = showTable = false
+		showImage = opening
+		replaceImagePos = null
+		if (opening && editor) {
+			const sel = editor.state.selection as any
+			const node = sel?.node
+			if (node && node.type.name === 'image') {
+				replaceImagePos = sel.from
+				imageUrl   = node.attrs.src ?? ''
+				imageAlt   = node.attrs.alt ?? ''
+				imageAlign = (node.attrs['data-align'] ?? node.attrs.align ?? 'center') as any
+			}
+		}
+	}
+
 	function insertImage() {
 		if (!imageUrl.trim()) return
 		const alignClass = { left: 'float-left mr-4', right: 'float-right ml-4', center: 'mx-auto block', full: 'w-full block' }[imageAlign]
-		editor?.chain().focus().setImage({ src: imageUrl, alt: imageAlt || '', class: alignClass, 'data-align': imageAlign }).run()
-		imageUrl = ''; imageAlt = ''; showImage = false
+		const attrs = { src: imageUrl, alt: imageAlt || '', class: alignClass, 'data-align': imageAlign, align: imageAlign }
+		if (replaceImagePos !== null) {
+			// Remplace l'image existante à sa position (conserve le noeud, change
+			// src/alt/alignement) plutôt que d'en insérer une à côté.
+			const pos = replaceImagePos
+			editor?.chain().focus().command(({ tr, state }: any) => {
+				const node = state.doc.nodeAt(pos)
+				if (!node || node.type.name !== 'image') return false
+				tr.setNodeMarkup(pos, undefined, attrs)
+				return true
+			}).run()
+		} else {
+			editor?.chain().focus().setImage(attrs).run()
+		}
+		imageUrl = ''; imageAlt = ''; showImage = false; replaceImagePos = null
 	}
 
 	function insertVideo() {
@@ -863,11 +925,17 @@
 
 		<!-- Image -->
 		<div class="relative">
-			<button type="button" onclick={() => { showImage = !showImage; showColor = showEmoji = showLink = showVideo = showAudio = showTable = false }} class="tb-btn" title={tFn('editor.insert_image')}>
+			<button type="button" onclick={toggleImagePopup} class="tb-btn" title={tFn('editor.insert_image')}>
 				<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15l-5-5L5 21"/></svg>
 			</button>
 			{#if showImage}
 			<div class="popup w-80 flex flex-col gap-2 p-3" use:autoFlip>
+				{#if replaceImagePos !== null}
+					<div class="flex items-center gap-1.5 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
+						<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7"/></svg>
+						Remplacement de l'image sélectionnée
+					</div>
+				{/if}
 				<!-- Bouton médiathèque -->
 				<button type="button" onclick={openMediaPicker}
 					class="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg border border-dashed border-indigo-700/60 bg-indigo-950/30 text-indigo-300 text-xs font-medium hover:bg-indigo-900/40 transition-colors">
@@ -891,7 +959,7 @@
 						</button>
 					{/each}
 				</div>
-				<button type="button" onclick={insertImage} class="popup-btn-primary">{tFn('editor.insert')}</button>
+				<button type="button" onclick={insertImage} class="popup-btn-primary">{replaceImagePos !== null ? 'Remplacer' : tFn('editor.insert')}</button>
 			</div>
 			{/if}
 		</div>
