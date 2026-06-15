@@ -63,6 +63,7 @@
 	let bubbleVisible  = $state(false)
 	let bubbleTop      = $state(0)
 	let bubbleLeft     = $state(0)
+	let bubbleBelow    = $state(false)    // affichée SOUS la sélection (anti-débord haut)
 	let blockIsAnchored = $state(false)   // état du bloc courant (titre ancré ?)
 
 	// Audio upload state
@@ -440,7 +441,16 @@
 
 	$effect(() => {
 		document.addEventListener('click', onDocClick)
-		return () => document.removeEventListener('click', onDocClick)
+		// Repositionne la barre flottante au scroll/resize tant qu'elle est
+		// visible (sinon, position: fixed, elle « décrochait » de la sélection).
+		const reposition = () => { if (bubbleVisible) syncBubble() }
+		window.addEventListener('scroll', reposition, true)
+		window.addEventListener('resize', reposition)
+		return () => {
+			document.removeEventListener('click', onDocClick)
+			window.removeEventListener('scroll', reposition, true)
+			window.removeEventListener('resize', reposition)
+		}
 	})
 
 	onDestroy(() => editor?.destroy())
@@ -818,27 +828,48 @@
 			links.push({ type: 'text', text: e.level === 3 ? '   ▸ ' : '▸ ' })
 			links.push({ type: 'text', text: e.text, marks: [{ type: 'link', attrs: { href: `#${e.id}`, target: null } }] })
 		})
-		const tocNode = editor.schema.nodeFromJSON({
+		const tocContent = {
 			type: 'tocBox',
 			content: [
 				{ type: 'paragraph', content: [{ type: 'text', text: 'Sommaire', marks: [{ type: 'bold' }] }] },
 				{ type: 'paragraph', content: links },
 			],
-		})
-		editor.chain().command(({ tr }: any) => {
+		}
+
+		// API haut-niveau (robuste) : on retire l'ancienne boîte, puis on insère
+		// la nouvelle en tête (après le hero si présent).
+		try {
 			if (tocPos !== null) {
-				tr.replaceWith(tocPos, tocPos + tocSize, tocNode)
-			} else {
-				let insertPos = 0
-				const first = tr.doc.firstChild
-				if (first && first.type.name === 'image') insertPos = first.nodeSize
-				tr.insert(insertPos, tocNode)
+				editor.chain().deleteRange({ from: tocPos, to: tocPos + tocSize }).run()
 			}
-			return true
-		}).run()
+			let insertPos = 0
+			const first = editor.state.doc.firstChild
+			if (first && first.type.name === 'image') insertPos = first.nodeSize
+			editor.chain().insertContentAt(insertPos, tocContent).run()
+		} catch (err) {
+			console.warn('[nodyx-editor] rebuildToc', err)
+			return
+		}
+		flashToc()
+	}
+
+	// Petit flash visuel sur la boîte sommaire après une mise à jour : montre
+	// clairement à l'auteur que son ancre a été prise en compte.
+	function flashToc(): void {
+		requestAnimationFrame(() => {
+			const el = editorEl?.querySelector('.toc') as HTMLElement | null
+			if (!el) return
+			el.classList.remove('toc-flash')
+			void el.offsetWidth   // reflow pour rejouer l'animation
+			el.classList.add('toc-flash')
+			setTimeout(() => el.classList.remove('toc-flash'), 1000)
+		})
 	}
 
 	// Position/visibilité de la barre flottante selon la sélection.
+	// Repositionnée aussi au scroll/resize (cf. effet plus bas) pour rester
+	// collée à la sélection, et basculée sous le texte si elle déborderait en
+	// haut (sinon elle passait sous la barre d'outils — effet « buggé »).
 	function syncBubble(): void {
 		if (!editor) { bubbleVisible = false; return }
 		const sel = editor.state.selection
@@ -850,7 +881,11 @@
 		try {
 			const a = editor.view.coordsAtPos(sel.from)
 			const b = editor.view.coordsAtPos(sel.to)
-			bubbleTop  = Math.min(a.top, b.top)
+			const topY = Math.min(a.top, b.top)
+			const botY = Math.max(a.bottom, b.bottom)
+			// Si trop près du haut de la fenêtre, on passe la barre sous la sélection.
+			bubbleBelow = topY < 64
+			bubbleTop  = bubbleBelow ? botY : topY
 			bubbleLeft = (a.left + b.left) / 2
 			bubbleVisible = true
 		} catch {
@@ -1260,7 +1295,7 @@
 
 	<!-- ── Barre flottante (quickbar) sur la sélection ──────────────────── -->
 	{#if bubbleVisible}
-	<div bind:this={bubbleEl} class="nodyx-bubble" style="top:{bubbleTop}px; left:{bubbleLeft}px;" role="toolbar" aria-label="Mise en forme rapide">
+	<div bind:this={bubbleEl} class="nodyx-bubble {bubbleBelow ? 'below' : ''}" style="top:{bubbleTop}px; left:{bubbleLeft}px;" role="toolbar" aria-label="Mise en forme rapide">
 		<button type="button" class="nb-btn {a.bold ? 'active' : ''}" title={tFn('editor.bold')}
 			onmousedown={(e) => e.preventDefault()} onclick={() => editor?.chain().focus().toggleBold().run()}><b>B</b></button>
 		<button type="button" class="nb-btn {a.italic ? 'active' : ''}" title={tFn('editor.italic')}
@@ -1299,9 +1334,12 @@
 		box-shadow: 0 10px 30px -8px rgb(0 0 0 / 0.7);
 		animation: nb-pop 120ms ease-out;
 	}
+	:global(.nodyx-bubble.below) {
+		transform: translate(-50%, 8px);
+	}
 	@keyframes nb-pop {
-		from { opacity: 0; transform: translate(-50%, calc(-100% - 2px)); }
-		to   { opacity: 1; transform: translate(-50%, calc(-100% - 8px)); }
+		from { opacity: 0; }
+		to   { opacity: 1; }
 	}
 	:global(.nb-btn) {
 		display: flex; align-items: center; gap: 0.3rem;
