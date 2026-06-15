@@ -3,6 +3,7 @@
 	import { page } from '$app/stores'
 	import { apiFetch } from '$lib/api'
 	import { t } from '$lib/i18n'
+	import { TextSelection } from '@tiptap/pm/state'
 
 	let {
 		name       = 'content',
@@ -54,6 +55,15 @@
 	// perd dès qu'on tape dans le champ URL, on la capture donc à l'ouverture).
 	let replaceImagePos = $state<number | null>(null)
 	let videoUrl    = $state('')
+
+	// ── Barre flottante (quickbar) sur la sélection ───────────────────────────
+	// Apparaît au-dessus du texte surligné, avec le bouton Ancre (pilote le
+	// sommaire) + formatage rapide. Positionnée à la main (zéro dépendance).
+	let bubbleEl       = $state<HTMLElement | undefined>(undefined)
+	let bubbleVisible  = $state(false)
+	let bubbleTop      = $state(0)
+	let bubbleLeft     = $state(0)
+	let blockIsAnchored = $state(false)   // état du bloc courant (titre ancré ?)
 
 	// Audio upload state
 	let audioFileEl       = $state<HTMLInputElement | undefined>(undefined)
@@ -374,7 +384,7 @@
 				NodyxAudio, NodyxTrack,
 			],
 			content: initialContent,
-			onTransaction() { syncActive() },
+			onTransaction() { syncActive(); syncBubble() },
 			onUpdate({ editor: e }) {
 				html = e.getHTML()
 				charCount = e.storage.characterCount.characters()
@@ -389,6 +399,7 @@
 	function onDocClick(e: MouseEvent) {
 		if (wrapperEl && !wrapperEl.contains(e.target as Node)) {
 			showColor = showEmoji = showLink = showImage = showVideo = showAudio = showTable = false
+			bubbleVisible = false
 		}
 	}
 
@@ -705,7 +716,6 @@
 			justify:   () => chain.setTextAlign('justify').run(),
 			hr:        () => chain.setHorizontalRule().run(),
 			twoCols:   () => (chain as any).insertTwoCols().run(),
-			toc:       () => insertToc(),
 			// Table
 			insertTable:  () => chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
 			addRowAfter:  () => chain.addRowAfter().run(),
@@ -729,59 +739,123 @@
 		return slug || 'section'
 	}
 
-	function insertToc(): void {
-		if (!editor) return
-		const seen: Record<string, number> = {}
-		const entries: Array<{ id: string; text: string; level: number }> = []
-		const updates: Array<{ pos: number; id: string }> = []
+	// id unique dans le document (évite les collisions d'ancres).
+	function uniqueHeadingId(text: string): string {
+		const base = slugifyHeading(text)
+		const used = new Set<string>()
+		editor.state.doc.descendants((node: any) => {
+			if (node.type.name === 'heading' && node.attrs.id) used.add(node.attrs.id)
+		})
+		if (!used.has(base)) return base
+		let i = 2
+		while (used.has(`${base}-${i}`)) i++
+		return `${base}-${i}`
+	}
 
-		editor.state.doc.descendants((node: any, pos: number) => {
+	// Bloc (titre ou paragraphe) qui contient la sélection.
+	function currentBlock(): { node: any; isAnchored: boolean } | null {
+		if (!editor) return null
+		const selFrom = editor.state.selection.$from
+		for (let d = selFrom.depth; d > 0; d--) {
+			const node = selFrom.node(d)
+			if (node.type.name === 'heading' || node.type.name === 'paragraph') {
+				return { node, isAnchored: node.type.name === 'heading' && !!node.attrs.id }
+			}
+		}
+		return null
+	}
+
+	// Action du bouton « Ancre » : la ligne devient un titre de section ancré
+	// (paragraphe -> h2 ; niveau h2/h3 conservé), et le menu est reconstruit.
+	function toggleAnchor(): void {
+		if (!editor) return
+		const info = currentBlock()
+		if (!info) return
+		const { node, isAnchored } = info
+		if (isAnchored) {
+			editor.chain().focus().updateAttributes('heading', { id: null }).run()
+		} else {
+			const text = node.textContent.trim() || 'section'
+			const id = uniqueHeadingId(text)
+			if (node.type.name === 'paragraph') {
+				editor.chain().focus().setNode('heading', { level: 2, id }).run()
+			} else {
+				editor.chain().focus().updateAttributes('heading', { id }).run()
+			}
+		}
+		rebuildToc()
+		syncBubble()
+	}
+
+	// Reconstruit la boîte .toc à partir des titres ancrés (id présent), dans
+	// l'ordre du document. Crée la boîte si besoin, la supprime s'il n'y a plus
+	// d'ancre. La boîte est dérivée : on ne la saisit pas à la main.
+	function rebuildToc(): void {
+		if (!editor) return
+		const entries: Array<{ id: string; text: string; level: number }> = []
+		editor.state.doc.descendants((node: any) => {
 			if (node.type.name !== 'heading') return
 			const level = node.attrs.level
-			if (level !== 2 && level !== 3) return   // le sanitizer n'accepte id que sur h2-h4
+			if ((level !== 2 && level !== 3) || !node.attrs.id) return
 			const text = node.textContent.trim()
-			if (!text) return
-			let id = node.attrs.id as string | null
-			if (!id) {
-				const base = slugifyHeading(text)
-				seen[base] = (seen[base] ?? 0) + 1
-				id = seen[base] > 1 ? `${base}-${seen[base]}` : base
-				updates.push({ pos, id })
-			}
-			entries.push({ id, text, level })
+			if (text) entries.push({ id: node.attrs.id, text, level })
 		})
-
-		if (entries.length === 0) return   // pas de titres : rien à sommairer
-
-		// Pose les ancres manquantes (setNodeMarkup ne change pas les positions).
-		if (updates.length > 0) {
-			editor.chain().command(({ tr, state }: any) => {
-				for (const u of updates) {
-					const node = state.doc.nodeAt(u.pos)
-					if (node) tr.setNodeMarkup(u.pos, undefined, { ...node.attrs, id: u.id })
-				}
-				return true
-			}).run()
+		let tocPos: number | null = null
+		let tocSize = 0
+		editor.state.doc.descendants((node: any, pos: number) => {
+			if (node.type.name === 'tocBox') { tocPos = pos; tocSize = node.nodeSize; return false }
+			return true
+		})
+		if (entries.length === 0) {
+			if (tocPos !== null) {
+				editor.chain().command(({ tr }: any) => { tr.delete(tocPos!, tocPos! + tocSize); return true }).run()
+			}
+			return
 		}
-
-		// Construit la liste de liens : un par ligne (hardBreak), h3 indentés.
 		const links: any[] = []
 		entries.forEach((e, i) => {
 			if (i > 0) links.push({ type: 'hardBreak' })
-			links.push({ type: 'text', text: e.level === 3 ? '   ▸ ' : '▸ ' })
-			links.push({
-				type: 'text', text: e.text,
-				marks: [{ type: 'link', attrs: { href: `#${e.id}`, target: null } }],
-			})
+			links.push({ type: 'text', text: e.level === 3 ? '   ▸ ' : '▸ ' })
+			links.push({ type: 'text', text: e.text, marks: [{ type: 'link', attrs: { href: `#${e.id}`, target: null } }] })
 		})
-
-		editor.chain().focus().insertContent({
+		const tocNode = editor.schema.nodeFromJSON({
 			type: 'tocBox',
 			content: [
 				{ type: 'paragraph', content: [{ type: 'text', text: 'Sommaire', marks: [{ type: 'bold' }] }] },
 				{ type: 'paragraph', content: links },
 			],
+		})
+		editor.chain().command(({ tr }: any) => {
+			if (tocPos !== null) {
+				tr.replaceWith(tocPos, tocPos + tocSize, tocNode)
+			} else {
+				let insertPos = 0
+				const first = tr.doc.firstChild
+				if (first && first.type.name === 'image') insertPos = first.nodeSize
+				tr.insert(insertPos, tocNode)
+			}
+			return true
 		}).run()
+	}
+
+	// Position/visibilité de la barre flottante selon la sélection.
+	function syncBubble(): void {
+		if (!editor) { bubbleVisible = false; return }
+		const sel = editor.state.selection
+		const isTextSel = sel instanceof TextSelection
+		const parentIsTextblock = sel.$from.parent?.isTextblock
+		if (sel.empty || !isTextSel || !parentIsTextblock) { bubbleVisible = false; return }
+		const info = currentBlock()
+		blockIsAnchored = !!info?.isAnchored
+		try {
+			const a = editor.view.coordsAtPos(sel.from)
+			const b = editor.view.coordsAtPos(sel.to)
+			bubbleTop  = Math.min(a.top, b.top)
+			bubbleLeft = (a.left + b.left) / 2
+			bubbleVisible = true
+		} catch {
+			bubbleVisible = false
+		}
 	}
 
 	// ── Preset colours & emoji ────────────────────────────────────────────────
@@ -1091,11 +1165,6 @@
 			<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="3" width="9" height="18" rx="1.5" stroke-width="2"/><rect x="13" y="3" width="9" height="18" rx="1.5" stroke-width="2"/></svg>
 		</button>
 
-		<!-- Sommaire (ancres auto) -->
-		<button type="button" onclick={() => toggleAny('toc')} class="tb-btn" title={tFn('editor.toc')}>
-			<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" viewBox="0 0 24 24"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg>
-		</button>
-
 		<div class="tb-sep"></div>
 
 		<!-- Table -->
@@ -1189,6 +1258,23 @@
 		class="nodyx-content px-4 {compact ? 'min-h-[120px]' : 'min-h-[320px]'} py-4"
 	></div>
 
+	<!-- ── Barre flottante (quickbar) sur la sélection ──────────────────── -->
+	{#if bubbleVisible}
+	<div bind:this={bubbleEl} class="nodyx-bubble" style="top:{bubbleTop}px; left:{bubbleLeft}px;" role="toolbar" aria-label="Mise en forme rapide">
+		<button type="button" class="nb-btn {a.bold ? 'active' : ''}" title={tFn('editor.bold')}
+			onmousedown={(e) => e.preventDefault()} onclick={() => editor?.chain().focus().toggleBold().run()}><b>B</b></button>
+		<button type="button" class="nb-btn {a.italic ? 'active' : ''}" title={tFn('editor.italic')}
+			onmousedown={(e) => e.preventDefault()} onclick={() => editor?.chain().focus().toggleItalic().run()}><i>I</i></button>
+		<span class="nb-sep"></span>
+		<button type="button" class="nb-btn nb-anchor {blockIsAnchored ? 'active' : ''}"
+			title={blockIsAnchored ? 'Retirer du sommaire' : 'Ajouter cette ligne au sommaire'}
+			onmousedown={(e) => e.preventDefault()} onclick={toggleAnchor}>
+			<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.4"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12a7 7 0 0014 0"/><line x1="3" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="21" y2="12"/></svg>
+			<span>{blockIsAnchored ? 'Ancré' : 'Ancre'}</span>
+		</button>
+	</div>
+	{/if}
+
 	<!-- ── Footer: character count ─────────────────────────────────────── -->
 	{#if editor && !compact}
 	<div class="px-4 py-1.5 border-t border-gray-800 flex justify-end">
@@ -1198,6 +1284,43 @@
 </div>
 
 <style>
+	/* ── Barre flottante (quickbar) ────────────────────────────────────── */
+	:global(.nodyx-bubble) {
+		position: fixed;
+		z-index: 60;
+		transform: translate(-50%, calc(-100% - 8px));
+		display: flex;
+		align-items: center;
+		gap: 0.15rem;
+		padding: 0.2rem;
+		background: rgb(17 24 39);
+		border: 1px solid rgb(55 65 81);
+		border-radius: 0.5rem;
+		box-shadow: 0 10px 30px -8px rgb(0 0 0 / 0.7);
+		animation: nb-pop 120ms ease-out;
+	}
+	@keyframes nb-pop {
+		from { opacity: 0; transform: translate(-50%, calc(-100% - 2px)); }
+		to   { opacity: 1; transform: translate(-50%, calc(-100% - 8px)); }
+	}
+	:global(.nb-btn) {
+		display: flex; align-items: center; gap: 0.3rem;
+		height: 1.6rem; padding: 0 0.45rem;
+		border-radius: 0.3rem;
+		color: rgb(209 213 219);
+		font-size: 0.8rem; cursor: pointer; user-select: none;
+		transition: color 120ms, background-color 120ms;
+	}
+	:global(.nb-btn:hover)  { background: rgb(55 65 81); color: white; }
+	:global(.nb-btn.active) { background: rgb(49 46 129 / 0.8); color: rgb(165 180 252); }
+	:global(.nb-anchor) {
+		font-weight: 600; font-size: 0.72rem; letter-spacing: 0.02em;
+		color: rgb(196 181 253);
+	}
+	:global(.nb-anchor:hover) { background: rgb(76 29 149 / 0.5); color: white; }
+	:global(.nb-anchor.active) { background: rgb(124 58 237 / 0.55); color: white; }
+	:global(.nb-sep) { width: 1px; height: 1.1rem; background: rgb(55 65 81); margin: 0 0.15rem; }
+
 	/* ── Toolbar button ────────────────────────────────────────────────── */
 	:global(.tb-btn) {
 		display: flex;
