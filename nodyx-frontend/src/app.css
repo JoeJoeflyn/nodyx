@@ -229,6 +229,27 @@ select option {
     .nodyx-prose .nodyx-term,
     .nodyx-content .tiptap .nodyx-term { font-size: 0.72rem; }
 }
+/* En édition : la console est un bloc protégé (non éditable). On le signale
+   clairement avec une étiquette et un contour à la sélection, pour que l'auteur
+   sache ce qu'est cette zone et qu'il peut la déplacer/supprimer mais pas la
+   taper au clavier. */
+.nodyx-content .tiptap .nodyx-term--edit { position: relative; cursor: default; }
+.nodyx-content .tiptap .nodyx-term--edit::before {
+    content: attr(data-label);
+    position: absolute;
+    top: -0.72rem; left: 0.7rem;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    color: rgb(196 181 253);
+    background: rgb(30 27 75);
+    border: 1px solid rgb(99 102 241 / 0.5);
+    border-radius: 0.3rem;
+    z-index: 3;
+}
+.nodyx-content .tiptap .nodyx-term--edit.ProseMirror-selectednode {
+    outline: 2px solid rgb(139 92 246 / 0.7);
+    outline-offset: 3px;
+}
 
 .nodyx-prose h1,
 .nodyx-content .tiptap h1 {

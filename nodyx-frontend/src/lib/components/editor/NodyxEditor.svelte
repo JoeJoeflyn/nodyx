@@ -232,6 +232,42 @@
 			},
 		})
 
+		// ── Console SSH (.nodyx-term) : bloc HTML protégé ────────────────────
+		// Les tutos d'installation contiennent des consoles stylées (div.nodyx-term
+		// avec barre/corps/spans colorés). Ce n'est PAS éditable inline : on en
+		// fait un nœud ATOMIQUE qui capture son HTML interne au chargement et le
+		// ré-émet tel quel à la sauvegarde. Sans ça, l'éditeur déstructurait la
+		// console à la réédition (perte de données).
+		const NodyxTerm = Node.create({
+			name: 'nodyxTerm',
+			group: 'block',
+			atom: true,
+			selectable: true,
+			draggable: true,
+			addAttributes() {
+				return {
+					html: { default: '', parseHTML: (el: HTMLElement) => el.innerHTML, renderHTML: () => ({}) },
+				}
+			},
+			parseHTML() { return [{ tag: 'div.nodyx-term' }] },
+			renderHTML({ node }: any) {
+				const dom = document.createElement('div')
+				dom.className = 'nodyx-term'
+				dom.innerHTML = node.attrs.html
+				return dom
+			},
+			addNodeView() {
+				return ({ node }: any) => {
+					const dom = document.createElement('div')
+					dom.className = 'nodyx-term nodyx-term--edit'
+					dom.setAttribute('contenteditable', 'false')
+					dom.setAttribute('data-label', 'Console — non éditable')
+					dom.innerHTML = node.attrs.html
+					return { dom }
+				}
+			},
+		})
+
 		// ── Two-Column layout extension ───────────────────────────────────────
 		// PRINCIPE round-trip : on parse sur la CLASSE (que le sanitizer conserve
 		// toujours), pas sur data-col/data-two-cols (que le sanitizer supprime des
@@ -383,6 +419,7 @@
 				HeadingIds, TocBox,
 				NodyxTwoCols, NodyxColumn,
 				NodyxAudio, NodyxTrack,
+				NodyxTerm,
 			],
 			content: initialContent,
 			onTransaction() { syncActive(); syncBubble() },
