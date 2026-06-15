@@ -923,7 +923,7 @@
 
 	<!-- ── Toolbar ─────────────────────────────────────────────────────── -->
 	{#if editor}
-	<div class="nodyx-toolbar flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-gray-800 bg-gray-900/80 relative z-10 rounded-t-xl"
+	<div class="nodyx-toolbar flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-gray-800 bg-gray-900/95 backdrop-blur sticky top-0 z-20 rounded-t-xl"
 		role="toolbar"
 		tabindex="0"
 		onmousedown={(e) => {
