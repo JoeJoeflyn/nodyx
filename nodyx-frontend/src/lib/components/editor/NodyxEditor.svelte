@@ -287,6 +287,20 @@
 					let editing = false
 					let textarea: HTMLTextAreaElement | null = null
 
+					// Commit immédiat de la source vers l'attribut du nœud : la
+					// modification est prise en compte EN CONTINU pendant la frappe,
+					// sans dépendre du bouton « Rendu » (qui ne fait que rebasculer
+					// la vue). À l'enregistrement, getHTML a toujours la dernière
+					// version. addToHistory:false pour ne pas saturer le ctrl-z.
+					const commit = (val: string) => {
+						if (typeof getPos !== 'function') return
+						const pos = getPos()
+						if (pos == null) return
+						editor.view.dispatch(
+							editor.state.tr.setNodeMarkup(pos, undefined, { html: val }).setMeta('addToHistory', false),
+						)
+					}
+
 					btn.addEventListener('mousedown', (e) => e.preventDefault())
 					btn.addEventListener('click', () => {
 						if (!editing) {
@@ -296,6 +310,7 @@
 							textarea = document.createElement('textarea')
 							textarea.className = 'nodyx-term-code'
 							textarea.value = render.innerHTML
+							textarea.addEventListener('input', () => { if (textarea) commit(textarea.value) })
 							render.style.display = 'none'
 							dom.appendChild(textarea)
 							textarea.focus()
@@ -307,10 +322,7 @@
 							render.innerHTML = newHtml
 							render.style.display = ''
 							if (textarea) { textarea.remove(); textarea = null }
-							if (typeof getPos === 'function') {
-								const pos = getPos()
-								editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { html: newHtml }))
-							}
+							commit(newHtml)
 						}
 					})
 
