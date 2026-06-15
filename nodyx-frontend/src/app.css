@@ -117,6 +117,45 @@ select option {
     }
 }
 
+/* ── Boîte sommaire DANS l'éditeur ────────────────────────────────────────────
+   Dans le rendu public elle flotte à droite. Dans l'éditeur on la veut bien
+   visible et clairement identifiée comme LE menu que l'auteur construit en
+   ancrant ses sections : non flottante, encadrée indigo, avec une étiquette. */
+.nodyx-content .tiptap .toc {
+    position: relative;
+    float: none;
+    width: auto;
+    max-width: 420px;
+    margin: 1.5rem 0;
+    padding: 1.3rem 1rem 0.85rem;
+    background: rgb(30 27 75 / 0.35);
+    border: 1px solid rgb(99 102 241 / 0.5);
+    border-radius: 0.6rem;
+    font-size: 0.8125rem;
+    line-height: 1.9;
+}
+.nodyx-content .tiptap .toc::before {
+    content: "\2693  Sommaire — sections ancrées";
+    position: absolute;
+    top: -0.7rem; left: 0.7rem;
+    padding: 0.12rem 0.5rem;
+    font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(199 210 254);
+    background: rgb(49 46 129);
+    border: 1px solid rgb(99 102 241 / 0.6);
+    border-radius: 0.3rem;
+    pointer-events: none;
+}
+.nodyx-content .tiptap .toc a { color: rgb(165 180 252); text-decoration: none; }
+.nodyx-content .tiptap .toc a:hover { color: white; text-decoration: underline; }
+/* Flash à chaque (re)construction du menu : feedback « c'est pris en compte ». */
+.nodyx-content .tiptap .toc.toc-flash { animation: toc-flash 0.9s ease-out; }
+@keyframes toc-flash {
+    0%   { box-shadow: 0 0 0 0 rgb(139 92 246 / 0.55); border-color: rgb(167 139 250); }
+    100% { box-shadow: 0 0 0 16px rgb(139 92 246 / 0); }
+}
+
 /* ── Console SSH simulée ──────────────────────────────────────────────────── */
 /* <div class="nodyx-term"> : reproduit une fenêtre de terminal pour les tutos
    d'installation. Barre de titre + corps monospace. Les couleurs passent par
