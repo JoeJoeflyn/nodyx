@@ -257,13 +257,73 @@
 				return dom
 			},
 			addNodeView() {
-				return ({ node }: any) => {
+				return ({ node, editor, getPos }: any) => {
+					// Wrapper non éditable : barre d'outils (label + toggle Rendu/Code)
+					// + zone d'affichage. Le code source du bloc se modifie via le
+					// bouton « Code » (façon CMS), jamais au clavier directement.
 					const dom = document.createElement('div')
-					dom.className = 'nodyx-term nodyx-term--edit'
+					dom.className = 'nodyx-term-wrap'
 					dom.setAttribute('contenteditable', 'false')
-					dom.setAttribute('data-label', 'Console — non éditable')
-					dom.innerHTML = node.attrs.html
-					return { dom }
+
+					const bar = document.createElement('div')
+					bar.className = 'nodyx-term-tools'
+					const label = document.createElement('span')
+					label.className = 'ntt-label'
+					label.textContent = 'Console SSH'
+					const btn = document.createElement('button')
+					btn.type = 'button'
+					btn.className = 'ntt-btn'
+					btn.textContent = '</> Code'
+					bar.appendChild(label)
+					bar.appendChild(btn)
+
+					const render = document.createElement('div')
+					render.className = 'nodyx-term'
+					render.innerHTML = node.attrs.html
+
+					dom.appendChild(bar)
+					dom.appendChild(render)
+
+					let editing = false
+					let textarea: HTMLTextAreaElement | null = null
+
+					btn.addEventListener('mousedown', (e) => e.preventDefault())
+					btn.addEventListener('click', () => {
+						if (!editing) {
+							editing = true
+							btn.textContent = '✓ Rendu'
+							btn.classList.add('active')
+							textarea = document.createElement('textarea')
+							textarea.className = 'nodyx-term-code'
+							textarea.value = render.innerHTML
+							render.style.display = 'none'
+							dom.appendChild(textarea)
+							textarea.focus()
+						} else {
+							editing = false
+							btn.textContent = '</> Code'
+							btn.classList.remove('active')
+							const newHtml = textarea ? textarea.value : render.innerHTML
+							render.innerHTML = newHtml
+							render.style.display = ''
+							if (textarea) { textarea.remove(); textarea = null }
+							if (typeof getPos === 'function') {
+								const pos = getPos()
+								editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { html: newHtml }))
+							}
+						}
+					})
+
+					return {
+						dom,
+						update(updated: any) {
+							if (updated.type.name !== 'nodyxTerm') return false
+							if (!editing) render.innerHTML = updated.attrs.html
+							return true
+						},
+						stopEvent: () => true,
+						ignoreMutation: () => true,
+					}
 				}
 			},
 		})
