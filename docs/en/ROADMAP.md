@@ -1,5 +1,5 @@
 # NODYX — Roadmap
-### Version 2.4 — Backup System + Live Maintenance Mode
+### Version 2.7 — Streamer Hub (Soundboard + Deck) · then Stabilization Era
 
 ---
 
@@ -9,7 +9,7 @@
 
 ---
 
-## CURRENT STATE — May 2026
+## CURRENT STATE — June 2026
 
 | Phase | Title | Status |
 |---|---|---|
@@ -30,7 +30,10 @@
 | **Phase 4.14** | Universal Media Player + Builder Catalog Fusion + Tunnel Hardening (v2.3) | ✅ Complete |
 | **Phase 4.15** | Backup System Phase 1 + Live Maintenance Mode (v2.4) | ✅ Complete |
 | **Phase 4.16** | OctoGuard Phase 1 — Native auto-moderation (v2.6) | ✅ Complete (rollout) |
-| Phase 5 | Mobile + Nodes + Reactions + Discord import | 🔨 In Progress |
+| **Phase 4.17** | Streamer Hub — Soundboard, multi-page Deck, Playlists & OBS Scenes (v2.7) | ✅ Complete |
+| **Phase 4.18** | Editor robustness + UX overhaul, SEO/GEO foundations, security sweep | ✅ Complete |
+| **Stabilization Era** | No new big features. Finish the Streamer Hub, then polish everything (security, network, perf, UX). Goal: a stable core that outlives its creator. | 🛠️ Active |
+| Phase 5 | Mobile + Nodes + Reactions + Discord import | ⏸️ Deferred (after stabilization) |
 | **Phase Horizon** | NODYX-ETHER — Physical layer sovereignty | 🌌 Vision |
 | **Phase Radio** | NODYX-RADIO — Internet radio + cooperative ad network | 📻 Vision |
 
