@@ -396,14 +396,68 @@ select option {
     margin-top: 0.75rem;
     margin-bottom: 0.75rem;
 }
-.nodyx-prose img[data-align="left"],
-.nodyx-content .tiptap img[data-align="left"]   { float: left;  margin-right: 1rem; max-width: 45%; }
-.nodyx-prose img[data-align="right"],
-.nodyx-content .tiptap img[data-align="right"]  { float: right; margin-left: 1rem;  max-width: 45%; }
-.nodyx-prose img[data-align="center"],
-.nodyx-content .tiptap img[data-align="center"] { margin-left: auto; margin-right: auto; display: block; }
-.nodyx-prose img[data-align="full"],
-.nodyx-content .tiptap img[data-align="full"]   { width: 100%; display: block; float: none; }
+/* ── Rendu public (img nu) ─────────────────────────────────────────────────
+   La largeur vient de l'attribut width (posé par le resize). Les caps par défaut
+   (45% floté, 100% full) ne s'appliquent QUE sans largeur explicite, pour ne pas
+   écraser un redimensionnement et préserver le comportement des images legacy. */
+.nodyx-prose img[data-align="left"]   { float: left;  margin-right: 1rem; }
+.nodyx-prose img[data-align="right"]  { float: right; margin-left: 1rem;  }
+.nodyx-prose img[data-align="left"]:not([width]),
+.nodyx-prose img[data-align="right"]:not([width])  { max-width: 45%; }
+.nodyx-prose img[data-align="center"] { margin-left: auto; margin-right: auto; display: block; }
+.nodyx-prose img[data-align="full"]   { display: block; float: none; }
+.nodyx-prose img[data-align="full"]:not([width]) { width: 100%; }
+
+/* ── Éditeur : NodeView avec poignées de redimensionnement ─────────────────── */
+.nodyx-content .tiptap .nodyx-img-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    line-height: 0;
+    vertical-align: top;
+}
+.nodyx-content .tiptap .nodyx-img-wrap img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+}
+.nodyx-content .tiptap .nodyx-img-wrap[data-align="left"]   { float: left;  margin: 0.75rem 1rem 0.75rem 0; }
+.nodyx-content .tiptap .nodyx-img-wrap[data-align="right"]  { float: right; margin: 0.75rem 0 0.75rem 1rem; }
+.nodyx-content .tiptap .nodyx-img-wrap[data-align="center"] { display: block; margin: 0.75rem auto; }
+.nodyx-content .tiptap .nodyx-img-wrap[data-align="full"]   { display: block; margin: 0.75rem 0; }
+/* Contour + poignées seulement quand l'image est sélectionnée */
+.nodyx-content .tiptap .nodyx-img-wrap.ProseMirror-selectednode { outline: 2px solid rgb(139 92 246 / 0.8); outline-offset: 1px; }
+.nodyx-content .tiptap .nodyx-img-handle {
+    position: absolute;
+    width: 13px; height: 13px;
+    background: white;
+    border: 2px solid rgb(124 58 237);
+    border-radius: 3px;
+    display: none;
+    z-index: 4;
+}
+.nodyx-content .tiptap .nodyx-img-wrap.ProseMirror-selectednode .nodyx-img-handle,
+.nodyx-content .tiptap .nodyx-img-wrap.resizing .nodyx-img-handle { display: block; }
+.nodyx-content .tiptap .nodyx-img-handle.h-nw { top: -7px;  left: -7px;  cursor: nwse-resize; }
+.nodyx-content .tiptap .nodyx-img-handle.h-ne { top: -7px;  right: -7px; cursor: nesw-resize; }
+.nodyx-content .tiptap .nodyx-img-handle.h-sw { bottom: -7px; left: -7px; cursor: nesw-resize; }
+.nodyx-content .tiptap .nodyx-img-handle.h-se { bottom: -7px; right: -7px; cursor: nwse-resize; }
+.nodyx-content .tiptap .nodyx-img-badge {
+    position: absolute;
+    top: 6px; left: 6px;
+    padding: 0.05rem 0.4rem;
+    font-family: ui-monospace, monospace;
+    font-size: 0.62rem; font-weight: 700;
+    color: white;
+    background: rgb(76 29 149 / 0.85);
+    border-radius: 0.25rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 120ms;
+}
+.nodyx-content .tiptap .nodyx-img-wrap.resizing .nodyx-img-badge,
+.nodyx-content .tiptap .nodyx-img-wrap.ProseMirror-selectednode .nodyx-img-badge { opacity: 1; }
 
 /* ── Vidéo / iframe ───────────────────────────────────────────────────────── */
 .nodyx-prose iframe,

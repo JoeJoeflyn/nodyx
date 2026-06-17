@@ -163,8 +163,91 @@
 			addAttributes() {
 				return {
 					...this.parent?.(),
-					align: { default: 'center', parseHTML: el => el.getAttribute('data-align'), renderHTML: attrs => ({ 'data-align': attrs.align }) },
-					width: { default: null, parseHTML: el => el.getAttribute('width'), renderHTML: attrs => attrs.width ? { width: attrs.width } : {} },
+					align: { default: 'center', parseHTML: (el: HTMLElement) => el.getAttribute('data-align'), renderHTML: (attrs: any) => ({ 'data-align': attrs.align }) },
+					width: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute('width'), renderHTML: (attrs: any) => attrs.width ? { width: attrs.width } : {} },
+				}
+			},
+			// NodeView avec poignées de coin : on attrape un coin, on tire, et au
+			// relâchement la largeur s'aimante à 25/50/75/100 %. La largeur est
+			// stockée en attribut width (% — survit au sanitizer) ; le rendu public
+			// reste un simple <img data-align width>, sans wrapper.
+			addNodeView() {
+				return ({ node, editor, getPos }: any) => {
+					const applyWidth = (align: string, width: string | null) => {
+						wrap.style.width = align === 'full' ? (width || '100%') : (width || '')
+					}
+					const wrap = document.createElement('div')
+					wrap.className = 'nodyx-img-wrap'
+					wrap.setAttribute('data-align', node.attrs.align || 'center')
+					applyWidth(node.attrs.align || 'center', node.attrs.width)
+
+					const img = document.createElement('img')
+					img.src = node.attrs.src
+					if (node.attrs.alt) img.alt = node.attrs.alt
+					img.draggable = false
+					wrap.appendChild(img)
+
+					const badge = document.createElement('span')
+					badge.className = 'nodyx-img-badge'
+					badge.textContent = node.attrs.width || (node.attrs.align === 'full' ? '100%' : 'auto')
+					wrap.appendChild(badge)
+
+					const SNAPS = [25, 50, 75, 100]
+					let curPct = 100
+
+					const startResize = (e: MouseEvent, corner: string) => {
+						e.preventDefault(); e.stopPropagation()
+						const startX = e.clientX
+						const startW = img.getBoundingClientRect().width
+						const parent = wrap.parentElement
+						const containerW = parent ? parent.getBoundingClientRect().width : startW
+						const dir = (corner === 'ne' || corner === 'se') ? 1 : -1
+						wrap.classList.add('resizing')
+						const onMove = (ev: MouseEvent) => {
+							const dx = (ev.clientX - startX) * dir
+							const newW = Math.max(40, Math.min(containerW, startW + dx))
+							curPct = Math.round((newW / containerW) * 100)
+							wrap.style.width = curPct + '%'
+							badge.textContent = curPct + '%'
+						}
+						const onUp = () => {
+							document.removeEventListener('mousemove', onMove)
+							document.removeEventListener('mouseup', onUp)
+							wrap.classList.remove('resizing')
+							const snapped = SNAPS.reduce((a, b) => Math.abs(b - curPct) < Math.abs(a - curPct) ? b : a, SNAPS[0])
+							const widthVal = snapped + '%'
+							wrap.style.width = widthVal
+							badge.textContent = widthVal
+							if (typeof getPos === 'function') {
+								const pos = getPos()
+								const cur = editor.state.doc.nodeAt(pos)
+								if (cur) editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...cur.attrs, width: widthVal }))
+							}
+						}
+						document.addEventListener('mousemove', onMove)
+						document.addEventListener('mouseup', onUp)
+					}
+
+					for (const c of ['nw', 'ne', 'sw', 'se']) {
+						const h = document.createElement('span')
+						h.className = 'nodyx-img-handle h-' + c
+						h.addEventListener('mousedown', (e) => startResize(e, c))
+						wrap.appendChild(h)
+					}
+
+					return {
+						dom: wrap,
+						update(updated: any) {
+							if (updated.type.name !== 'image') return false
+							if (updated.attrs.src !== img.getAttribute('src')) img.src = updated.attrs.src
+							img.alt = updated.attrs.alt || ''
+							wrap.setAttribute('data-align', updated.attrs.align || 'center')
+							applyWidth(updated.attrs.align || 'center', updated.attrs.width)
+							badge.textContent = updated.attrs.width || (updated.attrs.align === 'full' ? '100%' : 'auto')
+							return true
+						},
+						ignoreMutation: () => true,
+					}
 				}
 			},
 		})
