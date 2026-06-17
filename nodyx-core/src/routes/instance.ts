@@ -275,8 +275,13 @@ export default async function instanceRoutes(app: FastifyInstance) {
       : 'recent'
     const categoryRaw = (query.category ?? '').trim()
 
-    // Cache 30s — les articles changent mais pas toutes les secondes
-    const cacheKey = `showcase:${communityId}:${categoryRaw}:${pinnedOnly}:${limit}:${orderKey}`
+    // Cache 30s, invalidé par version : forums.ts incrémente
+    // threads:cache:ver à chaque mutation de thread/post, ce qui orpheline
+    // instantanément toutes les entrées (elles expirent ensuite par TTL).
+    // Poster ou épingler un article apparaît donc immédiatement sur la
+    // homepage, sans rafraîchissement manuel.
+    const cacheVer = (await redis.get('threads:cache:ver').catch(() => null)) ?? '0'
+    const cacheKey = `showcase:v${cacheVer}:${communityId}:${categoryRaw}:${pinnedOnly}:${limit}:${orderKey}`
     const cached = await redis.get(cacheKey)
     if (cached) {
       reply.header('x-cache', 'HIT')

@@ -29,6 +29,18 @@
 
 	let { children, data }: { children: any; data: LayoutData } = $props();
 
+	// Pages qui définissent leur PROPRE og:image dans leur <svelte:head>. Sur
+	// celles-ci, le layout n'émet pas son og:image par défaut, sinon les scrapers
+	// (Discord, Twitter...) reçoivent deux images et en affichent une galerie.
+	const PAGES_WITH_OWN_OG = new Set([
+		'/forum/[category]/[thread]',
+		'/forum/[category]',
+		'/users/[username]',
+		'/users/[username]/card',
+		'/calendar/[id]',
+	]);
+	const ownsOgImage = $derived(PAGES_WITH_OWN_OG.has($page.route.id ?? ''));
+
 	const user            = $derived(data.user);
 	const isBanned        = $derived(data.user?.is_banned === true);
 	const announcement    = $derived((data as any).activeAnnouncement as { id: string; message: string; color: string } | null);
@@ -450,6 +462,17 @@
 	     (community identity) prevents an uploaded square logo from being
 	     stretched into a 16×16 tab icon. -->
 	<meta property="og:site_name" content={communityName} />
+	<!-- og:image en URL ABSOLUE : Discord/Twitter/Facebook ne résolvent pas
+	     les chemins relatifs (l'ancien /og-image.jpg de app.html ne
+	     s'affichait jamais dans les partages). Les pages qui définissent
+	     leur propre og:image (threads) ajoutent la leur en plus. -->
+	{#if !ownsOgImage}
+		<meta property="og:image" content="{$page.url.origin}/og-image.jpg" />
+		<meta property="og:image:width"  content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta name="twitter:image" content="{$page.url.origin}/og-image.jpg" />
+	{/if}
+	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="theme-color" content="#6366f1" />
 	<!-- Preload all Google Font presets (avatar/username effects) -->
 	<link rel="preconnect" href="https://fonts.googleapis.com" />

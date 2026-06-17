@@ -29,15 +29,20 @@ Caddyfile.dev
 ecosystem.config.js
 nodyx-core/turn-server.js
 
-# Uploads utilisateurs (données personnelles)
-nodyx-core/uploads/avatars/*
-nodyx-core/uploads/banners/*
-nodyx-core/uploads/logos/*
-nodyx-core/uploads/assets/*
-nodyx-core/uploads/fonts/*
-!nodyx-core/uploads/avatars/.gitkeep
-!nodyx-core/uploads/banners/.gitkeep
-!nodyx-core/uploads/logos/.gitkeep
+# Uploads utilisateurs (données personnelles) : tout le contenu, quel que soit
+# le sous-dossier (posts, audio_thumbs, inline_images et tout futur type),
+# sauf les .gitkeep qui préservent l'arborescence.
+nodyx-core/uploads/**
+!nodyx-core/uploads/*/
+!nodyx-core/uploads/*/.gitkeep
+
+# Backups locaux (archives tar.gz du Backup System)
+nodyx-core/backups/
+
+# Fichiers de vérification moteurs de recherche (propres à CHAQUE instance :
+# un self-hoster met les siens, ils ne doivent pas venir du repo)
+nodyx-frontend/static/BingSiteAuth.xml
+nodyx-frontend/static/google*.html
 
 # Hub runtime files
 nodyx-hub/.env
@@ -45,3 +50,10 @@ nodyx-hub/hub.db
 nodyx-hub/build/
 instance.esy
 nodyx-docs/static/demo-honeypot.html
+
+# Assets lourds / locaux — pas dans le repo public (trailer 113 Mo, icônes dupliquées de static/)
+docs/img/Type_Or_Die/
+docs/img/icon-set/
+docs/img/Logo_icon_Nodyx_a.PNG
+# Stratégie SEO — locale (dossiers de soumission awesome-selfhosted / AlternativeTo)
+docs/seo/

@@ -13,7 +13,7 @@ import * as ThanksModel from '../models/thanks'
 import * as TagModel from '../models/tag'
 import * as NotificationModel from '../models/notification'
 import { resolveMentions } from '../utils/mentions'
-import { db } from '../config/database'
+import { db, redis } from '../config/database'
 import { checkHtmlContent } from '../services/contentFilter'
 import { io } from '../socket/io'
 
@@ -71,6 +71,12 @@ const ALLOWED_ATTRS: sanitizeHtml.IOptions['allowedAttributes'] = {
   '*':      ['class', 'data-align', 'data-type'],
   'span':   ['class', 'style', 'data-align', 'data-type'],
   'p':      ['class', 'style', 'data-align', 'data-type'],
+  // id sur les titres : permet les sommaires à ancres (#section) dans les
+  // posts longs façon documentation. Pas d'id ailleurs pour limiter le
+  // risque de collision avec les éléments de l'app (DOM clobbering).
+  'h2':     ['class', 'id', 'style', 'data-align', 'data-type'],
+  'h3':     ['class', 'id', 'data-align', 'data-type'],
+  'h4':     ['class', 'id', 'data-align', 'data-type'],
   'a':      ['href', 'target', 'rel'],
   'img':    ['src', 'alt', 'width', 'height'],
   'iframe': ['src', 'width', 'height', 'frameborder', 'allowfullscreen', 'allow'],
@@ -155,6 +161,14 @@ function sanitize(raw: string): string {
       return false
     },
   })
+}
+
+// Invalide les caches de listes de threads (showcase homepage, etc.) en
+// incrémentant la version incluse dans leurs clés. Fire-and-forget : un
+// échec Redis ne doit jamais bloquer la mutation (le TTL 30s rattrape).
+// Consommé par instance.ts (threads/showcase).
+function bumpThreadsCache(): void {
+  redis.incr('threads:cache:ver').catch(() => {})
 }
 
 const CreateCategoryBody = z.object({
@@ -340,6 +354,7 @@ app.get('/threads', {
       author_id: request.user!.userId,
       content: sanitizedContent,
     })
+    bumpThreadsCache()
 
     // Attach tags if provided
     if (tag_ids && tag_ids.length > 0) {
@@ -426,6 +441,7 @@ app.get('/threads', {
       author_id: userId,
       content:   sanitized,
     })
+    bumpThreadsCache()
 
     // Notifications (fire-and-forget)
     ;(async () => {
@@ -504,6 +520,7 @@ app.get('/threads', {
     }
 
     const post = await PostModel.updateContent(id, editSanitized)
+    bumpThreadsCache()
     return reply.send({
       post,
       meta: { images_rehosted: rehostEdit.rehosted, images_failed: rehostEdit.failed.length },
@@ -569,6 +586,7 @@ app.get('/threads', {
         return reply.code(403).send({ error: 'Authors can only edit the title', code: 'FORBIDDEN' })
       }
       const updated = await ThreadModel.update(threadId, { title: body.title.trim() })
+      bumpThreadsCache()
       return reply.send({ thread: updated })
     }
 
@@ -583,6 +601,7 @@ app.get('/threads', {
     // Mod/owner actions
     if (body.delete) {
       await ThreadModel.remove(threadId)
+      bumpThreadsCache()
       return reply.code(204).send()
     }
 
@@ -596,6 +615,7 @@ app.get('/threads', {
       is_locked:   body.is_locked,
       is_featured: body.is_featured,
     })
+    bumpThreadsCache()
     return reply.send({ thread: updated })
   })
 

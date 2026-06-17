@@ -1,4 +1,4 @@
-# Nexus — Forum communautaire libre
+# Nodyx — Forum communautaire libre
 # Tous les crawlers sont les bienvenus. Le savoir appartient à internet.
 
 User-agent: *
