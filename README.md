@@ -7,7 +7,7 @@
 ### *"The network is the people."*
 
 **The self-hosted community platform you actually own.**  
-Forum + Chat + Voice + P2P + Canvas + Homepage Builder + Widget SDK, one server, one community, forever.
+Forum + Chat + Voice + P2P + Canvas + Homepage Builder + Streamer Hub, one server, one community, forever.
 
 [![Version](https://img.shields.io/github/v/release/Pokled/nodyx?label=version&color=7c3aed)](https://github.com/Pokled/nodyx/releases/latest)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
@@ -145,6 +145,8 @@ The community-tools landscape isn't a battle. Each project optimizes for differe
 - **Widget Store**, install external widgets via .zip
 - **Widget SDK**, build custom widgets, no framework needed
 - **OctoGuard**, native auto-mod (regex/word/link/emoji-flood, ReDoS-safe via Google `re2`), welcome bot, custom commands, mutes, signed webhook, all admin-tunable, off by default
+- **Streamer Hub**, Twitch integration with a native Soundboard (ID3 tags, viewer queue, `!ns` chat command), a multi-page mobile Stream Deck, OBS browser-source overlays (alerts, goals, timers, tickers, leaderboards, clips, soundboard) and audio playlists with per-playlist OBS scenes
+- **Rich article editor**, anchor-on-selection table of contents, corner-handle image resize, protected code/render blocks, two-column layouts, embedded media, all round-trip safe through the sanitizer
 
 ---
 

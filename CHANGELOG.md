@@ -7,6 +7,51 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Éditeur d'articles : refonte de robustesse et d'UX (sprint juin)
+
+Gros chantier sur l'éditeur riche (TipTap) après un audit complet. Cause racine identifiée et corrigée : certains blocs personnalisés se reconnaissaient via des attributs `data-*` que le sanitizer backend supprime, donc l'éditeur les déstructurait à la réédition (perte silencieuse de contenu). Principe établi : **un bloc se reconnaît sur sa classe CSS** (préservée), jamais sur un `data-*` volatil.
+
+**Robustesse round-trip (anti-perte de données)**
+- Colonnes et vidéos YouTube : ne disparaissent plus à la réédition (parse sur la classe + reparse des iframes nus)
+- Console SSH des tutos (`.nodyx-term`) : devient un **nœud atomique protégé** qui capture son HTML et le ré-émet tel quel, avec un toggle **Rendu / Code** façon CMS (la source est éditable, jamais corrompue au clavier)
+- Sommaire étanche : une image ne peut plus se faire aspirer dans la boîte sommaire
+- Remplacement d'image réel : capture de la sélection à l'ouverture du menu
+
+**Nouvelles fonctionnalités d'édition**
+- **Ancres à la sélection** : barre flottante sur le texte surligné avec un bouton « Ancre » qui transforme la ligne en titre de section et l'ajoute à un menu Sommaire dérivé (recalculé, avec flash de feedback)
+- **Redimensionnement d'image** : poignées de coin avec aimant aux largeurs clés (25 / 50 / 75 / 100 %), largeur stockée en attribut `width`
+- **Zone éditable à hauteur bornée** + ascenseur interne : la barre d'outils reste toujours accessible sur les longs articles
+- **Console SSH stylée** (`.nodyx-term`) pour les tutoriels d'installation : fenêtre terminal avec barre de titre et coloration sémantique
+
+**Doc** : audit complet de l'éditeur dans `docs/audits/2026-06-15-editeur-rich.md`
+
+### Streamer Hub : playlists audio et scènes OBS
+
+- Playlists nommées dans la bibliothèque audio (Dev, Discussion, etc.), URL d'overlay OBS dédiée par playlist, contrôle depuis le Stream Deck
+- Tab « Scènes OBS » : compositeur visuel inspiré d'OBS pour placer overlays et playlists, avec pickers et création inline
+- Migrations 100 à 102 (playlists, jonction, scènes OBS)
+
+### Référencement (SEO / GEO) : fondations
+
+- Correction du sitemap (les threads n'y apparaissaient jamais : passé de 14 à plus de 60 URLs)
+- **og:image unique** par page = image de l'article (fini les doublons et la mauvaise image dans les partages Discord / Twitter), résolution rétroactive sur tous les articles
+- `llms.txt` réécrit, `robots.txt` rebrandé Nodyx, fichiers de vérification moteurs gitignorés (propres à chaque instance)
+- Guides publiés : comparatif honnête des alternatives (FR + EN) et guide d'installation débutant pas à pas (FR + EN)
+
+### Admin et performance
+
+- Refonte sobre (style Linear / Vercel / Stripe) de la sidebar et du dashboard admin : palette zinc, un seul accent, emojis hors labels système
+- SSR sans suspension sur le fetch directory + invalidation du cache showcase par clé de version (un article épinglé apparaît immédiatement)
+- La home se rafraîchit après suppression d'un thread (invalidation des chargements, plus de refresh manuel)
+- Grid Builder : scroll automatique vers la nouvelle ligne ajoutée
+
+### Sécurité et dépendances
+
+- ws (high, DoS WebSocket) et tar (medium) corrigés sur core et frontend
+- esbuild porté à `>= 0.28.1` via override sur les 4 projets SvelteKit (sans montée vite 8 cassante)
+- nodemailer 8 → 9 (validé en production), `@types/node` ajouté à l'authenticator, groupes de dépendances minor/patch à jour, GitHub Actions checkout / setup-node à jour
+- js-yaml (turn-server legacy non déployé) : dismissée avec motif documenté
+
 ---
 
 ## [2.7.0] — 2026-06-02
