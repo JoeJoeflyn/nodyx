@@ -48,6 +48,13 @@ export const nav: NavSection[] = [
     ],
   },
   {
+    title: 'Creating Content',
+    icon:  'pen',
+    items: [
+      { title: 'Article Editor', slug: 'editor', badge: 'v2.8' },
+    ],
+  },
+  {
     title: 'Admin Modules',
     icon:  'wrench',
     items: [
