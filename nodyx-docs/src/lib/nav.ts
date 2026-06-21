@@ -58,6 +58,7 @@ export const nav: NavSection[] = [
     title: 'Admin Modules',
     icon:  'wrench',
     items: [
+      { title: 'OctoGuard (auto-mod)',  slug: 'octoguard',    badge: 'v2.6' },
       { title: 'Streamer Hub (Twitch)', slug: 'streamer-hub', badge: 'v2.8' },
     ],
   },
