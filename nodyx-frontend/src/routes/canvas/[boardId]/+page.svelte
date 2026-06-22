@@ -28,6 +28,7 @@
 		userAvatar={u.avatar ?? null}
 		boardName={data.board.name}
 		readOnly={!data.board.can_edit}
+		lastSeen={data.board.last_seen ? new Date(data.board.last_seen).getTime() : null}
 		onRequestAccess={requestAccess}
 		onclose={() => goto('/canvas')}
 	/>

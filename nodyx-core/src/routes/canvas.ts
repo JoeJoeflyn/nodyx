@@ -257,10 +257,22 @@ export default async function canvasRoutes(app: FastifyInstance) {
     const board = rows[0]
     if (!board) return reply.code(404).send({ error: 'Board introuvable.' })
 
-    const access = await resolveAccess(board, req.user!.userId)
+    const userId = req.user!.userId
+    const access = await resolveAccess(board, userId)
     if (!access.view) return reply.code(403).send({ error: 'Accès refusé à ce board.' })
 
-    return reply.send({ board: { ...board, can_edit: access.write } })
+    // Dernière visite (pour surligner les nouveautés), puis on la met à jour à maintenant.
+    const { rows: [view] } = await db.query<{ last_seen_at: string }>(
+      `SELECT last_seen_at FROM canvas_board_views WHERE board_id = $1 AND user_id = $2`,
+      [board.id, userId])
+    const lastSeen = view?.last_seen_at ?? null
+    await db.query(
+      `INSERT INTO canvas_board_views (board_id, user_id, last_seen_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (board_id, user_id) DO UPDATE SET last_seen_at = NOW()`,
+      [board.id, userId]).catch(() => {})
+
+    return reply.send({ board: { ...board, can_edit: access.write, last_seen: lastSeen } })
   })
 
   // ── PATCH /api/v1/canvas/:boardId — Sauvegarder snapshot ─────────────────

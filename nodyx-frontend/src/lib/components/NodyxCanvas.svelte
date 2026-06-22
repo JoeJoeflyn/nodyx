@@ -26,6 +26,7 @@
 		userAvatar = null,
 		boardName  = 'Canvas',
 		readOnly   = false,
+		lastSeen   = null,
 		onRequestAccess = () => {},
 		onclose    = () => {},
 	}: {
@@ -37,9 +38,16 @@
 		userAvatar?: string | null
 		boardName?:  string
 		readOnly?:   boolean
+		lastSeen?:   number | null
 		onRequestAccess?: () => void
 		onclose:     () => void
 	} = $props()
+
+	// Surbrillance des nouveautés depuis la dernière visite (ts > lastSeen, pas mes ajouts)
+	function isNewSinceLastVisit(el: { ts: number; author: string }): boolean {
+		return lastSeen != null && el.ts > lastSeen && el.author !== userId
+	}
+	let newCount = $state(0)
 
 	// Lecture seule : état du bouton "Demander l'accès en édition"
 	let accessAsked = $state(false)
@@ -366,7 +374,12 @@
 
 		if (showGrid) drawGrid(ctx, W, H)
 
-		for (const el of cs.snapshot()) drawElement(ctx, el, selectedIds.has(el.id))
+		for (const el of cs.snapshot()) {
+			const fresh = isNewSinceLastVisit(el)
+			if (fresh) { ctx.save(); ctx.shadowColor = 'rgba(99,102,241,.95)'; ctx.shadowBlur = 22 }
+			drawElement(ctx, el, selectedIds.has(el.id))
+			if (fresh) ctx.restore()
+		}
 
 		// Frame membership rings — ring coloré autour des enfants de chaque frame
 		for (const frameEl of cs.snapshot()) {
@@ -1665,7 +1678,9 @@
 	// ── Socket.IO receive ─────────────────────────────────────────────────────
 
 	function handleSnapshot({ elements }: { boardId: string; elements: CanvasElement[] }) {
-		cs.loadSnapshot(elements); synced = true; render()
+		cs.loadSnapshot(elements); synced = true
+		newCount = elements.filter(isNewSinceLastVisit).length
+		render()
 	}
 	function handleRemoteOp({ op }: { boardId: string; op: CanvasElement }) {
 		if (cs.apply(op)) render()
@@ -2031,6 +2046,16 @@
 				NodyxCanvas
 			</div>
 		</div>
+
+		<!-- ── Nouveautés depuis la dernière visite ── -->
+		{#if newCount > 0}
+			<div style="position:absolute; top:52px; left:12px; z-index:10; pointer-events:none;
+			            display:flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px;
+			            background:rgba(99,102,241,.18); border:1px solid rgba(99,102,241,.55); backdrop-filter:blur(8px);
+			            color:#c7d2fe; font-size:12px; font-weight:700; white-space:nowrap;">
+				✨ {newCount} nouveauté{newCount > 1 ? 's' : ''} depuis ta dernière visite
+			</div>
+		{/if}
 
 		<!-- ── Bottom bar ── -->
 		<div role="presentation" style="position:absolute; bottom:12px; left:50%; transform:translateX(-50%); z-index:20;"
