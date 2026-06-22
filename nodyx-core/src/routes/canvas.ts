@@ -99,6 +99,7 @@ export default async function canvasRoutes(app: FastifyInstance) {
         properties: {
           name:       { type: 'string', maxLength: 100 },
           channel_id: { type: 'string' },
+          visibility: { type: 'string', enum: ['private', 'public'] },
         },
       },
     },
@@ -107,7 +108,8 @@ export default async function canvasRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: 'Le module Canvas n\'est pas activé.' })
     }
 
-    const { name, channel_id } = req.body as { name?: string; channel_id?: string }
+    const { name, channel_id, visibility } = req.body as { name?: string; channel_id?: string; visibility?: string }
+    const vis = visibility === 'public' ? 'public' : 'private'
     const userId = req.user!.userId
 
     // Validate channel_id is a real UUID if provided
@@ -123,10 +125,10 @@ export default async function canvasRoutes(app: FastifyInstance) {
     }
 
     const { rows } = await db.query<{ id: string; name: string; created_at: string }>(
-      `INSERT INTO canvas_boards (name, channel_id, created_by)
-       VALUES ($1, $2, $3)
-       RETURNING id, name, channel_id, created_by, created_at, updated_at`,
-      [name?.trim() || 'Sans titre', channel_id ?? null, userId]
+      `INSERT INTO canvas_boards (name, channel_id, created_by, visibility)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, channel_id, created_by, visibility, created_at, updated_at`,
+      [name?.trim() || 'Sans titre', channel_id ?? null, userId, vis]
     )
     return reply.code(201).send({ board: rows[0] })
   })
@@ -147,6 +149,31 @@ export default async function canvasRoutes(app: FastifyInstance) {
        WHERE channel_id = $1
        ORDER BY updated_at DESC`,
       [channelId]
+    )
+    return reply.send({ boards: rows })
+  })
+
+  // ── GET /api/v1/canvas/boards — Boards standalone (hub Projets) ──────────
+  // Déclaré AVANT /:boardId : Fastify priorise la route statique de toute
+  // façon, mais on garde l'ordre lisible. Read-only, additif.
+  app.get('/boards', {
+    preHandler: [rateLimit, requireAuth],
+  }, async (req, reply) => {
+    if (!await isModuleEnabled()) {
+      return reply.code(403).send({ error: 'Le module Canvas n\'est pas activé.' })
+    }
+    // Lot 1 : on ne liste que MES projets standalone. La galerie publique
+    // (projets d'autres membres en visibility='public') arrive au Lot 2 avec
+    // le système de rôles/accès.
+    const userId = req.user!.userId
+    const { rows } = await db.query(
+      `SELECT b.id, b.name, b.visibility, b.created_by, b.created_at, b.updated_at,
+              jsonb_array_length(b.snapshot) AS element_count
+       FROM canvas_boards b
+       WHERE b.channel_id IS NULL AND b.created_by = $1
+       ORDER BY b.updated_at DESC
+       LIMIT 200`,
+      [userId]
     )
     return reply.send({ boards: rows })
   })
