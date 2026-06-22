@@ -64,12 +64,19 @@ async function resolveBoardAccess(boardId: string, userId: string): Promise<{ vi
 		return { view: m, write: m }
 	}
 
-	// Standalone, pas le créateur
+	// Standalone, pas le créateur : collaborateur accepté ?
+	const { rows: [collab] } = await db.query<{ role: string; status: string }>(
+		`SELECT role, status FROM canvas_board_collaborators WHERE board_id = $1 AND user_id = $2`,
+		[boardId, userId]
+	).catch(() => ({ rows: [] as any[] }))
+	const activeEditor = collab?.status === 'active' && collab?.role === 'editor'
+
 	if (board.visibility === 'public') {
 		const m = await isCommunityMember(userId)
-		return { view: m, write: false }   // lecture seule ; éditeurs invités = Lot 2b
+		return { view: m, write: !!activeEditor }   // tout membre voit ; éditeur accepté écrit
 	}
-	return { view: false, write: false }   // privé non-créateur ; invités = Lot 2b
+	// Privé : seuls les collaborateurs actifs voient.
+	return { view: collab?.status === 'active', write: !!activeEditor }
 }
 
 // ── In-memory state ───────────────────────────────────────────────────────────

@@ -10,7 +10,9 @@
 		visibility: 'private' | 'public'
 		element_count: number
 		updated_at: string
+		pending_requests?: number
 	}
+	type AccessRequest = { user_id: string; username: string; avatar: string | null; created_at: string }
 
 	let boards = $derived((data.boards ?? []) as Board[])
 	let publicBoards = $derived((data.publicBoards ?? []) as (Board & { creator_username: string | null })[])
@@ -73,6 +75,36 @@
 			busyId = null
 		}
 	}
+
+	// ── Demandes d'accès en édition (vue propriétaire) ──────────────────────
+	let requestsFor = $state<string | null>(null)   // boardId du popover ouvert
+	let requests    = $state<AccessRequest[]>([])
+	let reqLoading  = $state(false)
+
+	async function openRequests(b: Board) {
+		requestsFor = b.id
+		reqLoading = true
+		try {
+			const res = await fetch(`/api/v1/canvas/${b.id}/requests`, { headers: { Authorization: `Bearer ${data.token}` } })
+			requests = res.ok ? (await res.json()).requests ?? [] : []
+		} finally {
+			reqLoading = false
+		}
+	}
+
+	async function approve(boardId: string, userId: string) {
+		await fetch(`/api/v1/canvas/${boardId}/requests/${userId}/approve`, { method: 'POST', headers: { Authorization: `Bearer ${data.token}` } }).catch(() => {})
+		requests = requests.filter(r => r.user_id !== userId)
+		await invalidateAll()
+		if (requests.length === 0) requestsFor = null
+	}
+
+	async function deny(boardId: string, userId: string) {
+		await fetch(`/api/v1/canvas/${boardId}/requests/${userId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${data.token}` } }).catch(() => {})
+		requests = requests.filter(r => r.user_id !== userId)
+		await invalidateAll()
+		if (requests.length === 0) requestsFor = null
+	}
 </script>
 
 <svelte:head><title>Canvas : mes projets</title></svelte:head>
@@ -121,6 +153,13 @@
 							<p class="text-xs text-gray-500 mt-1">{b.element_count} élément{b.element_count > 1 ? 's' : ''} · {fmtDate(b.updated_at)}</p>
 						</div>
 					</button>
+					{#if (b.pending_requests ?? 0) > 0}
+						<button onclick={() => openRequests(b)} title="Demandes d'accès en édition"
+							class="absolute top-2 left-2 z-10 flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold text-amber-950 bg-amber-400 hover:bg-amber-300 shadow-lg animate-pulse">
+							<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 22a2.5 2.5 0 002.45-2h-4.9A2.5 2.5 0 0012 22zm6.36-6V11c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 00-3 0v.68C7.99 5.36 6.36 7.92 6.36 11v5l-1.86 1.86V19h15v-1.14L18.36 16z"/></svg>
+							{b.pending_requests}
+						</button>
+					{/if}
 					<div class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
 						<button onclick={() => renameProject(b)} disabled={busyId === b.id} title="Renommer"
 							class="p-1.5 rounded-md bg-black/40 text-gray-300 hover:text-white hover:bg-black/60">
@@ -191,6 +230,40 @@
 					class="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 disabled:opacity-50">
 					{creating ? 'Création…' : 'Créer et ouvrir'}
 				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if requestsFor}
+	<div class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+	     onclick={(e) => { if (e.target === e.currentTarget) requestsFor = null }}
+	     role="presentation">
+		<div class="w-full max-w-md rounded-2xl border border-white/10 bg-[#12121a] p-6">
+			<h2 class="text-lg font-bold text-white mb-1">Demandes d'accès en édition</h2>
+			<p class="text-sm text-gray-500 mb-4">Accorde l'édition aux membres en qui tu as confiance.</p>
+			{#if reqLoading}
+				<p class="text-sm text-gray-500 py-6 text-center">Chargement…</p>
+			{:else if requests.length === 0}
+				<p class="text-sm text-gray-500 py-6 text-center">Aucune demande en attente.</p>
+			{:else}
+				<div class="space-y-2">
+					{#each requests as r (r.user_id)}
+						<div class="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
+							<div class="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-sm shrink-0 overflow-hidden">
+								{#if r.avatar}<img src={r.avatar} alt={r.username} class="w-full h-full object-cover" />{:else}{r.username?.[0]?.toUpperCase() ?? '?'}{/if}
+							</div>
+							<span class="flex-1 text-sm text-white truncate">{r.username}</span>
+							<button onclick={() => requestsFor && approve(requestsFor, r.user_id)}
+								class="px-2.5 py-1 rounded-md text-xs font-semibold text-emerald-950 bg-emerald-400 hover:bg-emerald-300">Accepter</button>
+							<button onclick={() => requestsFor && deny(requestsFor, r.user_id)}
+								class="px-2.5 py-1 rounded-md text-xs font-semibold text-gray-300 bg-white/5 hover:bg-white/10">Refuser</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+			<div class="flex justify-end mt-5">
+				<button onclick={() => requestsFor = null} class="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white">Fermer</button>
 			</div>
 		</div>
 	</div>

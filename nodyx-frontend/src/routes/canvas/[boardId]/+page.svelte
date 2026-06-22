@@ -6,6 +6,14 @@
 
 	let { data }: { data: PageData } = $props()
 	const u = (data as unknown as { user?: { id?: string; username?: string; avatar?: string | null } }).user ?? {}
+
+	// Lecture seule : demander l'accès en édition au propriétaire.
+	async function requestAccess() {
+		await fetch(`/api/v1/canvas/${data.board.id}/request-access`, {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${data.token}` }
+		}).catch(() => {})
+	}
 </script>
 
 <svelte:head><title>{data.board?.name ?? 'Canvas'} : Canvas</title></svelte:head>
@@ -20,6 +28,7 @@
 		userAvatar={u.avatar ?? null}
 		boardName={data.board.name}
 		readOnly={!data.board.can_edit}
+		onRequestAccess={requestAccess}
 		onclose={() => goto('/canvas')}
 	/>
 {:else}
