@@ -242,7 +242,7 @@ export default async function socialRoutes(app: FastifyInstance) {
   // GET /feed — personalized timeline (posts from followed users + self)
   app.get('/feed', { preHandler: [rateLimit, requireAuth] }, async (request, reply) => {
     const { userId } = request.user!
-    const { before, limit = '20' } = request.query as { before?: string; limit?: string }
+    const { before, limit = '20', scope = 'discover' } = request.query as { before?: string; limit?: string; scope?: string }
 
     const lim    = Math.min(50, parseInt(limit))
     const params: unknown[] = [userId, lim]
@@ -253,16 +253,20 @@ export default async function socialRoutes(app: FastifyInstance) {
       cursor = `AND sp.created_at < $${params.length}`
     }
 
+    // scope=following : moi + mes abonnements. scope=discover (défaut) : tous les
+    // posts récents de la communauté (les status sont publics). $1 reste le viewer
+    // (utilisé par postSelect pour le statut "j'aime").
+    const authorFilter = scope === 'following'
+      ? `AND (sp.author_id = $1 OR sp.author_id IN (SELECT following_id FROM follows WHERE follower_id = $1))`
+      : ''
+
     const result = await db.query(`
       SELECT ${postSelect('$1')}
       FROM status_posts sp
       JOIN users u ON u.id = sp.author_id
       LEFT JOIN user_profiles p ON p.user_id = u.id
       WHERE sp.reply_to_id IS NULL
-        AND (
-          sp.author_id = $1
-          OR sp.author_id IN (SELECT following_id FROM follows WHERE follower_id = $1)
-        )
+        ${authorFilter}
         ${cursor}
       ORDER BY sp.created_at DESC
       LIMIT $2

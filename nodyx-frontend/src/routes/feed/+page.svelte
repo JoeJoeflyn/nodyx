@@ -19,6 +19,26 @@
 	let loading   = $state(false)
 	let hasMore   = $state(untrack(() => data.posts?.length === 20))
 
+	// ── Onglets du feed : Découvrir (tout) / Abonnements (ceux que je suis) ────
+	let scope = $state<'discover' | 'following'>('discover')
+	async function switchScope(s: 'discover' | 'following') {
+		if (s === scope || loading) return
+		scope = s
+		loading = true
+		posts = []
+		try {
+			const res = await apiFetch(fetch, `/social/feed?scope=${s}&limit=20`, {
+				headers: { Authorization: `Bearer ${token}` },
+			})
+			if (res.ok) {
+				posts = (await res.json()).posts ?? []
+				hasMore = posts.length === 20
+			}
+		} finally {
+			loading = false
+		}
+	}
+
 	// ── Composer ──────────────────────────────────────────────────────────────
 	let content     = $state('')
 	let composing   = $state(false)
@@ -160,7 +180,7 @@
 		loading = true
 		const last = posts[posts.length - 1]
 		try {
-			const res = await apiFetch(fetch, `/social/feed?limit=20&before=${last.created_at}`, {
+			const res = await apiFetch(fetch, `/social/feed?scope=${scope}&limit=20&before=${last.created_at}`, {
 				headers: { Authorization: `Bearer ${token}` },
 			})
 			if (res.ok) {
@@ -221,6 +241,16 @@
 	<div class="feed-layout">
 		<!-- ── Main column ──────────────────────────────────────────────────── -->
 		<div class="feed-main">
+
+			<!-- Onglets : Découvrir / Abonnements ──────────────────────────── -->
+			<div class="feed-tabs">
+				<button class="feed-tab" class:feed-tab--active={scope === 'discover'} onclick={() => switchScope('discover')}>
+					Découvrir
+				</button>
+				<button class="feed-tab" class:feed-tab--active={scope === 'following'} onclick={() => switchScope('following')}>
+					Abonnements
+				</button>
+			</div>
 
 			<!-- Composer ─────────────────────────────────────────────────── -->
 			<div class="composer" class:composer--active={composing || content.length > 0}>
@@ -562,13 +592,6 @@
 					</ul>
 				</div>
 			{/if}
-
-			<div class="sidebar-card sidebar-card--links">
-				<a href="/forum">Forum</a>
-				<a href="/chat">Chat</a>
-				<a href="/discover">Membres</a>
-				<a href="/users/me/edit">Mon profil</a>
-			</div>
 		</aside>
 	</div>
 </div>
@@ -630,6 +653,38 @@
 	align-items: flex-start;
 }
 .feed-main   { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+
+/* Onglets Découvrir / Abonnements */
+.feed-tabs {
+	display: flex;
+	gap: 0.25rem;
+	margin-bottom: 0.5rem;
+	padding: 0.25rem;
+	background: rgba(255,255,255,0.03);
+	border: 1px solid rgba(255,255,255,0.06);
+	border-radius: 14px;
+	position: sticky;
+	top: 56px;
+	z-index: 5;
+	backdrop-filter: blur(8px);
+}
+.feed-tab {
+	flex: 1;
+	padding: 0.55rem 1rem;
+	border: none;
+	border-radius: 10px;
+	background: transparent;
+	color: rgba(255,255,255,0.5);
+	font-size: 0.875rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.15s, color 0.15s;
+}
+.feed-tab:hover { color: rgba(255,255,255,0.8); }
+.feed-tab--active {
+	background: linear-gradient(135deg, rgba(124,58,237,0.25), rgba(6,182,212,0.2));
+	color: #fff;
+}
 .feed-sidebar { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; gap: 1rem; position: sticky; top: 68px; }
 
 @media (max-width: 640px) {
