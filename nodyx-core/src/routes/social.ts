@@ -32,20 +32,23 @@ const AUDIO_MIME_PREFIX = 'audio/'
 
 function postSelect(viewerParam: string | null) {
   return `
-    sp.id, sp.content, sp.media_url, sp.link_preview, sp.reply_to_id,
-    sp.likes_count, sp.replies_count, sp.created_at,
+    sp.id, sp.content, sp.media_url, sp.link_preview, sp.reply_to_id, sp.created_at,
+    -- Interactions calculées sur l'ORIGINAL effectif : un repartage partage les
+    -- réactions/réponses de l'original (façon retweet), pas les siennes propres.
+    (SELECT likes_count   FROM status_posts WHERE id = COALESCE(sp.reshare_of, sp.id)) AS likes_count,
+    (SELECT replies_count FROM status_posts WHERE id = COALESCE(sp.reshare_of, sp.id)) AS replies_count,
     u.id AS author_id, u.username, p.display_name, p.avatar_url,
     ${viewerParam
-      ? `EXISTS(SELECT 1 FROM status_likes sl WHERE sl.user_id = ${viewerParam} AND sl.post_id = sp.id)`
+      ? `EXISTS(SELECT 1 FROM status_likes sl WHERE sl.user_id = ${viewerParam} AND sl.post_id = COALESCE(sp.reshare_of, sp.id))`
       : 'false'} AS liked_by_me,
     ${viewerParam
-      ? `(SELECT emoji FROM status_likes WHERE user_id = ${viewerParam} AND post_id = sp.id)`
+      ? `(SELECT emoji FROM status_likes WHERE user_id = ${viewerParam} AND post_id = COALESCE(sp.reshare_of, sp.id))`
       : 'NULL'} AS my_reaction,
     (SELECT json_object_agg(emoji, jc) FROM (
        SELECT sl2.emoji,
               json_build_object('count', COUNT(*), 'users', json_agg(u2.username ORDER BY u2.username)) AS jc
        FROM status_likes sl2 JOIN users u2 ON u2.id = sl2.user_id
-       WHERE sl2.post_id = sp.id GROUP BY sl2.emoji
+       WHERE sl2.post_id = COALESCE(sp.reshare_of, sp.id) GROUP BY sl2.emoji
      ) t) AS reactions,
     sp.reshare_of,
     (SELECT COUNT(*) FROM status_posts r WHERE r.reshare_of = COALESCE(sp.reshare_of, sp.id))::int AS reshares_count,

@@ -106,7 +106,7 @@
 					posts = [post, ...posts]
 				} else {
 					const parentId = replyTo.id
-					posts = posts.map(p => p.id === parentId
+					posts = posts.map(p => (p.reshare_of || p.id) === parentId
 						? { ...p, replies_count: (p.replies_count ?? 0) + 1 }
 						: p
 					)
@@ -161,12 +161,16 @@
 		return { ...p, my_reaction: next, liked_by_me: !!next, likes_count: Math.max(0, (p.likes_count || 0) + delta), reactions }
 	}
 
+	// Cible effective : sur un repartage, on agit sur l'ORIGINAL (façon retweet).
+	const effId = (p: any) => p.reshare_of || p.id
+
 	async function react(post: any, emoji: string) {
 		pickerFor = null
 		const prev = post.my_reaction || null
 		if (prev === emoji) return removeReaction(post)   // re-cliquer son emoji = retirer
-		posts = posts.map(p => p.id === post.id ? applyReaction(p, prev, emoji) : p)
-		await apiFetch(fetch, `/social/status/${post.id}/react`, {
+		const target = effId(post)
+		posts = posts.map(p => effId(p) === target ? applyReaction(p, prev, emoji) : p)
+		await apiFetch(fetch, `/social/status/${target}/react`, {
 			method: 'POST',
 			headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
 			body: JSON.stringify({ emoji }),
@@ -177,8 +181,9 @@
 		pickerFor = null
 		const prev = post.my_reaction || null
 		if (!prev) return
-		posts = posts.map(p => p.id === post.id ? applyReaction(p, prev, null) : p)
-		await apiFetch(fetch, `/social/status/${post.id}/like`, {
+		const target = effId(post)
+		posts = posts.map(p => effId(p) === target ? applyReaction(p, prev, null) : p)
+		await apiFetch(fetch, `/social/status/${target}/like`, {
 			method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
 		}).catch(() => {})
 	}
@@ -214,6 +219,7 @@
 
 	async function toggleReplies(post: any) {
 		const id = post.id
+		const src = post.reshare_of || post.id   // les réponses viennent de l'original
 		if (repliesOpen[id]) {
 			repliesOpen = { ...repliesOpen, [id]: false }
 			return
@@ -225,7 +231,7 @@
 		}
 		repliesLoading = { ...repliesLoading, [id]: true }
 		try {
-			const res = await apiFetch(fetch, `/social/status/${id}`)
+			const res = await apiFetch(fetch, `/social/status/${src}`)
 			if (res.ok) {
 				const data = await res.json()
 				repliesMap  = { ...repliesMap,  [id]: data.replies ?? [] }
@@ -519,7 +525,7 @@
 										<!-- Reply -->
 										<button
 											onclick={() => {
-												replyTo = post
+												replyTo = post.reshared || post   // répondre cible l'original (repartage)
 												composing = true
 												window.scrollTo({ top: 0, behavior: 'smooth' })
 											}}
