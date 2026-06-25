@@ -137,6 +137,17 @@
         }
     })
 
+    // Deep-link ?section=xxx (ex: bouton « Paramètres » depuis les DM)
+    $effect(() => {
+        const s = $page.url.searchParams.get('section')
+        if (s) {
+            activeSection = s
+            const url = new URL(window.location.href)
+            url.searchParams.delete('section')
+            window.history.replaceState({}, '', url)
+        }
+    })
+
     // Charge le link au premier passage sur la section
     $effect(() => {
         if (activeSection === 'connected-accounts' && !twitchLoaded) {
@@ -525,6 +536,16 @@
                 {/if}
             </button>
 
+            <button class="sb-item {activeSection === 'encryption' ? 'active' : ''}"
+                    onclick={() => activeSection = 'encryption'}>
+                <span class="sb-icon" style="background: rgba(99,102,241,0.12); color: #818cf8">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                </span>
+                <span class="sb-label">Messages chiffrés</span>
+            </button>
+
             <button class="sb-item {activeSection === 'signet' ? 'active' : ''}"
                     onclick={() => activeSection = 'signet'}>
                 <span class="sb-icon" style="background: rgba(251,191,36,0.1); color: #fbbf24">
@@ -902,8 +923,24 @@
                     {tFn('settings.security.2fa.privacy')}
                 </p>
             </div>
+        </div>
+        {/if}
 
-            <!-- Sauvegarde de clé E2E (récupération multi-appareil) -->
+        <!-- ═══ MESSAGES CHIFFRÉS (sauvegarde de clé E2E) ════════════════════ -->
+        {#if activeSection === 'encryption' && $page.data.user}
+        <div class="s-pane" style="--accent: #818cf8; --accent-bg: rgba(99,102,241,0.08); --accent-border: rgba(99,102,241,0.2)">
+            <div class="s-pane-header">
+                <div class="s-pane-icon" style="background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                        <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="s-pane-title">Messages chiffrés</h2>
+                    <p class="s-pane-desc">Sauvegarde et récupération de ta clé de chiffrement de bout en bout.</p>
+                </div>
+            </div>
+
             {#if ($page.data as any).token}
             <div class="s-card">
                 <E2EKeyBackup token={($page.data as any).token} mode="manage" />

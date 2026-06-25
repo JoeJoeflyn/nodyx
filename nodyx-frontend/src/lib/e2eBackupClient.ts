@@ -2,6 +2,7 @@
 // Orchestration côté client. Le serveur ne reçoit qu'un blob opaque.
 import {
 	exportIdentityKeyJwk, restoreIdentityKeyJwk, registerPublicKey, hasKeyPair,
+	regenerateKeyPair,
 } from './e2e'
 import { encryptKeyBackup, decryptKeyBackup, type KeyBackup } from './e2eBackup'
 
@@ -71,4 +72,12 @@ export async function deleteKeyBackup(token: string): Promise<boolean> {
 export async function shouldOfferRestore(token: string): Promise<boolean> {
 	if (await hasKeyPair()) return false
 	return hasServerBackup(token)
+}
+
+/**
+ * Régénère une clé extractable (sauvegardable). Remplace la clé locale →
+ * l'historique chiffré sur cet appareil devient illisible. Confirmation requise.
+ */
+export async function regenerateKey(token: string): Promise<boolean> {
+	try { await regenerateKeyPair(token); return true } catch { return false }
 }

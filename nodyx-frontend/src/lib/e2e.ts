@@ -157,6 +157,30 @@ export async function restoreIdentityKeyJwk(privateJwkStr: string): Promise<stri
   return _jwkToB64(pubJwk)
 }
 
+/**
+ * Régénère une paire de clés fraîche (extractable, donc sauvegardable).
+ * ATTENTION : remplace la clé locale → l'historique chiffré avec l'ancienne clé
+ * sur cet appareil devient illisible. À n'appeler qu'avec confirmation explicite.
+ */
+export async function regenerateKeyPair(token: string): Promise<string> {
+  _keys = null
+  if (browser) {
+    try {
+      const db = await _openDB()
+      await new Promise<void>((resolve, reject) => {
+        const tx  = db.transaction(STORE, 'readwrite')
+        const req = tx.objectStore(STORE).delete(KEY_ID)
+        req.onsuccess = () => { resolve(); db.close() }
+        req.onerror   = () => { reject(req.error); db.close() }
+      })
+    } catch { /* IndexedDB indisponible */ }
+    try { localStorage.removeItem('nodyx_e2e_registered_key') } catch { /* ignore */ }
+  }
+  const pub = await initKeyPair()   // nouvelle clé extractable
+  await registerPublicKey(token)    // ré-enregistre la nouvelle clé publique
+  return pub
+}
+
 /** Vérifie si une paire de clés existe localement. */
 export async function hasKeyPair(): Promise<boolean> {
   if (!browser) return false

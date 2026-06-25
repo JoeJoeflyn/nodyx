@@ -1262,6 +1262,15 @@
 						</div>
 					{/if}
 
+					<!-- Réglages du chiffrement (sauvegarde / récupération de clé) -->
+					<a href="/settings?section=encryption"
+						class="p-1.5 rounded-lg transition-colors hover:bg-white/5 text-gray-400 hover:text-gray-200 shrink-0"
+						title="Sauvegarde des messages chiffrés">
+						<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+							<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+						</svg>
+					</a>
+
 					<!-- Bouton inviter (1:1 → convertir en groupe) -->
 					<div class="relative shrink-0">
 						<button
