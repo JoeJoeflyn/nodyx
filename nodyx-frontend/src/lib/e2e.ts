@@ -104,11 +104,13 @@ export async function initKeyPair(): Promise<string> {
     }
   } catch { /* IndexedDB indisponible (navigation privée, etc.) — génère en mémoire */ }
 
-  // Générer une paire ECDH P-256 fraîche
-  // private key non-extractable : le navigateur garantit qu'elle ne sort pas
+  // Générer une paire ECDH P-256 fraîche.
+  // Clé privée EXTRACTABLE : nécessaire pour le backup chiffré par passphrase
+  // (récupération multi-appareil). Elle ne sort jamais en clair — seulement
+  // chiffrée par la passphrase de l'user, le serveur reste aveugle.
   const pair = await crypto.subtle.generateKey(
     { name: 'ECDH', namedCurve: 'P-256' },
-    false,                          // private key non-extractable
+    true,                           // extractable (pour export/backup)
     ['deriveKey', 'deriveBits']
   )
 
@@ -120,6 +122,39 @@ export async function initKeyPair(): Promise<string> {
 
   _keys = keys
   return _jwkToB64(publicKeyJwk)
+}
+
+/**
+ * Exporte la clé privée d'identité en JWK (pour le backup chiffré par passphrase).
+ * Échoue si la clé est non-extractable (anciennes clés générées avant le backup).
+ */
+export async function exportIdentityKeyJwk(): Promise<string> {
+  await initKeyPair()
+  if (!_keys) throw new Error('no key pair')
+  const jwk = await crypto.subtle.exportKey('jwk', _keys.privateKey)
+  return JSON.stringify(jwk)
+}
+
+/** La clé locale peut-elle être sauvegardée (extractable) ? */
+export async function isKeyBackupable(): Promise<boolean> {
+  try { await exportIdentityKeyJwk(); return true } catch { return false }
+}
+
+/**
+ * Restaure une clé d'identité depuis un JWK (backup déchiffré) : importe la clé
+ * privée, dérive la publique, persiste en IndexedDB. Retourne la clé publique b64.
+ */
+export async function restoreIdentityKeyJwk(privateJwkStr: string): Promise<string> {
+  const jwk = JSON.parse(privateJwkStr) as JsonWebKey
+  const privateKey = await crypto.subtle.importKey(
+    'jwk', jwk, { name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveKey', 'deriveBits'],
+  )
+  // Clé publique = même JWK sans la composante privée 'd'.
+  const pubJwk: JsonWebKey = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, ext: true, key_ops: [] }
+  const keys: StoredKeys = { id: KEY_ID, privateKey, publicKeyJwk: pubJwk }
+  try { await _saveKeys(keys) } catch { /* IndexedDB indisponible */ }
+  _keys = keys
+  return _jwkToB64(pubJwk)
 }
 
 /** Vérifie si une paire de clés existe localement. */

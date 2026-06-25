@@ -1,5 +1,6 @@
 <script lang="ts">
     import NetworkDoctor from '$lib/components/NetworkDoctor.svelte';
+    import E2EKeyBackup from '$lib/components/E2EKeyBackup.svelte';
     import { page } from '$app/stores';
 
     import { PUBLIC_API_URL, PUBLIC_SIGNET_URL } from '$env/static/public';
@@ -901,6 +902,13 @@
                     {tFn('settings.security.2fa.privacy')}
                 </p>
             </div>
+
+            <!-- Sauvegarde de clé E2E (récupération multi-appareil) -->
+            {#if ($page.data as any).token}
+            <div class="s-card">
+                <E2EKeyBackup token={($page.data as any).token} mode="manage" />
+            </div>
+            {/if}
         </div>
         {/if}
 
