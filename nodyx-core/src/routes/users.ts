@@ -648,4 +648,54 @@ export default async function userRoutes(app: FastifyInstance) {
     }
     return reply.send({ public_key: rows[0].public_key ?? null })
   })
+
+  // ── Backup de clé E2E (récupération multi-appareil) ──────────────────────
+  // Le serveur ne stocke qu'un BLOB OPAQUE : la clé privée chiffrée côté client
+  // par la passphrase de l'user (AES-GCM). Le serveur reste AVEUGLE. Un user
+  // n'accède QU'À son propre backup (isolation par user_id).
+  app.put('/me/key-backup', {
+    preHandler: [rateLimit, requireAuth],
+  }, async (request, reply) => {
+    const me = request.user!.userId
+    const { blob, salt, kdf, kdf_iters } = (request.body ?? {}) as {
+      blob?: string; salt?: string; kdf?: string; kdf_iters?: number
+    }
+    if (!blob || !salt || typeof blob !== 'string' || typeof salt !== 'string') {
+      return reply.code(400).send({ error: 'blob and salt required', code: 'BAD_REQUEST' })
+    }
+    if (blob.length > 8192 || salt.length > 256) {
+      return reply.code(400).send({ error: 'backup too large', code: 'BAD_REQUEST' })
+    }
+    const kdfName = typeof kdf === 'string' ? kdf.slice(0, 50) : 'PBKDF2-SHA256'
+    const iters   = Number.isInteger(kdf_iters) && (kdf_iters as number) > 0
+      ? Math.min(kdf_iters as number, 5_000_000) : 600000
+
+    await db.query(
+      `INSERT INTO e2e_key_backups (user_id, blob, salt, kdf, kdf_iters, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (user_id) DO UPDATE
+         SET blob = EXCLUDED.blob, salt = EXCLUDED.salt, kdf = EXCLUDED.kdf,
+             kdf_iters = EXCLUDED.kdf_iters, updated_at = NOW()`,
+      [me, blob, salt, kdfName, iters]
+    )
+    return reply.send({ ok: true })
+  })
+
+  app.get('/me/key-backup', {
+    preHandler: [rateLimit, requireAuth],
+  }, async (request, reply) => {
+    const me = request.user!.userId
+    const { rows } = await db.query<{ blob: string; salt: string; kdf: string; kdf_iters: number }>(
+      `SELECT blob, salt, kdf, kdf_iters FROM e2e_key_backups WHERE user_id = $1`,
+      [me]
+    )
+    return reply.send({ backup: rows[0] ?? null })
+  })
+
+  app.delete('/me/key-backup', {
+    preHandler: [rateLimit, requireAuth],
+  }, async (request, reply) => {
+    await db.query(`DELETE FROM e2e_key_backups WHERE user_id = $1`, [request.user!.userId])
+    return reply.send({ ok: true })
+  })
 }

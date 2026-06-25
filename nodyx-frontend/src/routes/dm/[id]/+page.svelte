@@ -8,6 +8,8 @@
 		encryptDM, decryptDM, loadEsyKey, barbarizeVisual,
 		type E2EStatus, type EsyKey
 	} from '$lib/e2e'
+	import { shouldOfferRestore } from '$lib/e2eBackupClient'
+	import E2EKeyBackup from '$lib/components/E2EKeyBackup.svelte'
 	import ReactionTooltip from '$lib/components/ReactionTooltip.svelte'
 	import EmojiPicker from '$lib/components/EmojiPicker.svelte'
 	import MessageBody from '$lib/components/MessageBody.svelte'
@@ -93,10 +95,21 @@
 	let esyFingerprint: string | null = $state(null)
 	// Animation d'envoi — texte "barbarisé" affiché brièvement avant envoi
 	let sendingVisual: string | null = $state(null)
+	// Restauration de clé sur nouvel appareil (backup serveur présent, pas de clé locale)
+	let showRestore = $state(false)
+	let restoreDismissed = $state(false)
 
 	async function initE2E() {
 		if (!conversation) return
 		try {
+			// 0. Nouvel appareil ? backup serveur présent mais pas de clé locale →
+			//    proposer la restauration AVANT de générer une clé neuve (sinon on
+			//    perdrait l'accès à l'historique chiffré).
+			if (!restoreDismissed && await shouldOfferRestore(data.token)) {
+				showRestore = true
+				return
+			}
+
 			// 1. Init keypair local + enregistrer sur le serveur
 			const registered = await registerPublicKey(data.token)
 			if (!registered) {
@@ -1005,6 +1018,19 @@
      ondragleave={onDragLeave}
      ondrop={onDrop}>
 
+	{#if showRestore}
+		<div class="kb-overlay">
+			<div class="kb-modal">
+				<E2EKeyBackup
+					token={data.token}
+					mode="restore"
+					onDone={() => { showRestore = false; initE2E() }}
+					onSkip={() => { restoreDismissed = true; showRestore = false; initE2E() }}
+				/>
+			</div>
+		</div>
+	{/if}
+
 	{#if isDraggingFile}
 		<div class="dm-drop-overlay">
 			<div class="dm-drop-card">
@@ -1661,6 +1687,28 @@
 </div>
 
 <style>
+/* ── Overlay de restauration de clé E2E (nouvel appareil) ─────────────────── */
+.kb-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 40;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(2, 6, 23, .72);
+	backdrop-filter: blur(4px);
+	padding: 20px;
+}
+.kb-modal {
+	width: 100%;
+	max-width: 460px;
+	background: #0f172a;
+	border: 1px solid rgba(148, 163, 184, .18);
+	border-radius: 16px;
+	padding: 22px;
+	box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+}
+
 /* ── Drag & drop image overlay ────────────────────────────────────────────── */
 .dm-drop-overlay {
 	position: absolute;
