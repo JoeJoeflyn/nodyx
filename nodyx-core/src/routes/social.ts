@@ -37,7 +37,13 @@ function postSelect(viewerParam: string | null) {
     u.id AS author_id, u.username, p.display_name, p.avatar_url,
     ${viewerParam
       ? `EXISTS(SELECT 1 FROM status_likes sl WHERE sl.user_id = ${viewerParam} AND sl.post_id = sp.id)`
-      : 'false'} AS liked_by_me
+      : 'false'} AS liked_by_me,
+    ${viewerParam
+      ? `(SELECT emoji FROM status_likes WHERE user_id = ${viewerParam} AND post_id = sp.id)`
+      : 'NULL'} AS my_reaction,
+    (SELECT json_object_agg(emoji, c) FROM (
+       SELECT emoji, COUNT(*) AS c FROM status_likes WHERE post_id = sp.id GROUP BY emoji
+     ) t) AS reactions
   `
 }
 
@@ -256,6 +262,36 @@ export default async function socialRoutes(app: FastifyInstance) {
     }
 
     return reply.send({ ok: true })
+  })
+
+  // ── Réactions emoji ─────────────────────────────────────────────────────────
+  // Une réaction par membre/post (modifiable). Set restreint (pas de contenu
+  // arbitraire). likes_count = total toutes emojis.
+  const ALLOWED_REACTIONS = new Set(['❤️', '👍', '😂', '🔥', '😮', '🎉'])
+
+  app.post('/status/:id/react', { preHandler: [rateLimit, requireAuth] }, async (request, reply) => {
+    const { userId } = request.user!
+    const { id } = request.params as { id: string }
+    const { emoji } = (request.body ?? {}) as { emoji?: string }
+    if (!emoji || !ALLOWED_REACTIONS.has(emoji)) {
+      return reply.code(400).send({ error: 'Réaction non autorisée' })
+    }
+    // xmax = 0 dans le RETURNING => ligne fraîchement INSÉRÉE (sinon UPDATE de l'emoji).
+    const up = await db.query<{ inserted: boolean }>(`
+      INSERT INTO status_likes (user_id, post_id, emoji) VALUES ($1, $2, $3)
+      ON CONFLICT (user_id, post_id) DO UPDATE SET emoji = EXCLUDED.emoji
+      RETURNING (xmax = 0) AS inserted
+    `, [userId, id, emoji])
+
+    let likes_count: number | undefined
+    if (up.rows[0]?.inserted) {
+      const r = await db.query<{ likes_count: number }>(
+        'UPDATE status_posts SET likes_count = likes_count + 1 WHERE id = $1 RETURNING likes_count',
+        [id]
+      )
+      likes_count = r.rows[0]?.likes_count
+    }
+    return reply.send({ ok: true, likes_count })
   })
 
   // ── Feed & user posts ─────────────────────────────────────────────────────

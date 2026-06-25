@@ -139,6 +139,40 @@
 		})
 	}
 
+	// ── Réactions emoji ─────────────────────────────────────────────────────────
+	const REACTIONS = ['❤️', '👍', '😂', '🔥', '😮', '🎉']
+	let pickerFor = $state<string | null>(null)
+
+	function applyReaction(p: any, prev: string | null, next: string | null) {
+		const reactions: Record<string, number> = { ...(p.reactions || {}) }
+		if (prev) { reactions[prev] = (reactions[prev] || 1) - 1; if (reactions[prev] <= 0) delete reactions[prev] }
+		if (next) { reactions[next] = (reactions[next] || 0) + 1 }
+		const delta = (!prev && next) ? 1 : (prev && !next) ? -1 : 0
+		return { ...p, my_reaction: next, liked_by_me: !!next, likes_count: Math.max(0, (p.likes_count || 0) + delta), reactions }
+	}
+
+	async function react(post: any, emoji: string) {
+		pickerFor = null
+		const prev = post.my_reaction || null
+		if (prev === emoji) return removeReaction(post)   // re-cliquer son emoji = retirer
+		posts = posts.map(p => p.id === post.id ? applyReaction(p, prev, emoji) : p)
+		await apiFetch(fetch, `/social/status/${post.id}/react`, {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ emoji }),
+		}).catch(() => {})
+	}
+
+	async function removeReaction(post: any) {
+		pickerFor = null
+		const prev = post.my_reaction || null
+		if (!prev) return
+		posts = posts.map(p => p.id === post.id ? applyReaction(p, prev, null) : p)
+		await apiFetch(fetch, `/social/status/${post.id}/like`, {
+			method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+		}).catch(() => {})
+	}
+
 	async function deletePost(id: string) {
 		const res = await apiFetch(fetch, `/social/status/${id}`, {
 			method: 'DELETE',
@@ -243,6 +277,10 @@
 		</div>
 	</a>
 {/snippet}
+
+{#if pickerFor}
+	<div class="reaction-backdrop" onclick={() => (pickerFor = null)} role="presentation"></div>
+{/if}
 
 <div class="feed-root">
 	<!-- ── Page header ──────────────────────────────────────────────────────── -->
@@ -465,30 +503,41 @@
 											</button>
 										{/if}
 
-										<!-- Résonance (like) -->
-										<button
-											onclick={() => toggleLike(post)}
-											class="post-action-btn post-resonance-btn"
-											class:post-resonance-btn--active={post.liked_by_me}
-											aria-label={post.liked_by_me ? tFn('feed.unresonate') : tFn('feed.resonate')}
-										>
-											<span class="resonance-icon">
-												{#if post.liked_by_me}
-													<!-- Active: filled wave -->
-													<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-														<path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z"/>
-													</svg>
-												{:else}
-													<!-- Idle: outline wave -->
-													<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-														<path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/>
-													</svg>
-												{/if}
-											</span>
-											{#if post.likes_count > 0}
-												<span class="resonance-count">{fmt(post.likes_count)}</span>
+										<!-- Réaction (résonance emoji) -->
+										<div class="reaction-wrap">
+											{#if pickerFor === post.id}
+												<div class="reaction-picker">
+													{#each REACTIONS as e}
+														<button class="reaction-pick" class:reaction-pick--mine={post.my_reaction === e}
+															onclick={() => react(post, e)} aria-label={e}>{e}</button>
+													{/each}
+												</div>
 											{/if}
-										</button>
+											<button
+												onclick={() => pickerFor = pickerFor === post.id ? null : post.id}
+												class="post-action-btn post-resonance-btn"
+												class:post-resonance-btn--active={post.my_reaction}
+												aria-label="Réagir"
+											>
+												<span class="resonance-icon">
+													{#if post.my_reaction}
+														<span class="reaction-mine">{post.my_reaction}</span>
+													{:else}
+														<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+															<path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/>
+														</svg>
+													{/if}
+												</span>
+												{#if post.likes_count > 0}
+													<span class="resonance-count">{fmt(post.likes_count)}</span>
+												{/if}
+											</button>
+											{#if post.reactions && Object.keys(post.reactions).length > 0}
+												<span class="reaction-summary">
+													{#each Object.keys(post.reactions).slice(0, 4) as e}<span>{e}</span>{/each}
+												</span>
+											{/if}
+										</div>
 									</div>
 								</div>
 							</div>
@@ -1093,6 +1142,35 @@
 
 .resonance-icon { display: flex; }
 .resonance-count { font-size: 0.8rem; font-weight: 600; }
+
+/* Réactions emoji */
+.reaction-wrap { position: relative; display: flex; align-items: center; gap: 0.4rem; }
+.reaction-mine { font-size: 1.05rem; line-height: 1; }
+.reaction-summary { display: inline-flex; align-items: center; }
+.reaction-summary span { font-size: 0.85rem; margin-left: -2px; filter: saturate(1.1); }
+.reaction-backdrop { position: fixed; inset: 0; z-index: 40; }
+.reaction-picker {
+	position: absolute;
+	bottom: calc(100% + 6px);
+	left: 0;
+	z-index: 50;
+	display: flex;
+	gap: 0.15rem;
+	padding: 0.3rem;
+	border-radius: 999px;
+	background: #1a1a24;
+	border: 1px solid rgba(255,255,255,0.12);
+	box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+	animation: reaction-pop 0.12s ease-out;
+}
+@keyframes reaction-pop { from { opacity: 0; transform: translateY(4px) scale(0.95); } to { opacity: 1; transform: none; } }
+.reaction-pick {
+	border: none; background: transparent; cursor: pointer;
+	font-size: 1.25rem; line-height: 1; padding: 0.25rem 0.3rem; border-radius: 999px;
+	transition: transform 0.1s, background 0.1s;
+}
+.reaction-pick:hover { transform: scale(1.3); background: rgba(255,255,255,0.08); }
+.reaction-pick--mine { background: rgba(124,58,237,0.3); }
 
 /* Ripple animation on like */
 .post-resonance-btn--active .resonance-icon {
