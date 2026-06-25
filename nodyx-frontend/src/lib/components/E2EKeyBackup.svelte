@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte'
 	import {
 		hasServerBackup, canBackupLocalKey, uploadKeyBackup,
-		restoreKeyBackup, deleteKeyBackup,
+		restoreKeyBackup, deleteKeyBackup, regenerateKey,
 	} from '$lib/e2eBackupClient'
 
 	let { token, mode = 'manage', onDone, onSkip }: {
@@ -22,6 +22,7 @@
 	let backupExists = $state(false)
 	let canBackup    = $state(true)
 	let ready        = $state(false)
+	let confirmRegen = $state(false)
 
 	onMount(async () => {
 		if (mode === 'manage') {
@@ -69,6 +70,16 @@
 			if (await deleteKeyBackup(token)) { backupExists = false; success = 'Sauvegarde supprimée.' }
 		} finally { busy = false }
 	}
+
+	async function doRegenerate() {
+		busy = true; error = ''; success = ''
+		try {
+			if (await regenerateKey(token)) {
+				canBackup = true; confirmRegen = false
+				success = 'Nouvelle clé générée. Définis maintenant ta phrase de récupération.'
+			} else { error = 'Échec de la régénération.' }
+		} finally { busy = false }
+	}
 </script>
 
 <div class="kb">
@@ -108,8 +119,27 @@
 		{#if ready && !canBackup}
 			<div class="kb-warn">
 				Ta clé actuelle a été générée avant cette fonctionnalité et ne peut pas être sauvegardée.
-				Elle deviendra sauvegardable à sa prochaine régénération (nouveau navigateur).
+				Tu peux générer une nouvelle clé sauvegardable maintenant.
 			</div>
+			{#if error}<div class="kb-error">{error}</div>{/if}
+			{#if !confirmRegen}
+				<div class="kb-actions">
+					<button class="kb-btn-primary" onclick={() => confirmRegen = true} disabled={busy}>
+						Générer une clé sauvegardable
+					</button>
+				</div>
+			{:else}
+				<div class="kb-warn">
+					La nouvelle clé remplacera l'actuelle : les messages chiffrés <strong>sur cet appareil</strong>
+					avec l'ancienne clé deviendront illisibles. Tes futurs messages, eux, seront sauvegardables.
+				</div>
+				<div class="kb-actions">
+					<button class="kb-btn-danger" onclick={doRegenerate} disabled={busy}>
+						{busy ? '…' : 'Confirmer, générer la nouvelle clé'}
+					</button>
+					<button class="kb-btn-ghost" onclick={() => confirmRegen = false} disabled={busy}>Annuler</button>
+				</div>
+			{/if}
 		{:else if ready}
 			<input class="kb-input" type="password" placeholder="Phrase de récupération (8 caractères min.)"
 				bind:value={phrase} autocomplete="new-password" />
