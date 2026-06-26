@@ -1,0 +1,13 @@
+[package]
+name = "nodyx-gossip"
+version = "0.1.0"
+edition = "2021"
+description = "Decouverte de pairs Nodyx par gossip (anti-entropie epidemique). Zero dependance, std uniquement."
+
+[[bin]]
+name = "nodyx-gossip"
+path = "src/main.rs"
+
+[dependencies]
+# Zero dependance. std uniquement. C'est l'ADN Nodyx : pas de boite noire, pas de silo.
+# (Le profil release optimise est defini au niveau du workspace.)
