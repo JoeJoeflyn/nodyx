@@ -71,6 +71,7 @@
 				success = 'Sauvegarde activée. Garde précieusement ta phrase : sans elle, aucune récupération possible.'
 				backupExists = true
 				phrase = ''; phrase2 = ''
+				onDone?.()
 			} else {
 				error = 'Échec de la sauvegarde. Réessaie.'
 			}

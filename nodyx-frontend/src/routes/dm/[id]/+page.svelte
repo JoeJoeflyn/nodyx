@@ -100,6 +100,10 @@
 	let restoreDismissed = $state(false)
 	// Bandeau pédagogique E2E (chiffré, pense à sauvegarder ta clé)
 	let showE2eBanner = $state(false)
+	let hasBackup     = $state(false)
+	// Garde-fou avant envoi : alerte si pas de sauvegarde de clé
+	let showSendGuard = $state(false)
+	let sendGuardAck  = $state(false)
 
 	function dismissE2eBanner() {
 		showE2eBanner = false
@@ -146,9 +150,11 @@
 			// 6. Bandeau pédagogique : E2E actif mais pas encore de sauvegarde de clé
 			//    → on explique et on propose, une seule fois (sauf si déjà ignoré).
 			try {
-				const dismissed = localStorage.getItem('nodyx_e2e_banner_dismissed') === '1'
-				if (!dismissed && (e2eStatus === 'active' || e2eStatus === 'partial')) {
-					showE2eBanner = !(await hasServerBackup(data.token))
+				if (e2eStatus === 'active' || e2eStatus === 'partial') {
+					hasBackup = await hasServerBackup(data.token)
+					sendGuardAck = localStorage.getItem('nodyx_e2e_send_ack') === '1'
+					const dismissed = localStorage.getItem('nodyx_e2e_banner_dismissed') === '1'
+					if (!dismissed) showE2eBanner = !hasBackup
 				}
 			} catch { /* ignore */ }
 		} catch {
@@ -897,6 +903,14 @@
 	async function sendMessage() {
 		const content = messageInput.trim()
 		if (!content || sendingMsg) return
+
+		// Garde-fou : E2E actif, aucune sauvegarde de clé, pas encore acquitté →
+		// on alerte AVANT d'envoyer (perte définitive possible si l'appareil est perdu).
+		if ((e2eStatus === 'active' || e2eStatus === 'partial') && !hasBackup && !sendGuardAck) {
+			showSendGuard = true
+			return
+		}
+
 		sendingMsg = true
 		messageInput = ''
 		// On capture le replyingTo AVANT le clear (pour l'envoyer avec le message)
@@ -1043,6 +1057,35 @@
 					onDone={() => { showRestore = false; initE2E() }}
 					onSkip={() => { restoreDismissed = true; showRestore = false; initE2E() }}
 				/>
+			</div>
+		</div>
+	{/if}
+
+	{#if showSendGuard}
+		<div class="kb-overlay">
+			<div class="kb-modal">
+				<div class="sg-head">
+					<span class="sg-icon">🛡️</span>
+					<div>
+						<div class="sg-title">Avant d'envoyer : pense à ta sauvegarde</div>
+						<div class="sg-text">
+							Tu n'as pas encore de phrase de récupération. Si tu perds l'accès à cet appareil,
+							tes messages chiffrés seront <strong>définitivement perdus</strong>. Ça prend 30 secondes
+							et ta sécurité est notre priorité.
+						</div>
+					</div>
+				</div>
+				<E2EKeyBackup
+					token={data.token}
+					mode="manage"
+					onDone={() => { hasBackup = true; showSendGuard = false; sendMessage() }}
+				/>
+				<button class="sg-skip" type="button" onclick={() => {
+					sendGuardAck = true
+					try { localStorage.setItem('nodyx_e2e_send_ack', '1') } catch { /* ignore */ }
+					showSendGuard = false
+					sendMessage()
+				}}>Envoyer sans sauvegarde pour l'instant</button>
 			</div>
 		</div>
 	{/if}
@@ -1781,6 +1824,19 @@
 	font-size: 12px; font-weight: 600; color: #c7d2fe;
 	background: transparent; border: 1px solid rgba(148,163,184,.25);
 }
+
+/* ── Modal garde-fou avant envoi ──────────────────────────────────────────── */
+.sg-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.sg-icon { font-size: 24px; line-height: 1.1; flex-shrink: 0; }
+.sg-title { font-size: 16px; font-weight: 700; color: #fff; }
+.sg-text { font-size: 13px; color: #cbd5e1; line-height: 1.5; margin-top: 4px; }
+.sg-text strong { color: #fca5a5; }
+.sg-skip {
+	margin-top: 16px; width: 100%; padding: 9px; border-radius: 10px; cursor: pointer;
+	font-size: 13px; font-weight: 500; color: #94a3b8;
+	background: transparent; border: 1px solid rgba(148,163,184,.2);
+}
+.sg-skip:hover { color: #cbd5e1; }
 
 /* ── Drag & drop image overlay ────────────────────────────────────────────── */
 .dm-drop-overlay {
