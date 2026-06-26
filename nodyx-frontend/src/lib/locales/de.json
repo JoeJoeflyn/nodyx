@@ -791,5 +791,10 @@
   "tasks.columns_plural": "Spalten",
   "tasks.cards_one": "Karte",
   "tasks.cards_plural": "Karten",
-  "tasks.confirm_delete": "Dieses Board löschen?"
+  "tasks.confirm_delete": "Dieses Board löschen?",
+  "feed.tab_discover": "Entdecken",
+  "feed.tab_following": "Abonniert",
+  "feed.reshared_by": "hat geteilt",
+  "feed.reshare": "Teilen",
+  "feed.react": "Reagieren"
 }

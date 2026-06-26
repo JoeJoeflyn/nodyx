@@ -792,5 +792,10 @@
   "tasks.columns_plural": "colonnes",
   "tasks.cards_one": "carte",
   "tasks.cards_plural": "cartes",
-  "tasks.confirm_delete": "Supprimer ce tableau ?"
+  "tasks.confirm_delete": "Supprimer ce tableau ?",
+  "feed.tab_discover": "Découvrir",
+  "feed.tab_following": "Abonnements",
+  "feed.reshared_by": "a repartagé",
+  "feed.reshare": "Repartager",
+  "feed.react": "Réagir"
 }

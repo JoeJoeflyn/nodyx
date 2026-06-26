@@ -842,7 +842,7 @@
 					<div class="space-y-px">
 						{#each [
 							{ href: '/',         label: tFn('nav.home'),    icon: 'M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z',                                                                                                                                                 show: true },
-							{ href: '/feed',     label: 'Fil d\'actu', icon: 'M3 12h18M3 6h18M3 18h18',                                                                                                                                                               show: !!user },
+							{ href: '/feed',     label: tFn('nav.feed'),    icon: 'M3 12h18M3 6h18M3 18h18',                                                                                                                                                               show: !!user },
 							{ href: '/forum',    label: tFn('nav.forum'),   icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z',                          show: true },
 							{ href: '/chat',     label: tFn('nav.chat'),    icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z',                                                                                                                                    show: mods.chat !== false },
 							{ href: '/dm',       label: tFn('nav.dm'),      icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',                                                                                    show: mods.dm !== false },
