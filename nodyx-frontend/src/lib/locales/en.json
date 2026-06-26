@@ -792,5 +792,10 @@
   "tasks.columns_plural": "columns",
   "tasks.cards_one": "card",
   "tasks.cards_plural": "cards",
-  "tasks.confirm_delete": "Delete this board?"
+  "tasks.confirm_delete": "Delete this board?",
+  "feed.tab_discover": "Discover",
+  "feed.tab_following": "Following",
+  "feed.reshared_by": "reshared",
+  "feed.reshare": "Reshare",
+  "feed.react": "React"
 }

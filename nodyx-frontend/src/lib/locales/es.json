@@ -791,5 +791,10 @@
   "tasks.columns_plural": "columnas",
   "tasks.cards_one": "tarjeta",
   "tasks.cards_plural": "tarjetas",
-  "tasks.confirm_delete": "¿Eliminar este tablero?"
+  "tasks.confirm_delete": "¿Eliminar este tablero?",
+  "feed.tab_discover": "Descubrir",
+  "feed.tab_following": "Siguiendo",
+  "feed.reshared_by": "compartió",
+  "feed.reshare": "Compartir",
+  "feed.react": "Reaccionar"
 }

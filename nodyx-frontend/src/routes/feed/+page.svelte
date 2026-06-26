@@ -350,10 +350,10 @@
 			<!-- Onglets : Découvrir / Abonnements ──────────────────────────── -->
 			<div class="feed-tabs">
 				<button class="feed-tab" class:feed-tab--active={scope === 'discover'} onclick={() => switchScope('discover')}>
-					Découvrir
+					{tFn('feed.tab_discover')}
 				</button>
 				<button class="feed-tab" class:feed-tab--active={scope === 'following'} onclick={() => switchScope('following')}>
-					Abonnements
+					{tFn('feed.tab_following')}
 				</button>
 			</div>
 
@@ -471,7 +471,7 @@
 							{#if post.reshare_of}
 								<div class="reshare-label">
 									<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
-									<a href="/users/{post.username}">{post.display_name || post.username}</a> a repartagé
+									<a href="/users/{post.username}">{post.display_name || post.username}</a> {tFn('feed.reshared_by')}
 								</div>
 							{/if}
 
@@ -530,7 +530,7 @@
 												window.scrollTo({ top: 0, behavior: 'smooth' })
 											}}
 											class="post-action-btn"
-											title="Répondre"
+											title={tFn('feed.reply')}
 										>
 											<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/>
@@ -541,7 +541,7 @@
 											onclick={() => toggleReshare(post)}
 											class="post-action-btn post-reshare-btn"
 											class:post-reshare-btn--active={post.reshared_by_me}
-											title="Repartager"
+											title={tFn('feed.reshare')}
 										>
 											<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
 											{#if post.reshares_count > 0}<span class="resonance-count">{fmt(post.reshares_count)}</span>{/if}
@@ -582,7 +582,7 @@
 												onclick={() => pickerFor = pickerFor === post.id ? null : post.id}
 												class="post-action-btn post-resonance-btn"
 												class:post-resonance-btn--active={post.my_reaction}
-												aria-label="Réagir"
+												aria-label={tFn('feed.react')}
 											>
 												<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
 													<path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/>
@@ -642,7 +642,7 @@
 											<div class="post-actions" style="margin-top: 0.5rem;">
 												<button
 													onclick={() => { replyTo = reply; composing = true; window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-													class="post-action-btn" title="Répondre"
+													class="post-action-btn" title={tFn('feed.reply')}
 												>
 													<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
 														<path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/>
