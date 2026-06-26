@@ -1,7 +1,7 @@
 //! Noeud de decouverte par gossip. std uniquement : un socket UDP, deux fils.
 //!
 //! Anti-entropie epidemique : a chaque tour, le noeud envoie "voici qui je suis
-//! + tous ceux que je connais" a quelques pairs au hasard. L'info se propage
+//! et tous ceux que je connais" a quelques pairs au hasard. L'info se propage
 //! sans aucun serveur central. Les noeuds qui ne se rafraichissent plus
 //! vieillissent et disparaissent (auto-guerison).
 
