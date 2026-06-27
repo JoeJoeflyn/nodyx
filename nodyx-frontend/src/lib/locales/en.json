@@ -883,5 +883,14 @@
   "dm.enter": "Enter",
   "dm.reply_to": "Reply to",
   "dm.cancel_reply": "Cancel reply",
-  "dm.insert_emoji": "Insert an emoji"
+  "dm.insert_emoji": "Insert an emoji",
+  "settings.encryption.label": "Encrypted messages",
+  "settings.encryption.desc": "Backup and recovery of your end-to-end encryption key.",
+  "settings.connected.label": "Connected accounts",
+  "settings.sounds.desc": "Sounds synthesized in real time — no audio files.",
+  "settings.sounds.enabled": "Sounds enabled",
+  "settings.sounds.enabled_desc": "Enable or disable all notification sounds.",
+  "settings.sounds.hint": "Sounds generated via the Web Audio API — no downloaded files, no network latency. Settings are saved locally in your browser.",
+  "settings.streamer.desc": "Get a sound on Nodyx for follows, subs, raids, cheers. Handy when you mute your stream's audio return.",
+  "settings.streamer.enabled": "Streamer notifications enabled"
 }
