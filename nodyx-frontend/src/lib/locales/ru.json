@@ -911,5 +911,20 @@
   "settings.connected.link_twitch": "Привязать мой аккаунт Twitch",
   "settings.connected.confirm_unlink": "Отвязать {{login}} от вашего профиля Nodyx?",
   "settings.connected.unlinked_toast": "Аккаунт Twitch отвязан",
-  "settings.connected.unlink_failed": "Не удалось отвязать"
+  "settings.connected.unlink_failed": "Не удалось отвязать",
+  "members.page_title": "Участники · Nodyx",
+  "members.total": "всего",
+  "members.filter_ph": "Фильтр по имени или нику…",
+  "members.sort_oldest": "Сначала старые",
+  "members.sort_newest": "Сначала новые",
+  "members.sort_points": "Очки (по убыв.)",
+  "members.sort_alpha": "По алфавиту",
+  "members.none_match": "Нет подходящих участников.",
+  "members.team": "Команда",
+  "members.members_section": "Участники",
+  "members.since": "с",
+  "members.pts": "очк.",
+  "members.role_owner": "Основатель",
+  "members.role_admin": "Админ",
+  "members.role_moderator": "Модер"
 }

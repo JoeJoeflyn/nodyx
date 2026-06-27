@@ -1,6 +1,9 @@
 <script lang="ts">
 	import type { PageData } from './$types'
 	import type { FullMember } from './+page.server'
+	import { t } from '$lib/i18n'
+
+	const tFn = $derived($t)
 
 	let { data }: { data: PageData } = $props()
 
@@ -53,26 +56,26 @@
 	function fmtDate(iso: string): string {
 		try {
 			const d = new Date(iso)
-			return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+			return d.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' })
 		} catch { return '' }
 	}
 </script>
 
-<svelte:head><title>Membres · Nodyx</title></svelte:head>
+<svelte:head><title>{tFn('members.page_title')}</title></svelte:head>
 
 <div class="mb-page">
 	<header class="mb-header">
 		<div class="mb-header-title">
-			<h1 class="mb-title">Membres</h1>
+			<h1 class="mb-title">{tFn('members.title')}</h1>
 			<div class="mb-counts">
 				<span class="mb-count">
 					<span class="mb-count-num">{data.members?.length ?? 0}</span>
-					<span class="mb-count-label">total</span>
+					<span class="mb-count-label">{tFn('members.total')}</span>
 				</span>
 				<span class="mb-count-sep">·</span>
 				<span class="mb-count">
 					<span class="mb-count-num">{(data.members ?? []).filter((m: FullMember) => m.is_online).length}</span>
-					<span class="mb-count-label">en ligne</span>
+					<span class="mb-count-label">{tFn('members.online')}</span>
 				</span>
 			</div>
 		</div>
@@ -85,30 +88,30 @@
 				<input
 					type="text"
 					bind:value={query}
-					placeholder="Filtrer par nom ou pseudo…"
+					placeholder={tFn('members.filter_ph')}
 					class="mb-search-input"
 				/>
 			</div>
 			<select bind:value={sortBy} class="mb-sort">
-				<option value="joined_asc">Anciens d'abord</option>
-				<option value="joined_desc">Nouveaux d'abord</option>
-				<option value="points">Points (desc)</option>
-				<option value="username">Alphabétique</option>
+				<option value="joined_asc">{tFn('members.sort_oldest')}</option>
+				<option value="joined_desc">{tFn('members.sort_newest')}</option>
+				<option value="points">{tFn('members.sort_points')}</option>
+				<option value="username">{tFn('members.sort_alpha')}</option>
 			</select>
 			<label class="mb-toggle">
 				<input type="checkbox" bind:checked={onlyOnline} />
-				<span>En ligne</span>
+				<span>{tFn('members.online')}</span>
 			</label>
 		</div>
 	</header>
 
 	{#if data.error}
-		<div class="mb-empty mb-empty--error">Erreur : {data.error}</div>
+		<div class="mb-empty mb-empty--error">{tFn('common.error')} : {data.error}</div>
 	{:else if filtered.total === 0}
-		<div class="mb-empty">Aucun membre ne correspond.</div>
+		<div class="mb-empty">{tFn('members.none_match')}</div>
 	{:else}
 		{#if filtered.staff.length > 0}
-			<div class="mb-section-label">Équipe</div>
+			<div class="mb-section-label">{tFn('members.team')}</div>
 			<ul class="mb-list">
 				{#each filtered.staff as m (m.user_id)}
 					{@render row(m)}
@@ -117,7 +120,7 @@
 		{/if}
 		{#if filtered.members.length > 0}
 			{#if filtered.staff.length > 0}
-				<div class="mb-section-label">Membres</div>
+				<div class="mb-section-label">{tFn('members.members_section')}</div>
 			{/if}
 			<ul class="mb-list">
 				{#each filtered.members as m (m.user_id)}
@@ -138,7 +141,7 @@
 					<div class="mb-avatar mb-avatar--init">{m.username[0].toUpperCase()}</div>
 				{/if}
 				{#if m.is_online}
-					<span class="mb-online-dot" aria-label="En ligne"></span>
+					<span class="mb-online-dot" aria-label={tFn('members.online')}></span>
 				{/if}
 			</div>
 
@@ -154,19 +157,19 @@
 							style={m.grade_color ? `color: ${m.grade_color}; border-color: ${m.grade_color}55` : ''}
 						>{m.grade_name}</span>
 					{:else if roleLabels[m.role] && m.role !== 'member'}
-						<span class="mb-grade mb-grade--role">{roleLabels[m.role]}</span>
+						<span class="mb-grade mb-grade--role">{tFn('members.role_' + m.role)}</span>
 					{/if}
 				</div>
 				<div class="mb-row-line2">
 					<span class="mb-user">@{m.username}</span>
 					<span class="mb-sep">·</span>
-					<span class="mb-joined">depuis le {fmtDate(m.joined_at)}</span>
+					<span class="mb-joined">{tFn('members.since')} {fmtDate(m.joined_at)}</span>
 				</div>
 			</div>
 
 			<div class="mb-row-meta">
 				<span class="mb-points-num">{m.points}</span>
-				<span class="mb-points-label">pts</span>
+				<span class="mb-points-label">{tFn('members.pts')}</span>
 			</div>
 		</a>
 	</li>
