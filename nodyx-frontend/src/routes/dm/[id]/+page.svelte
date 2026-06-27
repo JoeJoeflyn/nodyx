@@ -1069,11 +1069,9 @@
 				<div class="sg-head">
 					<span class="sg-icon">🛡️</span>
 					<div>
-						<div class="sg-title">Avant d'envoyer : pense à ta sauvegarde</div>
+						<div class="sg-title">{tFn('dm.guard_title')}</div>
 						<div class="sg-text">
-							Tu n'as pas encore de phrase de récupération. Si tu perds l'accès à cet appareil,
-							tes messages chiffrés seront <strong>définitivement perdus</strong>. Ça prend 30 secondes
-							et ta sécurité est notre priorité.
+							{tFn('dm.guard_text_1')} <strong>{tFn('dm.guard_text_strong')}</strong>. {tFn('dm.guard_text_2')}
 						</div>
 					</div>
 				</div>
@@ -1087,7 +1085,7 @@
 					try { localStorage.setItem('nodyx_e2e_send_ack', '1') } catch { /* ignore */ }
 					showSendGuard = false
 					sendMessage()
-				}}>Envoyer sans sauvegarde pour l'instant</button>
+				}}>{tFn('dm.guard_skip')}</button>
 			</div>
 		</div>
 	{/if}
@@ -1100,7 +1098,7 @@
 					<polyline points="17 8 12 3 7 8"/>
 					<line x1="12" y1="3" x2="12" y2="15"/>
 				</svg>
-				<div class="dm-drop-title">Déposez votre image</div>
+				<div class="dm-drop-title">{tFn('dm.drop_image')}</div>
 				<div class="dm-drop-hint">JPG, PNG, WebP, GIF · max 8 Mo</div>
 			</div>
 		</div>
@@ -1326,7 +1324,7 @@
 					<!-- Réglages du chiffrement (sauvegarde / récupération de clé) -->
 					<a href="/settings?section=encryption"
 						class="p-1.5 rounded-lg transition-colors hover:bg-white/5 text-gray-400 hover:text-gray-200 shrink-0"
-						title="Sauvegarde des messages chiffrés">
+						title={tFn('dm.encryption_settings')}>
 						<svg class="w-[18px] h-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
 							<circle cx="12" cy="11" r="1.4"/><path d="M12 12.4V14"/>
@@ -1426,30 +1424,27 @@
 		<div class="e2e-banner">
 			<div class="e2e-banner-icon">🔑</div>
 			<div class="e2e-banner-body">
-				<div class="e2e-banner-title">Certains messages ne s'affichent pas ici</div>
+				<div class="e2e-banner-title">{tFn('dm.restore_banner_title')}</div>
 				<div class="e2e-banner-text">
-					Cet appareil n'a pas la bonne clé. Tu as une sauvegarde : restaure-la avec ta phrase
-					de récupération pour déchiffrer tes conversations.
+					{tFn('dm.restore_banner_text')}
 				</div>
 			</div>
 			<div class="e2e-banner-actions">
-				<button class="e2e-banner-cta" type="button" onclick={() => showRestore = true}>Restaurer ma clé</button>
+				<button class="e2e-banner-cta" type="button" onclick={() => showRestore = true}>{tFn('dm.restore_key')}</button>
 			</div>
 		</div>
 		{:else if showE2eBanner}
 		<div class="e2e-banner">
 			<div class="e2e-banner-icon">🛡️</div>
 			<div class="e2e-banner-body">
-				<div class="e2e-banner-title">Tes messages sont chiffrés de bout en bout</div>
+				<div class="e2e-banner-title">{tFn('dm.e2e_banner_title')}</div>
 				<div class="e2e-banner-text">
-					Personne d'autre que vous deux ne peut les lire, pas même Nodyx. La clé reste sur cet appareil :
-					pense à <strong>activer la sauvegarde</strong> pour retrouver tes conversations si tu changes de
-					navigateur ou de téléphone. Ta sécurité est notre priorité.
+					{tFn('dm.e2e_banner_text_1')} <strong>{tFn('dm.e2e_banner_text_strong')}</strong> {tFn('dm.e2e_banner_text_2')}
 				</div>
 			</div>
 			<div class="e2e-banner-actions">
-				<a href="/settings?section=encryption" class="e2e-banner-cta">Activer la sauvegarde</a>
-				<button class="e2e-banner-dismiss" type="button" onclick={dismissE2eBanner}>J'ai compris</button>
+				<a href="/settings?section=encryption" class="e2e-banner-cta">{tFn('dm.enable_backup')}</a>
+				<button class="e2e-banner-dismiss" type="button" onclick={dismissE2eBanner}>{tFn('dm.understood')}</button>
 			</div>
 		</div>
 		{/if}
@@ -1545,7 +1540,7 @@
 									<button
 										onclick={() => pickerOpenMsgId = pickerOpenMsgId === msg.id ? null : msg.id}
 										class="p-1 rounded-md hover:bg-white/[0.08] text-gray-600 hover:text-yellow-400 transition-colors"
-										title="Réagir">
+										title={tFn('dm.react')}>
 										<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 											<circle cx="12" cy="12" r="10"/>
 											<path d="M8 13s1.5 2 4 2 4-2 4-2"/>
@@ -1594,7 +1589,7 @@
 										style="field-sizing: content;"
 									></textarea>
 									<div class="flex gap-1.5 mt-1.5">
-										<button onclick={saveEdit} class="text-[10px] px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">Entrée</button>
+										<button onclick={saveEdit} class="text-[10px] px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">{tFn('dm.enter')}</button>
 										<button onclick={cancelEdit} class="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.06] hover:bg-white/[0.10] text-gray-400 transition-colors">Échap</button>
 									</div>
 								{:else}
@@ -1707,10 +1702,10 @@
 				<div class="dm-reply-banner">
 					<div class="dm-reply-banner-bar"></div>
 					<div class="dm-reply-banner-content">
-						<div class="dm-reply-banner-label">Réponse à <strong>{replyingTo.sender_username}</strong></div>
+						<div class="dm-reply-banner-label">{tFn('dm.reply_to')} <strong>{replyingTo.sender_username}</strong></div>
 						<div class="dm-reply-banner-preview">{replyPreview(replyingTo)}</div>
 					</div>
-					<button onclick={cancelReply} class="dm-reply-banner-close" aria-label="Annuler la réponse">
+					<button onclick={cancelReply} class="dm-reply-banner-close" aria-label={tFn('dm.cancel_reply')}>
 						<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
 							<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
 						</svg>
@@ -1744,7 +1739,7 @@
 						       text-gray-500 hover:text-gray-200 hover:bg-white/[0.06]
 						       transition-all duration-150"
 						title={tFn('common.add_emoji') ?? 'Insérer un emoji'}
-						aria-label="Insérer un emoji"
+						aria-label={tFn('dm.insert_emoji')}
 					>
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
 							<circle cx="12" cy="12" r="9"/>
