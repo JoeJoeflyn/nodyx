@@ -911,5 +911,20 @@
   "settings.connected.link_twitch": "Lier mon compte Twitch",
   "settings.connected.confirm_unlink": "Délier {{login}} de votre profil Nodyx ?",
   "settings.connected.unlinked_toast": "Compte Twitch délié",
-  "settings.connected.unlink_failed": "Délier a échoué"
+  "settings.connected.unlink_failed": "Délier a échoué",
+  "members.page_title": "Membres · Nodyx",
+  "members.total": "total",
+  "members.filter_ph": "Filtrer par nom ou pseudo…",
+  "members.sort_oldest": "Anciens d'abord",
+  "members.sort_newest": "Nouveaux d'abord",
+  "members.sort_points": "Points (desc)",
+  "members.sort_alpha": "Alphabétique",
+  "members.none_match": "Aucun membre ne correspond.",
+  "members.team": "Équipe",
+  "members.members_section": "Membres",
+  "members.since": "depuis le",
+  "members.pts": "pts",
+  "members.role_owner": "Fondateur",
+  "members.role_admin": "Admin",
+  "members.role_moderator": "Modo"
 }

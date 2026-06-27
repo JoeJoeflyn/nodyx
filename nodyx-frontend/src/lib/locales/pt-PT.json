@@ -911,5 +911,20 @@
   "settings.connected.link_twitch": "Ligar a minha conta Twitch",
   "settings.connected.confirm_unlink": "Desligar {{login}} do teu perfil Nodyx?",
   "settings.connected.unlinked_toast": "Conta Twitch desligada",
-  "settings.connected.unlink_failed": "Falha ao desligar"
+  "settings.connected.unlink_failed": "Falha ao desligar",
+  "members.page_title": "Membros · Nodyx",
+  "members.total": "total",
+  "members.filter_ph": "Filtrar por nome ou utilizador…",
+  "members.sort_oldest": "Mais antigos primeiro",
+  "members.sort_newest": "Mais recentes primeiro",
+  "members.sort_points": "Pontos (desc)",
+  "members.sort_alpha": "Alfabético",
+  "members.none_match": "Nenhum membro corresponde.",
+  "members.team": "Equipa",
+  "members.members_section": "Membros",
+  "members.since": "desde",
+  "members.pts": "pts",
+  "members.role_owner": "Fundador",
+  "members.role_admin": "Admin",
+  "members.role_moderator": "Mod"
 }

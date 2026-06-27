@@ -910,5 +910,20 @@
   "settings.connected.link_twitch": "Mein Twitch-Konto verknüpfen",
   "settings.connected.confirm_unlink": "{{login}} von deinem Nodyx-Profil trennen?",
   "settings.connected.unlinked_toast": "Twitch-Konto getrennt",
-  "settings.connected.unlink_failed": "Trennen fehlgeschlagen"
+  "settings.connected.unlink_failed": "Trennen fehlgeschlagen",
+  "members.page_title": "Mitglieder · Nodyx",
+  "members.total": "gesamt",
+  "members.filter_ph": "Nach Name oder Benutzername filtern…",
+  "members.sort_oldest": "Älteste zuerst",
+  "members.sort_newest": "Neueste zuerst",
+  "members.sort_points": "Punkte (absteigend)",
+  "members.sort_alpha": "Alphabetisch",
+  "members.none_match": "Kein Mitglied gefunden.",
+  "members.team": "Team",
+  "members.members_section": "Mitglieder",
+  "members.since": "Mitglied seit",
+  "members.pts": "Pkt",
+  "members.role_owner": "Gründer",
+  "members.role_admin": "Admin",
+  "members.role_moderator": "Mod"
 }
