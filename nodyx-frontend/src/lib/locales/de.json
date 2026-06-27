@@ -882,5 +882,14 @@
   "dm.enter": "Enter",
   "dm.reply_to": "Antwort an",
   "dm.cancel_reply": "Antwort abbrechen",
-  "dm.insert_emoji": "Emoji einfügen"
+  "dm.insert_emoji": "Emoji einfügen",
+  "settings.encryption.label": "Verschlüsselte Nachrichten",
+  "settings.encryption.desc": "Backup und Wiederherstellung deines Ende-zu-Ende-Schlüssels.",
+  "settings.connected.label": "Verknüpfte Konten",
+  "settings.sounds.desc": "In Echtzeit synthetisierte Töne — keine Audiodateien.",
+  "settings.sounds.enabled": "Töne aktiviert",
+  "settings.sounds.enabled_desc": "Alle Benachrichtigungstöne aktivieren oder deaktivieren.",
+  "settings.sounds.hint": "Töne über die Web Audio API erzeugt — keine heruntergeladenen Dateien, keine Netzwerklatenz. Einstellungen werden lokal im Browser gespeichert.",
+  "settings.streamer.desc": "Erhalte auf Nodyx einen Ton für Follows, Subs, Raids, Cheers. Praktisch, wenn du den Audio-Rückkanal deines Streams stummschaltest.",
+  "settings.streamer.enabled": "Streamer-Benachrichtigungen aktiviert"
 }

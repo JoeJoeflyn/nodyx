@@ -882,5 +882,14 @@
   "dm.enter": "Intro",
   "dm.reply_to": "Respuesta a",
   "dm.cancel_reply": "Cancelar respuesta",
-  "dm.insert_emoji": "Insertar un emoji"
+  "dm.insert_emoji": "Insertar un emoji",
+  "settings.encryption.label": "Mensajes cifrados",
+  "settings.encryption.desc": "Copia y recuperación de tu clave de cifrado de extremo a extremo.",
+  "settings.connected.label": "Cuentas vinculadas",
+  "settings.sounds.desc": "Sonidos sintetizados en tiempo real — sin archivos de audio.",
+  "settings.sounds.enabled": "Sonidos activados",
+  "settings.sounds.enabled_desc": "Activa o desactiva todos los sonidos de notificación.",
+  "settings.sounds.hint": "Sonidos generados mediante la Web Audio API — sin archivos descargados, sin latencia de red. Los ajustes se guardan localmente en tu navegador.",
+  "settings.streamer.desc": "Recibe un sonido en Nodyx para follows, subs, raids, cheers. Útil cuando silencias el retorno de audio de tu directo.",
+  "settings.streamer.enabled": "Notificaciones de streamer activadas"
 }

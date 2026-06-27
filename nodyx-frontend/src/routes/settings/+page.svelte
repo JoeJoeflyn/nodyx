@@ -543,7 +543,7 @@
                         <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                     </svg>
                 </span>
-                <span class="sb-label">Messages chiffrés</span>
+                <span class="sb-label">{tFn('settings.encryption.label')}</span>
             </button>
 
             <button class="sb-item {activeSection === 'signet' ? 'active' : ''}"
@@ -566,7 +566,7 @@
                         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
                     </svg>
                 </span>
-                <span class="sb-label">Comptes liés</span>
+                <span class="sb-label">{tFn('settings.connected.label')}</span>
                 {#if twitchLoaded && twitchLink}
                     <span class="sb-badge-dot" style="background:#10b981"></span>
                 {/if}
@@ -936,8 +936,8 @@
                     </svg>
                 </div>
                 <div>
-                    <h2 class="s-pane-title">Messages chiffrés</h2>
-                    <p class="s-pane-desc">Sauvegarde et récupération de ta clé de chiffrement de bout en bout.</p>
+                    <h2 class="s-pane-title">{tFn('settings.encryption.label')}</h2>
+                    <p class="s-pane-desc">{tFn('settings.encryption.desc')}</p>
                 </div>
             </div>
 
@@ -1054,7 +1054,7 @@
                     </svg>
                 </div>
                 <div>
-                    <h2 class="s-pane-title">Comptes liés</h2>
+                    <h2 class="s-pane-title">{tFn('settings.connected.label')}</h2>
                     <p class="s-pane-desc">
                         Lie tes comptes externes à ton profil Nodyx pour qu'ils soient reconnus
                         automatiquement dans les fonctionnalités correspondantes.
@@ -1147,7 +1147,7 @@
                 </div>
                 <div>
                     <h2 class="s-pane-title">Notifications sonores</h2>
-                    <p class="s-pane-desc">Sons synthétisés en temps réel — aucun fichier audio.</p>
+                    <p class="s-pane-desc">{tFn('settings.sounds.desc')}</p>
                 </div>
             </div>
 
@@ -1155,8 +1155,8 @@
             <div class="s-card">
                 <div class="s-row">
                     <div class="s-row-info">
-                        <div class="s-row-title">Sons activés</div>
-                        <div class="s-row-sub">Active ou désactive tous les sons de notification.</div>
+                        <div class="s-row-title">{tFn('settings.sounds.enabled')}</div>
+                        <div class="s-row-sub">{tFn('settings.sounds.enabled_desc')}</div>
                     </div>
                     <button
                         onclick={() => soundSettings.update(s => ({ ...s, enabled: !s.enabled }))}
@@ -1278,14 +1278,14 @@
                 </div>
                 <div>
                     <h2 class="s-pane-title">Notifications Streamer (Twitch)</h2>
-                    <p class="s-pane-desc">Reçois un son côté Nodyx pour follow, sub, raid, cheer. Utile quand tu coupes le retour audio de ton live.</p>
+                    <p class="s-pane-desc">{tFn('settings.streamer.desc')}</p>
                 </div>
             </div>
 
             <div class="s-card">
                 <div class="s-row">
                     <div class="s-row-info">
-                        <div class="s-row-title">Notifs Streamer activées</div>
+                        <div class="s-row-title">{tFn('settings.streamer.enabled')}</div>
                         <div class="s-row-sub">Écoute les events Twitch de ton instance en direct.</div>
                     </div>
                     <button
@@ -1362,7 +1362,7 @@
             {/if}
 
             <div class="s-card s-card-muted">
-                <p class="s-hint-text">Sons générés via Web Audio API — aucun fichier téléchargé, aucune latence réseau. Les réglages sont sauvegardés localement dans votre navigateur.</p>
+                <p class="s-hint-text">{tFn('settings.sounds.hint')}</p>
             </div>
         </div>
         {/if}
