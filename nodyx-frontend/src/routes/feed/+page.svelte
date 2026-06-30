@@ -46,6 +46,7 @@
 	let composing   = $state(false)
 	let sending     = $state(false)
 	let replyTo     = $state<any | null>(null)
+	let replyToRoot = $state<string | null>(null)   // id du post RACINE du fil (réponses aplaties)
 	let editorKey   = $state(0)           // force-remount editor after submit
 	let mediaUrl    = $state<string | null>(null)
 	let mediaUploading = $state(false)
@@ -107,19 +108,17 @@
 				if (!replyTo) {
 					posts = [post, ...posts]
 				} else {
-					const parentId = replyTo.id
-					posts = posts.map(p => (p.reshare_of || p.id) === parentId
-						? { ...p, replies_count: (p.replies_count ?? 0) + 1 }
-						: p
-					)
-					// Refresh the replies thread if already open, else open it
-					repliesOpen = { ...repliesOpen, [parentId]: true }
-					refreshReplies(parentId)
+					// Fil aplati : on ouvre + recharge le fil de la RACINE, pas du parent
+					// direct -> une réponse à une réponse apparaît bien sous la racine.
+					const rootId = replyToRoot ?? (replyTo.reshare_of || replyTo.id)
+					repliesOpen = { ...repliesOpen, [rootId]: true }
+					await refreshReplies(rootId)
 				}
 				content  = ''
 				mediaUrl = null
 				editorKey++   // reset TipTap
 				replyTo = null
+				replyToRoot = null
 				composing = false
 			}
 		} finally {
@@ -219,9 +218,10 @@
 	let repliesLoading = $state<Record<string, boolean>>({})
 	let repliesOpen   = $state<Record<string, boolean>>({})
 
+	// Le fil appartient à l'ORIGINAL (effId) : on indexe tout par effId, ce qui gère
+	// aussi plusieurs repartages d'un même post (ils partagent le même fil).
 	async function toggleReplies(post: any) {
-		const id = post.id
-		const src = post.reshare_of || post.id   // les réponses viennent de l'original
+		const id = effId(post)
 		if (repliesOpen[id]) {
 			repliesOpen = { ...repliesOpen, [id]: false }
 			return
@@ -233,23 +233,21 @@
 		}
 		repliesLoading = { ...repliesLoading, [id]: true }
 		try {
-			const res = await apiFetch(fetch, `/social/status/${src}`)
-			if (res.ok) {
-				const data = await res.json()
-				repliesMap  = { ...repliesMap,  [id]: data.replies ?? [] }
-				repliesOpen = { ...repliesOpen, [id]: true }
-			}
+			await refreshReplies(id)
+			repliesOpen = { ...repliesOpen, [id]: true }
 		} finally {
 			repliesLoading = { ...repliesLoading, [id]: false }
 		}
 	}
 
-	// After submitting a reply, refresh its thread if already open
-	async function refreshReplies(postId: string) {
-		const res = await apiFetch(fetch, `/social/status/${postId}`)
+	// Charge/recharge le fil APLATI d'une racine (toutes les réponses descendantes)
+	// et synchronise le compteur affiché avec la longueur réelle du fil.
+	async function refreshReplies(rootId: string) {
+		const res = await apiFetch(fetch, `/social/status/${rootId}`)
 		if (res.ok) {
-			const data = await res.json()
-			repliesMap = { ...repliesMap, [postId]: data.replies ?? [] }
+			const replies = (await res.json()).replies ?? []
+			repliesMap = { ...repliesMap, [rootId]: replies }
+			posts = posts.map(p => effId(p) === rootId ? { ...p, replies_count: replies.length } : p)
 		}
 	}
 
@@ -314,12 +312,22 @@
 					...(d.reshares_count !== undefined ? { reshares_count: d.reshares_count } : {}) }
 				: p)
 		}
+		const onReply = (d: { rootId: string; reply: any }) => {
+			// Réponse en direct (fil aplati) : on l'ajoute sous la RACINE du fil
+			// si celui-ci est chargé (dédup par id), et on met le compteur à jour.
+			const rid = d.rootId
+			if (repliesMap[rid] && d.reply?.id && !repliesMap[rid].some(r => r.id === d.reply.id)) {
+				const next = [...repliesMap[rid], d.reply]
+				repliesMap = { ...repliesMap, [rid]: next }
+				posts = posts.map(p => (p.id === rid || p.reshare_of === rid) ? { ...p, replies_count: next.length } : p)
+			}
+		}
 		let bound: Socket | null = null
-		const detach = (s: Socket) => { s.off('feed:new', onNew); s.off('feed:delete', onDelete); s.off('feed:count', onCount) }
+		const detach = (s: Socket) => { s.off('feed:new', onNew); s.off('feed:delete', onDelete); s.off('feed:count', onCount); s.off('feed:reply', onReply) }
 		const unsub = socketStore.subscribe((s) => {
 			if (s === bound) return
 			if (bound) detach(bound)
-			if (s) { s.on('feed:new', onNew); s.on('feed:delete', onDelete); s.on('feed:count', onCount) }
+			if (s) { s.on('feed:new', onNew); s.on('feed:delete', onDelete); s.on('feed:count', onCount); s.on('feed:reply', onReply) }
 			bound = s
 		})
 		return () => { unsub(); if (bound) detach(bound) }
@@ -559,6 +567,7 @@
 										<button
 											onclick={() => {
 												replyTo = post.reshared || post   // répondre cible l'original (repartage)
+												replyToRoot = effId(post)         // racine du fil
 												composing = true
 												window.scrollTo({ top: 0, behavior: 'smooth' })
 											}}
@@ -583,16 +592,16 @@
 											<button
 												onclick={() => toggleReplies(post)}
 												class="post-action-btn post-replies-btn"
-												class:post-replies-btn--open={repliesOpen[post.id]}
-												title={repliesOpen[post.id] ? tFn('feed.hide_replies') : tFn('feed.show_replies')}
+												class:post-replies-btn--open={repliesOpen[effId(post)]}
+												title={repliesOpen[effId(post)] ? tFn('feed.hide_replies') : tFn('feed.show_replies')}
 											>
-												{#if repliesLoading[post.id]}
+												{#if repliesLoading[effId(post)]}
 													<svg class="w-3 h-3 spin" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
 														<path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
 													</svg>
 												{:else}
 													<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
-														style="transition: transform 0.2s; transform: rotate({repliesOpen[post.id] ? '180deg' : '0deg'})"
+														style="transition: transform 0.2s; transform: rotate({repliesOpen[effId(post)] ? '180deg' : '0deg'})"
 													>
 														<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
 													</svg>
@@ -636,9 +645,9 @@
 						</article>
 
 					<!-- Replies thread -->
-					{#if repliesOpen[post.id] && repliesMap[post.id]}
+					{#if repliesOpen[effId(post)] && repliesMap[effId(post)]}
 						<div class="replies-thread">
-							{#each repliesMap[post.id] as reply (reply.id)}
+							{#each repliesMap[effId(post)] as reply (reply.id)}
 								<div class="reply-card">
 									<div class="reply-line"></div>
 									<div class="reply-inner">
@@ -657,6 +666,10 @@
 												<span class="post-username">@{reply.username}</span>
 												<span class="post-dot">·</span>
 												<time class="post-time" datetime={reply.created_at}>{timeAgo(reply.created_at)}</time>
+												{#if reply.reply_to_username && reply.reply_to_id !== effId(post)}
+													<span class="post-dot">·</span>
+													<span class="reply-to-tag">↳ @{reply.reply_to_username}</span>
+												{/if}
 												{#if me?.id === reply.author_id || me?.username === reply.username}
 													<button onclick={() => deletePost(reply.id)} class="post-delete-btn" title="Supprimer">
 														<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -674,7 +687,7 @@
 											{#if reply.link_preview}{@render linkCard(reply.link_preview)}{/if}
 											<div class="post-actions" style="margin-top: 0.5rem;">
 												<button
-													onclick={() => { replyTo = reply; composing = true; window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+													onclick={() => { replyTo = reply; replyToRoot = effId(post); composing = true; window.scrollTo({ top: 0, behavior: 'smooth' }) }}
 													class="post-action-btn" title={tFn('feed.reply')}
 												>
 													<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
