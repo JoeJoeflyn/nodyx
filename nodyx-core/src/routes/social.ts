@@ -220,8 +220,18 @@ export default async function socialRoutes(app: FastifyInstance) {
     // pas seulement à l'auteur. Un post racine apparaît dans le fil ; une
     // réponse met à jour le compteur de réponses du parent.
     if (reply_to_id) {
-      const rc = await db.query('SELECT replies_count FROM status_posts WHERE id = $1', [reply_to_id])
-      io?.to('presence').emit('feed:count', { id: reply_to_id, replies_count: rc.rows[0]?.replies_count })
+      // Racine du fil (le post de plus haut niveau) : le fil est aplati, donc une
+      // réponse imbriquée doit s'ajouter sous la racine, pas sous son parent direct.
+      const rootRes = await db.query<{ id: string }>(`
+        WITH RECURSIVE up(id, reply_to_id) AS (
+          SELECT id, reply_to_id FROM status_posts WHERE id = $1
+          UNION ALL
+          SELECT sp.id, sp.reply_to_id FROM status_posts sp JOIN up ON sp.id = up.reply_to_id
+        )
+        SELECT id FROM up WHERE reply_to_id IS NULL LIMIT 1
+      `, [reply_to_id])
+      const rootId = rootRes.rows[0]?.id ?? reply_to_id
+      io?.to('presence').emit('feed:reply', { rootId, reply: post.rows[0] })
     } else {
       io?.to('presence').emit('feed:new', post.rows[0])
     }
@@ -470,14 +480,25 @@ export default async function socialRoutes(app: FastifyInstance) {
     let viewerRef2 = 'NULL'
     if (viewerId) { replyParams.push(viewerId); viewerRef2 = `$${replyParams.length}` }
 
+    // Fil APLATI : toutes les réponses descendantes (réponses aux réponses
+    // incluses), pas seulement les enfants directs. reply_to_username permet
+    // d'afficher "↳ @X" sur une réponse imbriquée.
     const repliesRes = await db.query(`
-      SELECT ${postSelect(viewerRef2)}
+      WITH RECURSIVE thread(id) AS (
+        SELECT id FROM status_posts WHERE reply_to_id = $1
+        UNION ALL
+        SELECT sp.id FROM status_posts sp JOIN thread t ON sp.reply_to_id = t.id
+      )
+      SELECT ${postSelect(viewerRef2)},
+             pu.username AS reply_to_username
       FROM status_posts sp
       JOIN users u ON u.id = sp.author_id
       LEFT JOIN user_profiles p ON p.user_id = u.id
-      WHERE sp.reply_to_id = $1
+      LEFT JOIN status_posts parent ON parent.id = sp.reply_to_id
+      LEFT JOIN users pu ON pu.id = parent.author_id
+      WHERE sp.id IN (SELECT id FROM thread)
       ORDER BY sp.created_at ASC
-      LIMIT 50
+      LIMIT 100
     `, replyParams)
 
     return reply.send({ post: postRes.rows[0], replies: repliesRes.rows })
