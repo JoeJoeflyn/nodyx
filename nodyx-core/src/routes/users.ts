@@ -337,7 +337,7 @@ export default async function userRoutes(app: FastifyInstance) {
          ad.file_path  AS badge_asset_path,
          ad.name       AS badge_asset_name,
          (SELECT COUNT(*) FROM threads t WHERE t.author_id = u.id) AS thread_count,
-         (SELECT COUNT(*) FROM posts po WHERE po.author_id = u.id) AS post_count,
+         (SELECT COUNT(*) FROM status_posts spc WHERE spc.author_id = u.id AND spc.reply_to_id IS NULL) AS post_count,
          (SELECT COUNT(*) FROM follows WHERE following_id = u.id) AS followers_count,
          (SELECT COUNT(*) FROM follows WHERE follower_id  = u.id) AS following_count,
          g.name AS grade_name, g.color AS grade_color
