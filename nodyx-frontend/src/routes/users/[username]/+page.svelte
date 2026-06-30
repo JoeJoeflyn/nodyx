@@ -817,7 +817,11 @@
 					</div>
 				{:else}
 					{#each userPosts as post (post.id)}
-						<article class="profile-post-card">
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<article class="profile-post-card" style="cursor: pointer"
+							role="link" tabindex="0"
+							onclick={(e) => { if (!(e.target as HTMLElement).closest('a, button')) goto(`/status/${post.id}`) }}
+							onkeydown={(e) => { if (e.key === 'Enter') goto(`/status/${post.id}`) }}>
 							<div class="profile-post-text nodyx-prose">{@html post.content}</div>
 							{#if post.media_url}
 								<img src={post.media_url} alt="" class="profile-post-media" loading="lazy" />
