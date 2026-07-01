@@ -138,6 +138,17 @@
 
 	// GIF picker
 	let showGifPicker   = $state(false);
+	let showComposerEmoji = $state(false);
+
+	// Insère un emoji (unicode ou :shortcode:) dans la zone de saisie au curseur
+	function insertIntoInput(text: string) {
+		const ta = document.getElementById('chat-input') as HTMLTextAreaElement | null;
+		if (!ta) { inputText += text; return; }
+		const start = ta.selectionStart ?? inputText.length;
+		const end   = ta.selectionEnd ?? inputText.length;
+		inputText = inputText.slice(0, start) + text + inputText.slice(end);
+		tick().then(() => { ta.focus(); const pos = start + text.length; ta.setSelectionRange(pos, pos); });
+	}
 	let gifQuery        = $state('');
 	let gifResults      = $state<{ id: string; preview: string; url: string }[]>([]);
 	let gifLoading      = $state(false);
@@ -579,6 +590,7 @@
 		const target = e.target as HTMLElement;
 		if (!target.closest('[data-picker]')) pickerMsgId = null;
 		if (!target.closest('[data-gif-picker]')) { showGifPicker = false; }
+		if (!target.closest('[data-emoji-picker]')) { showComposerEmoji = false; }
 		if (!target.closest('[data-msg-actions]')) longPressMsg = null;
 	}
 
@@ -1535,6 +1547,19 @@
 					></textarea>
 					<!-- Toolbar -->
 					<div class="flex items-center gap-0.5 shrink-0 pb-0.5">
+						<!-- Emoji -->
+						<div class="relative" data-emoji-picker>
+							<button onclick={() => showComposerEmoji = !showComposerEmoji} title={tFn('chat.emoji')}
+							        class="w-7 h-7 flex items-center justify-center transition-colors"
+							        style="color: {showComposerEmoji ? 'var(--nx-accent-2-soft)' : '#4b5563'}">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 10h.01M15 10h.01M8.5 14.5c.9.8 2.1 1.3 3.5 1.3s2.6-.5 3.5-1.3"/></svg>
+							</button>
+							{#if showComposerEmoji}
+								<div class="absolute bottom-full right-0 mb-2 z-50">
+									<EmojiPicker onselect={(e) => { insertIntoInput(e); showComposerEmoji = false; }} />
+								</div>
+							{/if}
+						</div>
 						<!-- GIF -->
 						<button data-gif-picker onclick={() => { showGifPicker = !showGifPicker; if (showGifPicker && gifProvider) gifQuery = ''; }}
 						        title="GIF"
