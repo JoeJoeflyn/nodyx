@@ -1,4 +1,6 @@
 {
+  "library.emoji_shortcode": "Text-Kürzel",
+  "library.emoji_shortcode_ph": "rat — optional, sonst aus dem Namen",
   "chat.emoji": "Emoji",
   "emoji.custom": "Eigene",
   "common.back": "Zurück",

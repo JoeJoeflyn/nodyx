@@ -1,4 +1,6 @@
 {
+  "library.emoji_shortcode": "Text shortcut",
+  "library.emoji_shortcode_ph": "rat — optional, otherwise from the name",
   "chat.emoji": "Emoji",
   "emoji.custom": "Custom",
   "common.back": "Back",

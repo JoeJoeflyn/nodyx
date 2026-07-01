@@ -23,6 +23,21 @@
 	}
 	const equipField  = $derived(EQUIPPABLE[asset.asset_type] ?? null)
 	const canEquip    = $derived(!!equipField && !!me)
+
+	// Emoji : raccourci texte (:shortcode:) — perso (metadata) sinon dérivé du nom
+	const emojiShortcode = $derived(
+		asset.asset_type === 'emoji'
+			? ((asset.metadata as { shortcode?: string } | null)?.shortcode
+				|| asset.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''))
+			: ''
+	)
+	let copiedCode = $state(false)
+	function copyShortcode() {
+		navigator.clipboard?.writeText(`:${emojiShortcode}:`).then(() => {
+			copiedCode = true
+			setTimeout(() => (copiedCode = false), 1200)
+		}).catch(() => {})
+	}
 	const equipLabel  = $derived(
 		asset.asset_type === 'frame'  ? 'Équiper comme cadre'   :
 		asset.asset_type === 'banner' ? 'Équiper comme bannière' :
@@ -173,6 +188,13 @@
 						&nbsp;·&nbsp; {(asset.file_size / 1024).toFixed(1)} Ko
 						&nbsp;·&nbsp; {asset.downloads} téléchargement{asset.downloads !== 1 ? 's' : ''}
 					</p>
+					{#if emojiShortcode}
+						<button onclick={copyShortcode} title={copiedCode ? 'Copié !' : 'Copier le raccourci'}
+							class="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm bg-white/[0.06] border border-white/10 hover:border-white/25 transition-colors">
+							<span class="font-mono" style="color: var(--nx-accent-soft)">:{emojiShortcode}:</span>
+							<span style="color: {copiedCode ? '#4ade80' : '#6b7280'}">{copiedCode ? '✓' : '⧉'}</span>
+						</button>
+					{/if}
 				</div>
 				<div class="flex gap-2 shrink-0">
 					{#if canEquip}
@@ -183,15 +205,6 @@
 							       {equipped ? 'bg-gray-700 cursor-default' : 'bg-emerald-700 hover:bg-emerald-600'}"
 						>
 							{equipping ? '…' : equipped ? '✓ Équipé' : equipLabel}
-						</button>
-					{/if}
-					{#if me}
-						<button
-							onclick={startWhisper}
-							disabled={whispering}
-							class="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-sm font-semibold text-gray-200 transition-colors"
-						>
-							{whispering ? '…' : '🤫 Chuchoter'}
 						</button>
 					{/if}
 					<button
