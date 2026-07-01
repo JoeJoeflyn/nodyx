@@ -94,6 +94,9 @@ export default async function assetRoutes(app: FastifyInstance) {
     const description = (data.fields['description'] as { value?: string } | undefined)?.value?.trim()
     const assetType   = (data.fields['asset_type']  as { value?: string } | undefined)?.value?.trim() as AssetType | undefined
     const tagsRaw     = (data.fields['tags']        as { value?: string } | undefined)?.value
+    // Raccourci texte personnalisé (emoji) : :shortcode: — optionnel, sinon dérivé du nom.
+    const shortcodeRaw = (data.fields['shortcode']  as { value?: string } | undefined)?.value
+    const shortcode    = shortcodeRaw ? shortcodeRaw.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 50) : ''
 
     if (!name)      return reply.code(400).send({ error: 'Le champ "name" est requis.' })
     if (!assetType || !VALID_TYPES.includes(assetType)) {
@@ -136,6 +139,14 @@ export default async function assetRoutes(app: FastifyInstance) {
         description:      description || undefined,
         tags,
       })
+      // Emoji : mémoriser le raccourci texte perso dans metadata (sinon dérivé du nom)
+      if (assetType === 'emoji' && shortcode) {
+        await db.query(
+          `UPDATE community_assets SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('shortcode', $2::text) WHERE id = $1`,
+          [asset.id, shortcode]
+        ).catch(() => {})
+        ;(asset as { metadata?: Record<string, unknown> }).metadata = { ...((asset as { metadata?: Record<string, unknown> }).metadata ?? {}), shortcode }
+      }
       return reply.code(201).send({ asset })
     } catch (err: unknown) {
       app.log.error(err)

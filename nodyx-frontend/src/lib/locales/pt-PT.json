@@ -1,4 +1,6 @@
 {
+  "library.emoji_shortcode": "Atalho de texto",
+  "library.emoji_shortcode_ph": "rat — opcional, senão do nome",
   "chat.emoji": "Emoji",
   "emoji.custom": "Personalizados",
   "common.back": "Voltar",

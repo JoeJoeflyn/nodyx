@@ -1,4 +1,6 @@
 {
+  "library.emoji_shortcode": "Raccourci texte",
+  "library.emoji_shortcode_ph": "rat — optionnel, sinon dérivé du nom",
   "chat.emoji": "Emoji",
   "emoji.custom": "Perso",
   "common.back": "Retour",

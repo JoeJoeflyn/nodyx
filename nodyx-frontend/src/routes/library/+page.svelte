@@ -3,8 +3,11 @@
 	import { goto } from '$app/navigation'
 	import { page } from '$app/state'
 	import { PUBLIC_API_URL } from '$env/static/public'
+	import { t } from '$lib/i18n'
 
 	let { data }: { data: PageData } = $props()
+
+	const tFn = $derived($t)
 
 	const token = $derived((page.data as any).token as string | null)
 
@@ -39,6 +42,7 @@
 	let uploadDescription = $state('')
 	let uploadType        = $state('sticker')
 	let uploadTags        = $state('')
+	let uploadShortcode   = $state('')   // emoji : raccourci texte perso (:code:)
 	let uploadFile        = $state<File | null>(null)
 	let uploadPreview     = $state<string | null>(null)
 
@@ -110,6 +114,7 @@
 		form.append('description', uploadDescription)
 		form.append('asset_type',  uploadType)
 		form.append('tags',        uploadTags)
+		if (uploadType === 'emoji') form.append('shortcode', uploadShortcode)
 		form.append('file',        uploadFile) // must be last — @fastify/multipart only sees fields before the file
 
 		const res = await fetch(`${PUBLIC_API_URL}/api/v1/assets`, {
@@ -226,7 +231,14 @@
 				<input id="lib-tags" bind:value={uploadTags} placeholder="pixel-art, doré, frame"
 					class="lib-input" />
 			</div>
-			{#if currentTypeTip}
+			{#if uploadType === 'emoji'}
+					<div class="lib-field lib-field--full">
+						<label for="lib-shortcode" class="lib-label">{tFn('library.emoji_shortcode')}</label>
+						<input id="lib-shortcode" bind:value={uploadShortcode} maxlength="50"
+							placeholder={tFn('library.emoji_shortcode_ph')} class="lib-input" />
+					</div>
+				{/if}
+				{#if currentTypeTip}
 				<div class="lib-tip lib-field--full">
 					<span class="lib-tip-icon">💡</span>
 					<div class="lib-tip-body">

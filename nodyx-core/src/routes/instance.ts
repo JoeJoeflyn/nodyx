@@ -466,15 +466,16 @@ export default async function instanceRoutes(app: FastifyInstance) {
   // Utilisables dans les messages via :shortcode: (dérivé du nom de l'asset).
   app.get('/emojis', { preHandler: [rateLimit] }, async (_request, reply) => {
     try {
-      const { rows } = await db.query<{ name: string; file_path: string }>(
-        `SELECT name, file_path FROM community_assets
+      const { rows } = await db.query<{ name: string; file_path: string; metadata: { shortcode?: string } | null }>(
+        `SELECT name, file_path, metadata FROM community_assets
          WHERE asset_type = 'emoji' AND is_public = true AND is_banned = false
          ORDER BY name ASC LIMIT 500`
       )
       const emojis = rows
         .map(r => ({
           name: r.name,
-          shortcode: r.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
+          // Raccourci personnalisé (metadata.shortcode) sinon dérivé du nom
+          shortcode: (r.metadata?.shortcode || r.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')),
           url: `/uploads/${r.file_path}`,
         }))
         .filter(e => e.shortcode.length > 0)
