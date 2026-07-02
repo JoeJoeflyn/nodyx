@@ -4,5 +4,6 @@ members = [
     "crates/nexus-turn",
     "crates/nodyx-server",
     "crates/nodyx-gossip",
+    "crates/nodyx-sfu",
 ]
 resolver = "2"
