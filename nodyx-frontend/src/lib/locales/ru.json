@@ -1,4 +1,6 @@
 {
+  "library.choose_file": "Выбрать файл",
+  "library.no_file": "Файл не выбран",
   "library.emoji_help": "PNG, GIF или WebP · прозрачный фон · квадрат, ~128 px достаточно (уменьшается свыше 1024 px). Анимированные GIF и WebP поддерживаются. Оптимизируется в WebP, макс 12 МБ.",
   "emoji.frequent": "Частые",
   "emoji.search_placeholder": "Поиск эмодзи…",

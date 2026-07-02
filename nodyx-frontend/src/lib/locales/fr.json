@@ -1,4 +1,6 @@
 {
+  "library.choose_file": "Choisir un fichier",
+  "library.no_file": "Aucun fichier",
   "library.emoji_help": "PNG, GIF ou WebP · fond transparent conseillé · carré, ~128 px suffit (réduit auto au-delà de 1024 px). GIF et WebP animés acceptés. Optimisé automatiquement en WebP, max 12 Mo.",
   "emoji.frequent": "Fréquents",
   "emoji.search_placeholder": "Rechercher un emoji…",
