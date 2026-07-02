@@ -197,11 +197,14 @@
 		{/if}
 		<form onsubmit={submitUpload} class="lib-upload-form">
 			<div class="lib-upload-file-row">
-				<label class="lib-field lib-field--grow">
+				<div class="lib-field lib-field--grow">
 					<span class="lib-label">Fichier *</span>
-					<input type="file" onchange={onFileChange} accept="image/*,audio/*" required
-						class="lib-file-input" />
-				</label>
+					<label class="lib-file-btn">
+						<input type="file" onchange={onFileChange} accept="image/*,audio/*" class="lib-file-native" />
+						<span class="lib-file-cta">📁 {tFn('library.choose_file')}</span>
+						<span class="lib-file-name" class:lib-file-name--empty={!uploadFile}>{uploadFile ? uploadFile.name : tFn('library.no_file')}</span>
+					</label>
+				</div>
 				{#if uploadPreview}
 					<img src={uploadPreview} alt="preview" class="lib-preview-thumb" />
 				{/if}
@@ -614,10 +617,51 @@
 	appearance: none;
 }
 
-.lib-file-input {
-	font-size: 0.8125rem;
-	color: rgba(255, 255, 255, 0.6);
+/* Bouton de fichier stylé (masque l'input natif moche) */
+.lib-file-native {
+	position: absolute;
+	width: 1px; height: 1px;
+	opacity: 0;
+	overflow: hidden;
 }
+.lib-file-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.7rem;
+	cursor: pointer;
+	margin-top: 0.35rem;
+	max-width: 100%;
+}
+.lib-file-cta {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0.5rem 0.9rem;
+	border-radius: 8px;
+	font-size: 0.85rem;
+	font-weight: 600;
+	color: #fff;
+	white-space: nowrap;
+	background: rgb(var(--nx-accent-2-rgb) / 0.22);
+	border: 1px solid rgb(var(--nx-accent-2-rgb) / 0.4);
+	transition: background 0.15s, border-color 0.15s;
+}
+.lib-file-btn:hover .lib-file-cta {
+	background: rgb(var(--nx-accent-2-rgb) / 0.32);
+	border-color: var(--nx-accent-2-soft);
+}
+.lib-file-native:focus-visible + .lib-file-cta {
+	outline: 2px solid var(--nx-accent-2-soft);
+	outline-offset: 2px;
+}
+.lib-file-name {
+	font-size: 0.82rem;
+	color: rgba(255, 255, 255, 0.85);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.lib-file-name--empty { color: rgba(255, 255, 255, 0.4); }
 
 .lib-preview-thumb {
 	width: 72px;
