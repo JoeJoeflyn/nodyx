@@ -1798,6 +1798,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nodyx-sfu"
+version = "0.1.0"
+
+[[package]]
 name = "nodyx-turn"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,11 @@
+[package]
+name = "nodyx-sfu"
+version = "0.1.0"
+edition = "2021"
+description = "SFU media du reseau Nodyx : abstraction moteur (trait MediaEngine) + orchestration. Le moteur concret (mediasoup, puis Rust natif) se branche DERRIERE le trait (swap-ready). Cf SPECS/NODYX_SFU_CDC.md."
+
+[dependencies]
+# Abstraction PURE : zero dependance ici (comme le reste du workspace).
+# Les impls concretes du moteur (MediasoupEngine : mediasoup + tokio ; plus tard
+# NativeRustEngine : webrtc-rs) porteront LEURS deps dans des modules/features
+# dediees, jamais dans l'abstraction. C'est ce qui garde le swap peu couteux.
