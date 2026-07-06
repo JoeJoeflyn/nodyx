@@ -9,6 +9,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ---
 
+## [2.10.0] — 2026-07-06
+
+### Vocal : le SFU est né (audio expérimental)
+
+Quatre jours après le CDC (`SPECS/NODYX_SFU_CDC.md`), le premier son a traversé le SFU de Nodyx : un PC et un téléphone en 4G (une barre, presque zone blanche), audio dans les deux sens, via l'infrastructure de l'instance, sans un octet chez un tiers. Le mur mathématique du mesh (15 spectateurs × 3 Mbps = impossible) a désormais sa réponse.
+
+- **`nodyx-sfu`** (Rust, zéro dépendance, zéro `unsafe`) : le cerveau vocal en trois étages hexagonaux, `VoiceService` (salons, sièges, kick, publish/subscribe, bascule hybride mesh↔SFU) → trait `MediaEngine` (le port, blobs de signaling opaques jamais lus par le métier) → adaptateur moteur. 25 tests contre un `NullEngine` : l'orchestration prouvée avant tout moteur réel, et le swap futur vers un moteur full-Rust garanti par construction
+- **`nodyx-sfu-mediasoup`** : l'adaptateur mediasoup (licence ISC, notice dans `NOTICE`) validé par spike (salon réel, pipe de fédération inter-workers, WebRtcTransport ICE/DTLS), et le daemon **`nodyx-sfud`** : API interne localhost à jeton obligatoire (comparaison en temps constant), HTTP minimal écrit main (~150 lignes), **plage RTC UDP bornée** (40000-40999, alignée sur le firewall, leçon nexus-turn), unité systemd durcie
+- **Relais de signaling dans nodyx-core** : events `voice:sfu_*` ADDITIFS et DORMANTS (sans `VOICE_SFU_URL`, tout répond `sfu_disabled` sans toucher ni daemon ni base), mêmes gardes d'admission que le mesh, identité issue du JWT, payloads bornés, rollback complet sur échec partiel. **Le vocal mesh existant : zéro ligne de comportement modifiée**, ses 385+ tests en témoignent
+- **Client `mediasoup-client` + laboratoire `/admin/sfu-lab`** : Device → paire de transports send/recv → micro publié → flux consommés, machine à états journalisée en direct, timeout sur chaque échange, nettoyage idempotent
+- **Passe de relecture post-MVP** : quatre défauts d'états fantômes corrigés (course de création de router, participant orphelin côté daemon après échec partiel, échec de session silencieux côté client, double consume sur annonces croisées)
+
+### Recherche Ctrl+K : elle cherche enfin
+
+- La palette n'appelait jamais le moteur de recherche, et son groupe FORUM interrogeait un endpoint inexistant : chercher un mot du contenu du site donnait toujours zéro résultat
+- Désormais : recherche full-text live dès 2 caractères (titres ET contenu des posts, extraits surlignés, lien direct jusqu'au message), et l'arbre complet des catégories aplati, sous-sous-catégories navigables au clavier
+
+---
+
 ## [2.9.0] — 2026-07-05
 
 ### Vocal : le cap SFU est posé, et le mesh actuel respire mieux
@@ -1431,7 +1450,6 @@ The biggest Nodyx release since launch. v2.0 brings end-to-end encrypted DMs wit
 - Directory DNS creation: replaced `dnsLookup` (returned Cloudflare proxy IP) with `VPS_IP` env var
 
 ---
-
 
 ## [0.4.1] — 2026-03-01
 
