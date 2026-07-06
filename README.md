@@ -767,6 +767,36 @@ Each Nodyx instance runs a **Gossip Protocol** scheduler that periodically pings
 
 </details>
 
+<details>
+<summary><b>v2.9, Instance Themes · Custom Emojis · Voice P0 · SFU Foundations 🎨</b></summary>
+
+| Feature | Version |
+|---|---|
+| **Instance themes**, the owner sets the instance identity (structured theme vars, free CSS, ambient effects like Matrix character rain), each member can still override for themselves. ~800 hardcoded accent colors tokenized to `--nx-*` variables | v2.9 |
+| **Custom emojis**, upload with `:shortcode:`, rendered in chat messages and reactions, picker with search / frequently-used / custom tab, quick reaction bar on hover | v2.9 |
+| **Real-time social feed**, posts, nested replies and reactions update live; interactive `/status/:id` page; accurate reply/post counters | v2.9 |
+| **Voice P0 (mesh)**, adaptive Opus DTX above 4 participants, screen-share bitrate cap by quality × fps, per-user volume finally persistent | v2.9 |
+| **TURN relay port range fix**, `nexus-turn` now owns its relay range (49152-65535) instead of relying on the OS ephemeral range, fixing intermittent voice for self-hosters behind default kernels | v2.9 |
+| **SFU foundations (Rust)**, full CDC (`SPECS/NODYX_SFU_CDC.md`), `nodyx-sfu` crate: hexagonal `VoiceService` → `MediaEngine` trait → engine adapter, 23+ tests against a `NullEngine`, mediasoup spike validated (federation pipe included) | v2.9 |
+| **i18n**, Russian + Portuguese added (6 languages), member-core hardcoded strings translated | v2.9 |
+| **Admin network diagnostic**, the TURN test now uses fresh ephemeral credentials via the API (no more permanently-lying RELAY tile), Google STUN removed | v2.9 |
+
+</details>
+
+<details>
+<summary><b>v2.10, The SFU is born: experimental voice through your own server 🎙️</b></summary>
+
+| Feature | Version |
+|---|---|
+| **SFU audio, proven end-to-end (experimental)**, browser → mediasoup-client → socket.io relay → Rust daemon → `VoiceService` brain → mediasoup worker, first real session over 1-bar 4G, audio both ways, zero third-party | v2.10 |
+| **`nodyx-sfud` daemon**, localhost-only internal API, mandatory token (constant-time compared), hand-written minimal HTTP (~150 auditable lines), bounded RTC UDP port range (40000-40999, firewall-aligned), hardened systemd unit | v2.10 |
+| **Dormant by design**, without `VOICE_SFU_URL` every SFU path answers `sfu_disabled`; the existing mesh voice: zero behavior change, 385+ tests untouched | v2.10 |
+| **`/admin/sfu-lab`**, admin lab page with live step-by-step journal to prove the SFU path in total isolation before any automatic switchover | v2.10 |
+| **Post-MVP review pass**, four ghost-state defects found and fixed (router creation race, orphan participants on partial failure, silent session failure, double consume) | v2.10 |
+| **Ctrl+K search actually searches**, live full-text (titles AND post content, highlighted excerpts, direct links to messages) + full category tree flattened into the palette | v2.10 |
+
+</details>
+
 ## The Vision
 
 Nodyx is not a Discord alternative.
