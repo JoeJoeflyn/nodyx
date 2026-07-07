@@ -131,6 +131,63 @@ fn rtp_packet(ssrc: u32, seq: u16, ts: u32) -> Vec<u8> {
     p
 }
 
+// ── Un salon full-mesh (réutilisé par le mode simple ET multi-salons) ─────────
+
+/// Tout ce qu'il faut garder vivant pendant la mesure d'un salon : les transports
+/// et consumers (Drop = fermeture mediasoup) + les producers (à injecter).
+struct RoomLoad {
+    _sends: Vec<DirectTransport>,
+    _recvs: Vec<DirectTransport>,
+    _consumers: Vec<Consumer>,
+    producers: Vec<(Producer, u32)>,
+}
+
+/// Monte un salon : `per_room` participants, chacun publie de l'audio et consomme
+/// TOUS les autres (full-mesh, per_room×(per_room-1) chemins). `ssrc_base` assure
+/// des SSRC uniques entre salons.
+async fn build_room(
+    router: &Router,
+    per_room: usize,
+    received: &Arc<AtomicU64>,
+    ssrc_base: u32,
+) -> R<RoomLoad> {
+    let caps = consumer_caps(router.rtp_capabilities());
+    let mut producers = Vec::with_capacity(per_room);
+    let mut sends = Vec::with_capacity(per_room);
+    let mut recvs = Vec::with_capacity(per_room);
+    for i in 0..per_room {
+        let send_t = router.create_direct_transport(DirectTransportOptions::default()).await?;
+        let ssrc = ssrc_base + i as u32;
+        let prod = send_t
+            .produce(ProducerOptions::new(MediaKind::Audio, opus_rtp_parameters(ssrc)))
+            .await?;
+        let recv_t = router.create_direct_transport(DirectTransportOptions::default()).await?;
+        producers.push((prod, ssrc));
+        sends.push(send_t);
+        recvs.push(recv_t);
+    }
+    let mut consumers = Vec::with_capacity(per_room * per_room.saturating_sub(1));
+    for (i, recv_t) in recvs.iter().enumerate() {
+        for (j, (prod, _)) in producers.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            let c = recv_t
+                .consume(ConsumerOptions::new(prod.id(), caps.clone()))
+                .await?;
+            let recv = Arc::clone(received);
+            // .detach() : sinon le HandlerId est droppé et le callback retiré
+            // AUSSITÔT (#[must_use]) → 0 paquet reçu. Le piège du bench.
+            c.on_rtp(move |_pkt| {
+                recv.fetch_add(1, Ordering::Relaxed);
+            })
+            .detach();
+            consumers.push(c);
+        }
+    }
+    Ok(RoomLoad { _sends: sends, _recvs: recvs, _consumers: consumers, producers })
+}
+
 // ── Un palier ────────────────────────────────────────────────────────────────
 
 struct StageResult {
@@ -146,45 +203,9 @@ struct StageResult {
 async fn run_stage(manager: &WorkerManager, n: usize, window: Duration) -> R<StageResult> {
     let worker = manager.create_worker(WorkerSettings::default()).await?;
     let router = worker.create_router(RouterOptions::new(vec![opus_capability()])).await?;
-    let caps = consumer_caps(router.rtp_capabilities());
     let received = Arc::new(AtomicU64::new(0));
-
     let setup = Instant::now();
-    // producers (+ leur send transport gardé vivant) et recv transports.
-    let mut producers = Vec::with_capacity(n);
-    let mut send_transports = Vec::with_capacity(n);
-    let mut recv_transports = Vec::with_capacity(n);
-    for i in 0..n {
-        let send_t = router.create_direct_transport(DirectTransportOptions::default()).await?;
-        let ssrc = 2000 + i as u32;
-        let prod = send_t
-            .produce(ProducerOptions::new(MediaKind::Audio, opus_rtp_parameters(ssrc)))
-            .await?;
-        let recv_t = router.create_direct_transport(DirectTransportOptions::default()).await?;
-        producers.push((prod, ssrc));
-        send_transports.push(send_t);
-        recv_transports.push(recv_t);
-    }
-    // chaque participant consomme TOUS les autres (N×(N-1) chemins).
-    let mut consumers = Vec::with_capacity(n * (n - 1).max(1));
-    for (i, recv_t) in recv_transports.iter().enumerate() {
-        for (j, (prod, _)) in producers.iter().enumerate() {
-            if i == j {
-                continue;
-            }
-            let c = recv_t
-                .consume(ConsumerOptions::new(prod.id(), caps.clone()))
-                .await?;
-            let recv = Arc::clone(&received);
-            // .detach() : sinon le HandlerId est droppé et le callback retiré
-            // AUSSITÔT (#[must_use]) → 0 paquet reçu. Le piège du bench.
-            c.on_rtp(move |_pkt| {
-                recv.fetch_add(1, Ordering::Relaxed);
-            })
-            .detach();
-            consumers.push(c);
-        }
-    }
+    let room = build_room(&router, n, &received, 2000).await?;
     let setup_ms = setup.elapsed().as_millis();
 
     // Chauffe (établissement des consumers) puis état stable mesuré.
@@ -197,7 +218,7 @@ async fn run_stage(manager: &WorkerManager, n: usize, window: Duration) -> R<Sta
     // émet indépendamment). Évite qu'un injecteur mono-tâche devienne le
     // goulot et fausse la mesure du SFU.
     let mut injectors = Vec::with_capacity(n);
-    for (prod, ssrc) in producers.iter() {
+    for (prod, ssrc) in room.producers.iter() {
         let prod = prod.clone();
         let ssrc = *ssrc;
         injectors.push(tokio::spawn(async move {
@@ -242,19 +263,201 @@ async fn run_stage(manager: &WorkerManager, n: usize, window: Duration) -> R<Sta
     // Drop de worker/router/transports/producers/consumers = fermeture mediasoup.
 }
 
+// ── Un palier multi-salons (prouve le pool : les salons s'étalent sur les cœurs) ─
+
+struct MultiResult {
+    rooms: usize,
+    per_room: usize,
+    total: usize,
+    setup_ms: u128,
+    cores_used: f64,
+    rss_mb: u64,
+    expected: u64,
+    received: u64,
+    health_pct: f64,
+    distribution: Vec<usize>,
+}
+
+/// `rooms` salons de `per_room` participants, répartis sur un pool de `pool`
+/// workers (least-loaded, exactement la règle du moteur). Le CPU total peut alors
+/// dépasser 1 cœur (jusqu'à `pool`) : c'est la preuve visuelle du pool.
+async fn run_multi_stage(pool: usize, rooms: usize, per_room: usize, window: Duration) -> R<MultiResult> {
+    let manager = WorkerManager::new();
+    let mut workers = Vec::with_capacity(pool);
+    for _ in 0..pool {
+        workers.push(manager.create_worker(WorkerSettings::default()).await?);
+    }
+    let mut distribution = vec![0usize; pool];
+    let received = Arc::new(AtomicU64::new(0));
+
+    let setup = Instant::now();
+    let mut room_loads = Vec::with_capacity(rooms);
+    let mut routers = Vec::with_capacity(rooms);
+    for r in 0..rooms {
+        // Worker le moins chargé : même règle que le pool du moteur.
+        let idx = distribution
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, n)| **n)
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        distribution[idx] += 1;
+        let router = workers[idx]
+            .create_router(RouterOptions::new(vec![opus_capability()]))
+            .await?;
+        let rl = build_room(&router, per_room, &received, 2000 + (r as u32) * 1000).await?;
+        room_loads.push(rl);
+        routers.push(router);
+    }
+    let setup_ms = setup.elapsed().as_millis();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let cpu0 = cpu_ticks();
+    let recv0 = received.load(Ordering::Relaxed);
+    let t0 = Instant::now();
+    let deadline = t0 + window;
+    let mut injectors = Vec::new();
+    for rl in &room_loads {
+        for (prod, ssrc) in &rl.producers {
+            let prod = prod.clone();
+            let ssrc = *ssrc;
+            injectors.push(tokio::spawn(async move {
+                let mut seq = 0u16;
+                let mut ts = 0u32;
+                let mut ticker = tokio::time::interval(Duration::from_millis(PACKET_MS));
+                while Instant::now() < deadline {
+                    ticker.tick().await;
+                    if let Producer::Direct(dp) = &prod {
+                        let _ = dp.send(rtp_packet(ssrc, seq, ts));
+                    }
+                    seq = seq.wrapping_add(1);
+                    ts = ts.wrapping_add(960);
+                }
+            }));
+        }
+    }
+    for h in injectors {
+        let _ = h.await;
+    }
+    let wall = t0.elapsed().as_secs_f64();
+    let cpu_delta = cpu_ticks().saturating_sub(cpu0);
+    let received_delta = received.load(Ordering::Relaxed).saturating_sub(recv0);
+
+    let cores_used = (cpu_delta as f64 / CLK_TCK) / wall;
+    let pkts_per_prod = (wall / (PACKET_MS as f64 / 1000.0)) as u64;
+    // full-mesh PAR salon (per_room×(per_room-1)) × nombre de salons.
+    let expected =
+        pkts_per_prod * per_room as u64 * (per_room as u64).saturating_sub(1) * rooms as u64;
+    let health_pct = if expected > 0 {
+        (received_delta as f64 / expected as f64) * 100.0
+    } else {
+        100.0
+    };
+
+    Ok(MultiResult {
+        rooms,
+        per_room,
+        total: rooms * per_room,
+        setup_ms,
+        cores_used,
+        rss_mb: rss_mb(),
+        expected,
+        received: received_delta,
+        health_pct,
+        distribution,
+    })
+    // Drop du pool de workers = fermeture mediasoup, salon par salon.
+}
+
+/// Mode multi-salons : `sfu-bench rooms <participants/salon> <nb_salons,...>`
+/// Pool = SFU_BENCH_WORKERS (défaut = cœurs de la machine).
+async fn run_multi(cores: usize, window: Duration, args: &[String]) -> R<()> {
+    let per_room: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(50);
+    let room_stages: Vec<usize> = args
+        .get(3)
+        .map(|s| s.split(',').filter_map(|x| x.trim().parse().ok()).filter(|&r| r >= 1).collect())
+        .unwrap_or_else(|| vec![1, 2, 4, 6]);
+    let pool: usize = std::env::var("SFU_BENCH_WORKERS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(cores)
+        .max(1);
+
+    eprintln!(
+        "── sfu-bench MULTI-SALONS : {cores} cœurs, pool {pool} workers, {per_room} participants/salon, paliers {room_stages:?}, fenêtre {}s ──",
+        window.as_secs()
+    );
+    eprintln!("   (le pool étale les salons sur les workers → le CPU total doit dépasser 1 cœur)\n");
+    println!(
+        "{:>6} | {:>7} | {:>6} | {:>7} | {:>9} | répartition/worker",
+        "salons", "total", "RSS", "CPU", "santé"
+    );
+    println!("{:->6}-+-{:->7}-+-{:->6}-+-{:->7}-+-{:->9}-+--------------------", "", "", "", "", "");
+
+    let mut results = Vec::new();
+    for &rooms in &room_stages {
+        let r = run_multi_stage(pool, rooms, per_room, window).await?;
+        let verdict = if r.health_pct >= 99.0 {
+            "OK"
+        } else if r.health_pct >= 90.0 {
+            "tendu"
+        } else {
+            "RUPTURE"
+        };
+        println!(
+            "{:>6} | {:>7} | {:>4}Mo | {:>5.2}c | {:>7.1}% | {:?}  {}",
+            r.rooms, r.total, r.rss_mb, r.cores_used, r.health_pct, r.distribution, verdict
+        );
+        results.push(r);
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+
+    let json = serde_json::json!({
+        "mode": "multi-rooms",
+        "cores": cores,
+        "pool_workers": pool,
+        "per_room": per_room,
+        "window_s": window.as_secs(),
+        "stages": results.iter().map(|r| serde_json::json!({
+            "rooms": r.rooms,
+            "per_room": r.per_room,
+            "total_participants": r.total,
+            "setup_ms": r.setup_ms,
+            "cpu_cores_used": (r.cores_used * 1000.0).round() / 1000.0,
+            "cpu_pct_of_box": ((r.cores_used / cores as f64) * 1000.0).round() / 10.0,
+            "rss_mb": r.rss_mb,
+            "expected_pkts": r.expected,
+            "received_pkts": r.received,
+            "forward_health_pct": (r.health_pct * 10.0).round() / 10.0,
+            "worker_distribution": r.distribution,
+        })).collect::<Vec<_>>(),
+    });
+    eprintln!("\n── JSON ──");
+    println!("{}", serde_json::to_string_pretty(&json)?);
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> R<()> {
-    let stages: Vec<usize> = std::env::args()
-        .nth(1)
+    let args: Vec<String> = std::env::args().collect();
+    let window = Duration::from_secs(
+        std::env::var("SFU_BENCH_WINDOW_S").ok().and_then(|v| v.parse().ok()).unwrap_or(4),
+    );
+    let cores = std::thread::available_parallelism().map(|c| c.get()).unwrap_or(1);
+
+    // Mode multi-salons : sfu-bench rooms <participants/salon> <nb_salons,...>
+    if args.get(1).map(String::as_str) == Some("rooms") {
+        return run_multi(cores, window, &args).await;
+    }
+
+    let stages: Vec<usize> = args
+        .get(1)
+        .cloned()
         .unwrap_or_else(|| "2,5,10,20,30".into())
         .split(',')
         .filter_map(|s| s.trim().parse().ok())
         .filter(|&n| n >= 2)
         .collect();
-    let window = Duration::from_secs(
-        std::env::var("SFU_BENCH_WINDOW_S").ok().and_then(|v| v.parse().ok()).unwrap_or(4),
-    );
-    let cores = std::thread::available_parallelism().map(|c| c.get()).unwrap_or(1);
 
     eprintln!("── sfu-bench : {} cœurs, paliers {stages:?}, fenêtre {}s/palier ──", cores, window.as_secs());
     eprintln!("   (DirectTransport in-process, aucun port UDP ; Opus 1 pqt/20ms ; forwarding N×(N-1))\n");
