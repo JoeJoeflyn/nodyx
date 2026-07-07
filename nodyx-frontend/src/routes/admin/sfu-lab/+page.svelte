@@ -40,7 +40,7 @@
   let logEl: HTMLElement | null = $state(null)
 
   const phase = $derived($sfuPhaseStore)
-  const busy  = $derived(phase === 'joining' || phase === 'connecting')
+  const busy  = $derived(phase === 'joining' || phase === 'connecting' || phase === 'recovering')
 
   function join() {
     if (browser) localStorage.setItem('nodyx:sfu-lab:channel', channelId.trim())
@@ -55,7 +55,8 @@
 
   const PHASE_LABEL: Record<string, string> = {
     idle: 'Inactif', joining: 'Connexion…', mesh: 'Salon en mesh',
-    connecting: 'Établissement…', active: 'SESSION ACTIVE', error: 'Erreur',
+    connecting: 'Établissement…', active: 'SESSION ACTIVE',
+    recovering: 'Reconnexion…', error: 'Erreur',
   }
   const PHASE_CLASS: Record<string, string> = {
     idle: 'bg-zinc-800 text-zinc-400',
@@ -63,6 +64,7 @@
     mesh: 'bg-sky-500/15 text-sky-400',
     connecting: 'bg-amber-500/15 text-amber-400',
     active: 'bg-emerald-500/15 text-emerald-400',
+    recovering: 'bg-amber-500/15 text-amber-400 animate-pulse',
     error: 'bg-red-500/15 text-red-400',
   }
 </script>

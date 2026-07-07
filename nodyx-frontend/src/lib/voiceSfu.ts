@@ -27,6 +27,7 @@ export type SfuPhase =
   | 'mesh'        // le salon est en mesh : SFU pas (encore) actif côté daemon
   | 'connecting'  // device + transports en cours d'établissement
   | 'active'      // micro publié, consommation en cours
+  | 'recovering'  // réseau perdu : auto-reconnexion en cours
   | 'error'       // échec (raison dans sfuErrorStore), tout est nettoyé
 
 export interface SfuConsumerInfo {
@@ -81,6 +82,10 @@ let _session: Session | null = null
 /** Salon inscrit côté daemon (survit à l'échec de session : le leave doit
  *  TOUJOURS pouvoir partir, sinon fantôme jusqu'au disconnect du socket). */
 let _joinedChannel: string | null = null
+/** Tentatives d'auto-reconnexion consécutives (remis à 0 quand la session
+ *  redevient active). Au-delà de MAX_RECOVER, on abandonne vraiment. */
+let _recoverAttempts = 0
+const MAX_RECOVER = 4
 
 // ── Ack avec timeout : l'UI ne reste JAMAIS suspendue ─────────────────────────
 
@@ -163,7 +168,10 @@ export async function sfuJoin(channelId: string): Promise<void> {
       })
       transport.on('connectionstatechange', (state) => {
         log(`transport ${direction} : ${state}`)
-        if (state === 'failed') fail(`transport ${direction} en échec ICE/DTLS`)
+        // 'failed' = terminal (changement de réseau, VPN…). On ne tombe PLUS en
+        // erreur : on tente une reconnexion transparente (comme l'ICE restart
+        // du mesh). 'disconnected' est souvent transitoire → on laisse vivre.
+        if (state === 'failed') void maybeRecover(`transport ${direction} en échec`)
       })
     }
 
@@ -226,6 +234,7 @@ export async function sfuJoin(channelId: string): Promise<void> {
       void reconcile(sk)
     }, 5000)
 
+    _recoverAttempts = 0
     sfuPhaseStore.set('active')
     log('══ SESSION SFU ACTIVE ══')
   } catch (e) {
@@ -341,9 +350,44 @@ export async function sfuLeave(): Promise<void> {
   const sock = get(socketStore)
   cleanup()
   _joinedChannel = null
+  _recoverAttempts = 0
   if (sock && channel) await emitAck(sock, 'voice:sfu_leave', channel)
   sfuPhaseStore.set('idle')
   log('✓ session fermée')
+}
+
+/** Auto-reconnexion transparente après une perte réseau. Ferme proprement la
+ *  session (le serveur évincera l'ancienne via TTL, ou le leave ci-dessous),
+ *  attend un backoff, puis rejoint le MÊME salon. Au-delà de MAX_RECOVER
+ *  tentatives, on abandonne pour de vrai (fail). */
+async function maybeRecover(reason: string): Promise<void> {
+  const channel = _session?.channelId ?? _joinedChannel
+  const phase = get(sfuPhaseStore)
+  // On ne récupère que depuis une session vivante ; pas pendant un leave manuel.
+  if (!channel || (phase !== 'active' && phase !== 'recovering')) return
+  if (_recoverAttempts >= MAX_RECOVER) {
+    fail(`${reason} — abandon après ${MAX_RECOVER} tentatives`)
+    return
+  }
+  _recoverAttempts++
+  const attempt = _recoverAttempts
+  log(`⟳ ${reason} — reconnexion ${attempt}/${MAX_RECOVER}…`)
+  sfuPhaseStore.set('recovering')
+
+  // Ferme l'ancienne session localement + prévient le serveur (leave explicite
+  // pour libérer tout de suite, sans attendre le TTL).
+  const sock = get(socketStore)
+  cleanup()
+  if (sock && channel) void emitAck(sock, 'voice:sfu_leave', channel)
+
+  // Backoff : 1s, 2s, 4s, 8s (l'IP met un instant à se stabiliser).
+  const backoff = Math.min(1000 * 2 ** (attempt - 1), 8000)
+  await new Promise(r => setTimeout(r, backoff))
+
+  // Toujours en reconnexion (pas de leave manuel entre-temps) ? on rejoint.
+  if (get(sfuPhaseStore) !== 'recovering') return
+  _joinedChannel = channel
+  await sfuJoin(channel)
 }
 
 function fail(reason: string): void {
