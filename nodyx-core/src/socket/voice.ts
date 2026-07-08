@@ -2,6 +2,9 @@ import { Server, Socket } from 'socket.io'
 import * as crypto from 'crypto'
 import { checkRateLimit } from './rateLimiter'
 import { db } from '../config/database'
+// Bascule mesh↔SFU (§17-B) : additif & dormant. Flag OFF ⇒ channelMode()==='mesh'
+// partout ⇒ les lignes ci-dessous se comportent EXACTEMENT comme avant.
+import * as bascule from './voiceBascule'
 
 type CommunityRole = 'owner' | 'admin' | 'moderator' | 'member'
 const MOD_ROLES: ReadonlyArray<CommunityRole> = ['owner', 'admin', 'moderator']
@@ -175,20 +178,30 @@ export function registerVoiceHandlers(socket: Socket, server: Server): void {
     // Broadcast updated member list to presence room
     await broadcastVoiceChannelUpdate(server, channelId)
 
-    // Send current peer list to the joiner (with their seat index + dynamic TURN creds)
-    socket.emit('voice:init', { channelId, peers, mySeatIndex: mySeat, iceServers: buildIceServers(userId) })
+    // Send current peer list to the joiner (with their seat index + dynamic TURN creds).
+    // `mode` : 'mesh' par défaut (flag off) ; 'switching'/'sfu' si la bascule est active
+    // (un arrivant sur un canal déjà SFU rejoint directement l'SFU, cf §5 du CDC bascule).
+    const chMode = bascule.channelMode(channelId)
+    socket.emit('voice:init', { channelId, peers, mySeatIndex: mySeat, iceServers: buildIceServers(userId), mode: chMode })
 
-    // Notify existing peers about the newcomer
-    socket.to(room).emit('voice:peer_joined', {
-      channelId,
-      peer: {
-        socketId:  socket.id,
-        userId,
-        username,
-        avatar:    socket.data.avatar ?? null,
-        seatIndex: mySeat,
-      },
-    })
+    // Notify existing peers about the newcomer — SAUF si le canal est déjà en SFU
+    // (topologie étoile : le nouveau producer est relayé via voice:sfu_new_producer,
+    // pas de PC mesh à créer). En 'mesh' et 'switching' (overlap), on prévient bien.
+    if (chMode !== 'sfu') {
+      socket.to(room).emit('voice:peer_joined', {
+        channelId,
+        peer: {
+          socketId:  socket.id,
+          userId,
+          username,
+          avatar:    socket.data.avatar ?? null,
+          seatIndex: mySeat,
+        },
+      })
+    }
+
+    // Le seuil est-il franchi ? (no-op si le flag est off)
+    bascule.onSeatCount(server, channelId, getChannelSeats(channelId).size)
   })
 
   // ── voice:leave ───────────────────────────────────────────────────────────
@@ -199,6 +212,16 @@ export function registerVoiceHandlers(socket: Socket, server: Server): void {
     freeSeat(channelId, socket.id)
     server.to(room).emit('voice:peer_left', { channelId, socketId: socket.id })
     await broadcastVoiceChannelUpdate(server, channelId)
+    bascule.onLeave(server, channelId, socket.id, getChannelSeats(channelId).size)
+  })
+
+  // ── voice:sfu_ready — bascule (§17-B) ─────────────────────────────────────
+  // Un client confirme que son SFU produit + consomme (audio prêt, pas encore joué).
+  // no-op si le canal n'est pas en 'switching'. Le client émettra cet event à
+  // l'étape 2 (frontend) ; inoffensif d'ici là (flag off).
+  socket.on('voice:sfu_ready', ({ channelId }: { channelId: string }) => {
+    if (!isUuid(channelId)) return
+    bascule.onSfuReady(server, channelId, socket.id)
   })
 
   // ── voice:kick — moderator action ─────────────────────────────────────────
@@ -235,6 +258,7 @@ export function registerVoiceHandlers(socket: Socket, server: Server): void {
     target.leave(room)
     server.to(room).emit('voice:peer_left', { channelId, socketId: target.id })
     await broadcastVoiceChannelUpdate(server, channelId)
+    bascule.onLeave(server, channelId, target.id, getChannelSeats(channelId).size)
 
     try {
       await db.query(
@@ -377,6 +401,7 @@ export function registerVoiceHandlers(socket: Socket, server: Server): void {
         server.to(room).emit('voice:peer_left', { channelId, socketId: socket.id })
         // Exclude this socket manually — socket.rooms not yet cleared at disconnect
         await broadcastVoiceChannelUpdate(server, channelId, socket.id)
+        bascule.onLeave(server, channelId, socket.id, getChannelSeats(channelId).size)
       }
     }
     // Clean up P2P registry
