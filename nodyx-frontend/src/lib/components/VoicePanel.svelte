@@ -335,6 +335,8 @@
                             <span class='text-[8px] px-1.5 py-0.5 rounded-full bg-green-900/60 text-green-400 border border-green-700/50'>P2P</span>
                         {:else if stats?.connectionType === 'relay'}
                             <span class='text-[8px] px-1.5 py-0.5 rounded-full bg-blue-900/60 text-blue-400 border border-blue-700/50'>TURN</span>
+                        {:else if stats?.connectionType === 'sfu'}
+                            <span class='text-[8px] px-1.5 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 border border-indigo-700/50'>SFU</span>
                         {/if}
                     </p>
                     
@@ -400,6 +402,11 @@
                         <span class='text-[10px] px-2 py-0.5 rounded-full bg-green-900/60 text-green-300 font-medium border border-green-700/50 flex items-center gap-1'>
                             <span class="w-1 h-1 rounded-full bg-green-400 animate-pulse"></span>
                             {tFn('voice.direct_p2p')}
+                        </span>
+                    {:else if stats?.connectionType === 'sfu'}
+                        <span class='text-[10px] px-2 py-0.5 rounded-full bg-indigo-900/60 text-indigo-300 font-medium border border-indigo-700/50 flex items-center gap-1'>
+                            <span class="w-1 h-1 rounded-full bg-indigo-400 animate-pulse"></span>
+                            SFU
                         </span>
                     {:else}
                         <span class='text-[10px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-500 font-medium border border-gray-700'>
