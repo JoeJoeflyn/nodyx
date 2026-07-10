@@ -442,21 +442,19 @@ export function sfuIsActive(): boolean {
  *  Le mapping userId → socketId (roster) se fait côté voice.ts. */
 export async function sfuCollectStats(): Promise<{
   rtt: number | null
-  connType: 'relay' | 'direct' | 'unknown'
+  connType: 'relay' | 'direct' | 'sfu' | 'unknown'
   perUser: Map<string, { packetLoss: number | null; jitter: number | null }>
 }> {
-  const out = { rtt: null as number | null, connType: 'unknown' as 'relay' | 'direct' | 'unknown', perUser: new Map<string, { packetLoss: number | null; jitter: number | null }>() }
+  const out = { rtt: null as number | null, connType: 'unknown' as 'relay' | 'direct' | 'sfu' | 'unknown', perUser: new Map<string, { packetLoss: number | null; jitter: number | null }>() }
   const s = _session
   if (!s) return out
-  // Lien vers le SFU (RTT + type de connexion) depuis la paire ICE active.
+  out.connType = 'sfu' // en SFU le média passe par le serveur : ce n'est PAS du P2P
+  // RTT vers le SFU depuis la paire ICE active.
   try {
     const rs = await s.recvTransport.getStats()
     for (const r of rs.values()) {
-      if (r.type === 'candidate-pair' && r.nominated) {
-        if (r.currentRoundTripTime != null) out.rtt = Math.round(r.currentRoundTripTime * 1000)
-        const local = rs.get(r.localCandidateId)
-        if (local?.candidateType === 'relay') out.connType = 'relay'
-        else if (local?.candidateType)        out.connType = 'direct'
+      if (r.type === 'candidate-pair' && r.nominated && r.currentRoundTripTime != null) {
+        out.rtt = Math.round(r.currentRoundTripTime * 1000)
       }
     }
   } catch { /* transport en cours de fermeture : on renvoie ce qu'on a */ }

@@ -101,7 +101,7 @@ export interface PeerStats {
   theirRtt:       number | null  // ms — leur RTT (ils le broadcastent)
   packetLoss:     number | null  // %
   jitter:         number | null  // ms
-  connectionType: 'relay' | 'direct' | 'unknown'
+  connectionType: 'relay' | 'direct' | 'sfu' | 'unknown'  // 'sfu' = via le serveur SFU (pas du P2P)
 }
 
 export type NetQuality = 'excellent' | 'good' | 'fair' | 'poor' | 'unknown'
