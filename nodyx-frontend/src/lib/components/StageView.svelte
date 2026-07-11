@@ -16,10 +16,11 @@
     const channelId     = $derived($voiceStore.channelId)
 
     // ── Chat du salon dans la scène ───────────────────────────────────────────
-    // Fermé par défaut : l'écran doit être le plus grand possible (c'était LA
-    // plainte). Le choix est mémorisé d'une session à l'autre.
+    // OUVERT par défaut : on suit la conversation en regardant, sans avoir à
+    // chercher un bouton. Une flèche le replie (et le rouvre). Le choix est
+    // mémorisé : on ne le rouvre pas de force à celui qui l'a replié.
     let showChat = $state(
-        typeof localStorage !== 'undefined' && localStorage.getItem('nodyx:stage:chat') === '1',
+        typeof localStorage === 'undefined' || localStorage.getItem('nodyx:stage:chat') !== '0',
     )
     $effect(() => {
         if (typeof localStorage !== 'undefined') {
@@ -244,21 +245,6 @@
         <!-- Right — controls -->
         <div class="flex items-center gap-2 shrink-0">
             <button
-                onclick={() => showChat = !showChat}
-                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all"
-                style="
-                    background: {showChat ? 'rgb(var(--nx-accent-rgb) / 0.14)' : 'rgba(255,255,255,0.04)'};
-                    border: 1px solid {showChat ? 'rgb(var(--nx-accent-rgb) / 0.45)' : 'rgba(255,255,255,0.07)'};
-                    color: {showChat ? 'rgb(165,180,252)' : 'rgb(156,163,175)'};
-                "
-                title="Chat du salon"
-            >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12a9 9 0 1 1-4.2-7.6L21 3v9z"/>
-                </svg>
-                <span class="hidden sm:inline">Chat</span>
-            </button>
-            <button
                 onclick={() => isPiP = true}
                 class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all"
                 style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); color: rgb(156,163,175);"
@@ -286,8 +272,14 @@
     <!-- Main area ───────────────────────────────────────────────── -->
     <div class="flex-1 flex min-h-0">
 
-        <!-- Focus stream -->
-        <div class="flex-1 relative flex items-center justify-center bg-black min-w-0">
+        <!-- Colonne vidéo : la scène, et les miniatures EN BAS. La droite est
+             réservée au chat : mettre les miniatures à droite les ferait se
+             disputer la largeur avec lui et rétrécirait la vidéo pour rien. -->
+        <div class="flex-1 flex flex-col min-w-0 min-h-0">
+
+        <!-- Focus stream. min-h-0 + object-contain = la vidéo TIENT toujours dans
+             la place disponible : jamais de scrollbar pour voir le bas. -->
+        <div class="flex-1 relative flex items-center justify-center bg-black min-w-0 min-h-0">
             {#if focusedEntry}
                 <!-- Username badge -->
                 <div class="absolute top-4 left-4 z-10 flex items-center gap-2 px-3 py-1.5 rounded-full"
@@ -393,56 +385,63 @@
             {/if}
         </div>
 
-        <!-- Thumbnail sidebar (shown when 2+ streams) -->
+        <!-- Miniatures des AUTRES partages, en bande horizontale. Hauteur FIXE :
+             la scène garde toute la place, et 2, 3, 5 ou 10 partages défilent
+             horizontalement sans jamais rogner la vidéo. -->
         {#if thumbnails.length > 0}
-            <div class="w-48 xl:w-56 shrink-0 flex flex-col overflow-y-auto"
-                 style="border-left: 1px solid rgba(255,255,255,0.04); background: rgba(4,4,10,0.6)">
-                {#each thumbnails as entry, i (entry.id)}
-                    {#if i > 0}
-                        <div style="height: 1px; background: rgba(255,255,255,0.03); shrink-0"></div>
-                    {/if}
+            <div class="shrink-0 flex gap-2 overflow-x-auto px-3 py-2"
+                 style="border-top: 1px solid rgba(255,255,255,0.04); background: rgba(4,4,10,0.6); scrollbar-width: thin">
+                {#each thumbnails as entry (entry.id)}
                     <button
                         onclick={() => focusedId = entry.id}
-                        class="relative aspect-video group overflow-hidden shrink-0 transition-all"
-                        style="background: black;"
-                        title="{entry.username} — cliquer pour mettre en avant"
+                        class="relative group shrink-0 overflow-hidden rounded-md transition-all"
+                        style="height: 5.5rem; aspect-ratio: 16/9; background: black; border: 1px solid rgba(255,255,255,0.08)"
+                        title="{entry.username} : mettre en avant"
                     >
                         <video
                             use:streamSrc={entry.stream}
                             autoplay playsinline muted
                             class="w-full h-full object-contain"
                         ></video>
-                        <!-- Dim overlay -->
-                        <div class="absolute inset-0 transition-colors"
-                             style="background: rgba(0,0,0,0.45)"></div>
-                        <!-- Name badge -->
-                        <div class="absolute bottom-0 left-0 right-0 px-2 py-1.5 flex items-center gap-1.5"
-                             style="background: linear-gradient(to top, rgba(0,0,0,0.75), transparent)">
-                            <div class="w-4 h-4 rounded-full bg-indigo-700 flex items-center justify-center text-[7px] font-bold text-white shrink-0">
-                                {entry.username[0].toUpperCase()}
-                            </div>
-                            <span class="text-[11px] text-white font-medium truncate">{entry.username}</span>
+                        <div class="absolute inset-0 transition-colors" style="background: rgba(0,0,0,0.45)"></div>
+                        <div class="absolute bottom-0 left-0 right-0 flex items-center gap-1 px-1.5 py-1"
+                             style="background: linear-gradient(to top, rgba(0,0,0,0.8), transparent)">
+                            <span class="truncate text-[10px] font-medium text-white">{entry.username}</span>
                             {#if !entry.isLocal}
-                                <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse ml-auto shrink-0"></span>
+                                <span class="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-green-400 animate-pulse"></span>
                             {/if}
                         </div>
-                        <!-- Focus hint on hover -->
-                        <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <div class="px-3 py-1 rounded-full text-[10px] text-white font-medium"
-                                 style="background: rgba(79,70,229,0.75); backdrop-filter: blur(4px)">
-                                Mettre en avant
-                            </div>
+                        <div class="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                            <span class="rounded-full px-2 py-0.5 text-[9px] font-medium text-white"
+                                  style="background: rgba(79,70,229,0.8); backdrop-filter: blur(4px)">Mettre en avant</span>
                         </div>
                     </button>
                 {/each}
             </div>
         {/if}
 
-        <!-- Chat du salon : suivre la conversation sans quitter la scène -->
-        {#if showChat && channelId}
-            <div class="w-80 xl:w-96 shrink-0">
-                <StageChat channelId={channelId}/>
-            </div>
+        </div><!-- /colonne vidéo -->
+
+        <!-- Chat du salon : OUVERT par défaut, repliable d'une flèche. Replié, il
+             laisse un onglet fin pour le rouvrir (on ne cherche pas un bouton). -->
+        {#if channelId}
+            {#if showChat}
+                <div class="w-80 shrink-0 min-h-0 xl:w-96">
+                    <StageChat channelId={channelId} oncollapse={() => showChat = false}/>
+                </div>
+            {:else}
+                <button
+                    onclick={() => showChat = true}
+                    class="flex w-8 shrink-0 items-center justify-center transition-colors hover:bg-white/5"
+                    style="background: rgba(6,6,12,0.75); border-left: 1px solid rgba(255,255,255,0.05); color: rgb(148,163,184)"
+                    title="Afficher le chat du salon"
+                    aria-label="Afficher le chat du salon"
+                >
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+            {/if}
         {/if}
 
     </div>

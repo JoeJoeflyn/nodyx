@@ -36,7 +36,15 @@
 	const anyScreenSharing = $derived($screenShareStore || $remoteScreenStore.size > 0);
 	const totalScreens     = $derived((localScreen ? 1 : 0) + remoteScreens.size);
 	// 1 stream → full width ; 2-4 → 2 col ; 5+ → 3 col
-	const gridCols         = $derived(totalScreens <= 1 ? 1 : totalScreens <= 4 ? 2 : 3);
+	// Grille qui TIENT dans la hauteur allouée, quel que soit le nombre d'écrans.
+	// Avant : colonnes fixes + tuiles forcées en `aspect-ratio: 16/9` dans un
+	// conteneur `overflow-y-auto` → sur une colonne large, la tuile devenait plus
+	// haute que la place disponible, ça débordait, et il fallait scroller pour voir
+	// le bas du partage. Ici, lignes ET colonnes sont dérivées du nombre d'écrans
+	// (1 → 1x1, 2 → 2x1, 3-4 → 2x2, 5-6 → 3x2, 7-9 → 3x3…) et chaque tuile occupe
+	// sa case : la vidéo (object-contain) s'y adapte, rien ne déborde jamais.
+	const gridCols         = $derived(Math.max(1, Math.ceil(Math.sqrt(totalScreens))));
+	const gridRows         = $derived(Math.max(1, Math.ceil(totalScreens / gridCols)));
 
 	let showScreenShare = $state(false);
 	$effect(() => { if (anyScreenSharing) showScreenShare = true; });
@@ -242,11 +250,13 @@
 {#if showScreenShare && (localScreen || remoteScreens.size > 0)}
 	<!-- Aperçu dans le salon. La VRAIE lecture se fait sur la Scène (plein écran,
 	     non tronquée par les sidebars) : un clic sur un écran l'ouvre en grand. -->
-	<div class="shrink-0 grid gap-2 p-3 overflow-y-auto"
-	     style="grid-template-columns: repeat({gridCols}, 1fr); max-height: 55vh; background: #07070f; border-bottom: 1px solid rgba(255,255,255,0.05);">
+	<div class="shrink-0 grid gap-2 p-3 overflow-hidden"
+	     style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr));
+	            grid-template-rows: repeat({gridRows}, minmax(0, 1fr));
+	            height: 42vh; background: #07070f; border-bottom: 1px solid rgba(255,255,255,0.05);">
 		{#if localScreen}
-			<div class="relative group/sc overflow-hidden bg-black"
-			     style="aspect-ratio: 16/9; border: 1px solid rgba(59,130,246,0.35); box-shadow: 0 0 24px rgba(59,130,246,0.12);">
+			<div class="relative group/sc overflow-hidden bg-black min-w-0 min-h-0"
+			     style="border: 1px solid rgba(59,130,246,0.35); box-shadow: 0 0 24px rgba(59,130,246,0.12);">
 				<video
 					class="w-full h-full object-contain cursor-pointer"
 					autoplay muted playsinline
@@ -284,8 +294,8 @@
 		{/if}
 		{#each [...remoteScreens.entries()] as [socketId, stream] (socketId)}
 			{@const peer = voiceState.peers.find((p: any) => p.socketId === socketId)}
-			<div class="relative group/sc overflow-hidden bg-black"
-			     style="aspect-ratio: 16/9; border: 1px solid rgba(59,130,246,0.25);">
+			<div class="relative group/sc overflow-hidden bg-black min-w-0 min-h-0"
+			     style="border: 1px solid rgba(59,130,246,0.25);">
 				<video
 					class="w-full h-full object-contain cursor-pointer"
 					autoplay playsinline

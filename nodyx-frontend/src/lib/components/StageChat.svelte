@@ -14,7 +14,11 @@
     import { linkifyHtml } from '$lib/linkify'
     import { renderCustomEmojis, customEmojisStore } from '$lib/customEmojis'
 
-    let { channelId, channelName = '' }: { channelId: string; channelName?: string } = $props()
+    let {
+        channelId,
+        channelName = '',
+        oncollapse,
+    }: { channelId: string; channelName?: string; oncollapse?: () => void } = $props()
 
     type StageMessage = {
         id:              string
@@ -95,6 +99,19 @@
         <span class="text-[11px] font-bold uppercase tracking-widest text-white">Chat du salon</span>
         {#if channelName}
             <span class="truncate text-[11px]" style="color: rgb(107,114,128)">{channelName}</span>
+        {/if}
+        {#if oncollapse}
+            <button
+                onclick={oncollapse}
+                class="ml-auto shrink-0 rounded p-1 transition-colors hover:bg-white/10"
+                style="color: rgb(107,114,128)"
+                title="Replier le chat"
+                aria-label="Replier le chat"
+            >
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+                </svg>
+            </button>
         {/if}
     </div>
 
