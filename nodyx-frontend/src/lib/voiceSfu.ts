@@ -540,47 +540,37 @@ export async function sfuStartScreenShare(opts: SfuScreenShareOptions = {}): Pro
   // code, bureau) → netteté du texte. Même heuristique que le mesh.
   try { track.contentHint = opts.contentHint ?? (fps >= 60 ? 'motion' : 'detail') } catch { /* non supporté */ }
 
-  // ── Simulcast (CDC §6) ──────────────────────────────────────────────────────
-  // Le partageur émet PLUSIEURS qualités en parallèle ; le SFU sert à CHAQUE
-  // spectateur celle que SA bande passante supporte. Avec une seule couche (ce
-  // qu'on faisait), le plus faible impose sa limite : il décroche, ou tout le monde
-  // descend avec lui. Là, celui qui est en 4G reçoit la petite couche sans rien
-  // imposer aux autres.
+  // ── UNE seule couche (le simulcast est REMIS AU LABO) ───────────────────────
   //
-  // Les couches vont de la PLUS BASSE à la PLUS HAUTE (exigé par mediasoup-client).
+  // Le simulcast a été tenté (PRs #259/#260) et RETIRÉ après mesure sur la prod.
+  // Ce que l'audit du daemon a montré, sans ambiguïté :
+  //   - le partageur publiait bien ses 3 couches (le SFU recevait 2,7 à 3,8 Mbps) ;
+  //   - le spectateur était bien dans la session SFU, ICE `completed` ;
+  //   - et pourtant le SFU ne lui envoyait que ~50 kbps, c'est-à-dire l'AUDIO SEUL.
+  //     Aucune couche vidéo ne lui était servie, jamais.
   //
-  // ⚠ On s'en tient STRICTEMENT à la forme recommandée par mediasoup :
-  // `scaleResolutionDownBy` + `maxBitrate`, rien d'autre. Pas de `rid` (mediasoup-client
-  // les attribue lui-même) et surtout PAS de `scalabilityMode` : `S1T3` est la notation
-  // INTERNE de mediasoup, alors que le NAVIGATEUR attend la notation standard WebRTC
-  // (`L1T3`). Passer une valeur invalide à l'encodeur casse la publication des couches,
-  // et le spectateur ne reçoit plus rien, pendant que l'aperçu local (qui vient de la
-  // capture brute, pas du flux publié) continue de s'afficher : dissymétrie trompeuse.
+  // C'est le comportement de mediasoup en simulcast : il choisit la couche selon la
+  // bande passante qu'il ESTIME pour ce spectateur, et s'il juge ne pas pouvoir servir
+  // même la plus basse, il n'envoie RIEN. Avec une seule couche, il transmet sans se
+  // poser la question : d'où le partage qui fonctionnait avant, et plus après.
+  //
+  // Le simulcast reste l'objectif (CDC §6 : servir à chacun la couche adaptée, tenir
+  // 15+ spectateurs). Mais il se règle avec la console du labo sous les yeux, pas en
+  // prod : il faut voir si le consumer vidéo est bien créé, bien repris, et quelle
+  // couche le SFU décide de servir. Tant que ce n'est pas instrumenté, une couche.
   const high = opts.maxBitrate ?? 2_500_000
-  const encodings = [
-    { scaleResolutionDownBy: 4, maxBitrate: Math.round(high / 8) },
-    { scaleResolutionDownBy: 2, maxBitrate: Math.round(high / 3) },
-    { scaleResolutionDownBy: 1, maxBitrate: high },
-  ]
+  const encodings = [{ maxBitrate: high }]
 
   try {
     s.screenStream = display
-    // Démarrer l'encodeur assez haut : sinon il rampe depuis un débit minuscule et
-    // l'image reste molle plusieurs secondes.
-    const codecOptions = { videoGoogleStartBitrate: 1000 }
-    try {
-      s.screenProducer = await s.sendTransport.produce({
-        track, appData: { source: 'screen' }, encodings, codecOptions,
-      })
-    } catch (e) {
-      // FILET : si le navigateur refuse les couches, on partage quand même en UNE
-      // couche plutôt que de ne rien partager du tout. Un simulcast mal accepté ne
-      // doit jamais coûter le partage entier (c'est exactement ce qui est arrivé).
-      log(`⚠ simulcast refusé (${(e as Error).message}) : repli sur une seule couche`)
-      s.screenProducer = await s.sendTransport.produce({
-        track, appData: { source: 'screen' }, encodings: [{ maxBitrate: high }], codecOptions,
-      })
-    }
+    s.screenProducer = await s.sendTransport.produce({
+      track,
+      appData: { source: 'screen' },
+      encodings,
+      // Démarrer l'encodeur assez haut : sinon il rampe depuis un débit minuscule et
+      // l'image reste molle plusieurs secondes.
+      codecOptions: { videoGoogleStartBitrate: 1000 },
+    })
     // Le bouton « Arrêter le partage » natif du navigateur termine la piste.
     track.onended = () => { void sfuStopScreenShare() }
     sfuLocalScreenStore.set(display)
