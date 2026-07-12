@@ -98,11 +98,17 @@
     function onWindowMouseUp() { pipDragging = false }
 
     // ── Stream → <video> Svelte action ────────────────────────────
+    // ⚠ Réassigner srcObject réinitialise l'élément vidéo (l'algorithme de chargement
+    // du média s'exécute MÊME pour le même objet) : image noire jusqu'à la keyframe
+    // suivante. Le store étant republié souvent, ça donnait un clignotement rapide.
     function streamSrc(node: HTMLVideoElement, stream: MediaStream) {
         node.srcObject = stream
         return {
-            update(s: MediaStream) { node.srcObject = s },
-            destroy()             { node.srcObject = null },
+            update(s: MediaStream) {
+                if (node.srcObject === s) return
+                node.srcObject = s
+            },
+            destroy() { node.srcObject = null },
         }
     }
 

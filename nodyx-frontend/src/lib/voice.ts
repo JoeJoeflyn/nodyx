@@ -1403,12 +1403,24 @@ let _unsubRosterForScreens: (() => void) | null = null
 
 function _syncSfuScreens(): void {
   const peers = get(voiceStore).peers
-  const map   = new Map<string, MediaStream>()
+  const next  = new Map<string, MediaStream>()
   for (const sc of get(bascule.basculeScreensStore)) {
     const peer = peers.find(p => p.userId === sc.userId)
-    if (peer) map.set(peer.socketId, sc.stream)
+    if (peer) next.set(peer.socketId, sc.stream)
   }
-  remoteScreenStore.set(map)
+  // N'émettre QUE si le contenu a réellement changé. On est abonné au roster, qui
+  // frémit sans arrêt (parole, niveaux…) : republier une Map neuve à chaque fois
+  // ferait re-rendre l'UI et réattacher les <video> pour rien. Or réassigner
+  // srcObject réinitialise l'élément (noir jusqu'à la keyframe suivante).
+  const cur = get(remoteScreenStore)
+  if (cur.size === next.size) {
+    let identical = true
+    for (const [socketId, stream] of next) {
+      if (cur.get(socketId) !== stream) { identical = false; break }
+    }
+    if (identical) return
+  }
+  remoteScreenStore.set(next)
 }
 
 function _startSfuScreenMirror(): void {
