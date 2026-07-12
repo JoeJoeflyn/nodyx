@@ -30,11 +30,16 @@
             : y - 4
     )
 
+    // ⚠ Réassigner srcObject réinitialise l'élément (noir jusqu'à la keyframe) même
+    // pour le même objet : on ne le fait que si le flux change réellement.
     function streamSrc(node: HTMLVideoElement, s: MediaStream) {
         node.srcObject = s
         return {
-            update(ns: MediaStream) { node.srcObject = ns },
-            destroy()              { node.srcObject = null },
+            update(ns: MediaStream) {
+                if (node.srcObject === ns) return
+                node.srcObject = ns
+            },
+            destroy() { node.srcObject = null },
         }
     }
 </script>

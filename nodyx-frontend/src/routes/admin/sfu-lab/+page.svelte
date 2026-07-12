@@ -48,11 +48,16 @@
   const remoteScreens = $derived($sfuScreensStore)
 
   // Action Svelte : branche un MediaStream sur le srcObject d'un <video>.
+  // ⚠ Réassigner srcObject réinitialise l'élément (noir jusqu'à la keyframe) même
+  // pour le même objet : on ne le fait que si le flux change réellement.
   function bindStream(node: HTMLVideoElement, stream: MediaStream) {
     node.srcObject = stream
     return {
-      update(s: MediaStream) { node.srcObject = s },
-      destroy()             { node.srcObject = null },
+      update(s: MediaStream) {
+        if (node.srcObject === s) return
+        node.srcObject = s
+      },
+      destroy() { node.srcObject = null },
     }
   }
 

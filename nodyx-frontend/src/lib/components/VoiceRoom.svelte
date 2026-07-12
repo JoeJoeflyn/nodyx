@@ -110,10 +110,20 @@
 	const connected = $derived(voiceState.active && voiceState.channelId === selectedChannel.id);
 	const peerCount = $derived(connected ? voiceState.peers.length + 1 : 0);
 
+	// ⚠ Ne JAMAIS réassigner srcObject sans avoir vérifié qu'il change vraiment.
+	// Assigner srcObject déclenche l'algorithme de chargement du média MÊME quand on
+	// réassigne le même objet : l'élément est réinitialisé, devient noir, et doit
+	// attendre une nouvelle keyframe. Comme le store est republié à chaque
+	// frémissement du roster (parole, niveaux…), on obtenait un clignotement noir
+	// très rapide. C'était le bug « rave party » du partage d'écran, mesh comme SFU.
 	function srcStream(node: HTMLVideoElement, stream: MediaStream | null) {
 		node.srcObject = stream ?? null;
 		return {
-			update(s: MediaStream | null) { node.srcObject = s ?? null; },
+			update(s: MediaStream | null) {
+				const next = s ?? null;
+				if (node.srcObject === next) return;
+				node.srcObject = next;
+			},
 			destroy() { node.srcObject = null; },
 		};
 	}
