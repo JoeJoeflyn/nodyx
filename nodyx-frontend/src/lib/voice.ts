@@ -1274,7 +1274,15 @@ function onVoiceInit({ channelId, peers, mySeatIndex, iceServers, mode }: {
   if (_channelMode === 'sfu') {
     // Arrivant tardif sur un canal DÉJÀ en SFU (§5) : aucun PC mesh, on rejoint
     // l'SFU directement (lecture immédiate). Le roster ci-dessus reste affiché.
-    void bascule.basculeJoinDirectSfu(channelId).then(() => _startSfuStatsPolling())
+    // Le MIROIR DES ÉCRANS doit démarrer ICI aussi, pas seulement au commit :
+    // sans ça, celui qui recharge sa page (ou arrive après la bascule) publie bien
+    // son écran au serveur mais rien ne le recopie vers les stores de l'UI, et il
+    // ne voit pas non plus l'écran des autres. Rien ne s'affiche, sans la moindre
+    // erreur : le flux est au serveur, c'est le pont vers l'UI qui manquait.
+    void bascule.basculeJoinDirectSfu(channelId).then(() => {
+      _startSfuStatsPolling()
+      _startSfuScreenMirror()
+    })
   } else {
     for (const peer of peers) {
       createPeerConn(peer.socketId, channelId, true)
