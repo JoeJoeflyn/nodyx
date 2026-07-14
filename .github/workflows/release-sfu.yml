@@ -67,6 +67,12 @@ jobs:
     needs: prepare
     runs-on: ${{ matrix.runner }}
     container: debian:11
+    # ⚠ Dans un conteneur Debian, le shell par défaut est `sh` (dash), PAS bash. Or
+    # `set -o pipefail` n'existe pas en `sh` : le script meurt à sa première ligne,
+    # avec un log qui ne montre même pas l'erreur. On impose bash explicitement.
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
