@@ -87,12 +87,18 @@ jobs:
             build-essential pkg-config git curl ca-certificates jq \
             python3 python3-pip python3-setuptools binutils file
 
-      - name: Rust (toolchain stable)
+      - name: Rust (toolchain stable + rustfmt)
         run: |
           set -eux
+          # ⚠ `rustfmt` est INDISPENSABLE : le build de `mediasoup-sys` génère du code
+          # Rust depuis des schémas flatbuffers et le fait passer par rustfmt. Avec le
+          # seul profil minimal, rustfmt est absent et le build meurt sur un
+          # « Broken pipe » (il écrit dans un tuyau sans lecteur au bout), avec un
+          # message qui n'évoque jamais rustfmt.
           curl -fsSL --proto '=https' --tlsv1.2 https://sh.rustup.rs \
-            | sh -s -- -y --profile minimal --default-toolchain stable
+            | sh -s -- -y --profile minimal --default-toolchain stable --component rustfmt
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustfmt" --version
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
