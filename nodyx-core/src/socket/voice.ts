@@ -223,6 +223,18 @@ export function registerVoiceHandlers(socket: Socket, server: Server): void {
     bascule.onSfuReady(server, channelId, socket.id)
   })
 
+  // ── voice:screenshare_intent — le partage d'écran DÉCLENCHE la bascule ─────
+  // Le partage est précisément le moment où le mesh s'écroule (le partageur y
+  // uploade sa vidéo une fois PAR spectateur). On ne l'attend donc pas : dès qu'un
+  // partage commence, on bascule, sans quorum. Le client, lui, a déjà capturé son
+  // écran et le publie en mesh ; il migrera vers le SFU au commit, sans redemander
+  // l'écran à l'utilisateur. No-op si le canal est déjà en bascule ou en SFU, ou si
+  // le flag est off (mesh strictement inchangé).
+  socket.on('voice:screenshare_intent', ({ channelId }: { channelId: string }) => {
+    if (!isUuid(channelId)) return
+    bascule.onScreenShare(server, channelId)
+  })
+
   // ── voice:kick — moderator action ─────────────────────────────────────────
   // Forces a peer out of a voice channel. Permitted to community
   // owner / admin / moderator. Moderators cannot kick admins or owners.

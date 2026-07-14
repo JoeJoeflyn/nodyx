@@ -1174,12 +1174,27 @@ export async function startScreenShare(
         frameRate: { ideal: fps, max: fps },
         cursor:    'always',
       } as any,
-      audio: false,
+      // On capture le SON dès maintenant, même si le mesh ne sait pas le
+      // transporter : le canal va basculer en SFU (ci-dessous), et la migration
+      // republiera CETTE piste telle quelle. Sans elle, il faudrait rouvrir le
+      // sélecteur d'écran après la bascule, ce que le navigateur refuse hors geste
+      // utilisateur : le son serait perdu pour toute la session.
+      audio: true,
     })
 
     _screenStream = displayStream
     localScreenStore.set(displayStream)
     screenShareStore.set(true)
+
+    // Le partage d'écran est PRÉCISÉMENT le moment où le mesh s'écroule : le
+    // partageur y uploade sa vidéo UNE FOIS PAR SPECTATEUR, et il plafonne vers 4
+    // personnes. On demande donc la bascule TOUT DE SUITE, sans attendre un quorum.
+    //
+    // Le partage démarre quand même en mesh dans la foulée (aucun délai pour
+    // l'utilisateur), puis MIGRE vers le SFU au commit, image et son compris, sans
+    // rien lui redemander. Si le SFU n'est pas activé pour ce canal, l'event est un
+    // no-op : on reste en mesh, exactement comme avant.
+    _socket.emit('voice:screenshare_intent', { channelId })
 
     const videoTrack = displayStream.getVideoTracks()[0]
     videoTrack.onended = () => stopScreenShare()
