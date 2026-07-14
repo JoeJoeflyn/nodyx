@@ -53,6 +53,24 @@ export function onSeatCount(server: Server, channelId: string, count: number): v
   startSwitch(server, channelId)
 }
 
+// Quelqu'un commence un PARTAGE D'ÉCRAN : on bascule tout de suite, SANS attendre
+// de quorum.
+//
+// Pourquoi ignorer le seuil ici : le partage d'écran est PRÉCISÉMENT le moment où le
+// mesh s'écroule. Le partageur y uploade sa vidéo UNE FOIS PAR SPECTATEUR, et il
+// plafonne vers 4 personnes. Attendre un quorum pour basculer, c'est attendre que le
+// mesh souffre avant de le soulager : ça n'a aucun sens.
+//
+// On ignore aussi le cooldown : c'est une action DÉLIBÉRÉE de l'utilisateur, pas une
+// bascule automatique déclenchée par une composition de canal. Il a le droit de
+// réessayer.
+export function onScreenShare(server: Server, channelId: string): void {
+  if (!enabled(channelId)) return
+  if (channelMode(channelId) !== 'mesh') return   // déjà en bascule ou en SFU : rien à faire
+  _cooldown.delete(channelId)
+  startSwitch(server, channelId)
+}
+
 function startSwitch(server: Server, channelId: string): void {
   _mode.set(channelId, 'switching')
   _ready.set(channelId, new Set())

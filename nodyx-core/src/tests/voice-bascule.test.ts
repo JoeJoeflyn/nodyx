@@ -53,6 +53,56 @@ describe('déclencheur', () => {
   })
 })
 
+describe('déclencheur : partage d\'écran (sans quorum)', () => {
+  it('un partage bascule TOUT DE SUITE, même seul, sans attendre le seuil', () => {
+    const { server, emits } = makeServer()
+    // Le seuil est à 3, on est seul : onSeatCount ne basculerait pas.
+    bascule.onSeatCount(server, CH, 1)
+    expect(bascule.channelMode(CH)).toBe('mesh')
+
+    // Mais partager son écran, c'est PRÉCISÉMENT le cas où le mesh s'écroule
+    // (une copie par spectateur) : on ne l'attend pas.
+    bascule.onScreenShare(server, CH)
+    expect(bascule.channelMode(CH)).toBe('switching')
+    expect(emits.map(e => e.ev)).toEqual(['voice:mode'])
+    expect(emits[0].payload).toMatchObject({ channelId: CH, mode: 'sfu' })
+  })
+
+  it('ignore le cooldown : un partage est une action DÉLIBÉRÉE, pas un automatisme', () => {
+    vi.useFakeTimers()
+    const { server, emits } = makeServer([{ id: 's1' }, { id: 's2' }, { id: 's3' }])
+    bascule.onSeatCount(server, CH, 3)          // switching
+    vi.advanceTimersByTime(10_000)              // personne ne confirme → abandon
+    expect(bascule.channelMode(CH)).toBe('mesh')
+
+    // Le cooldown bloquerait une nouvelle bascule automatique...
+    bascule.onSeatCount(server, CH, 3)
+    expect(bascule.channelMode(CH)).toBe('mesh')
+
+    // ...mais pas un partage d'écran : l'utilisateur a le droit de réessayer.
+    bascule.onScreenShare(server, CH)
+    expect(bascule.channelMode(CH)).toBe('switching')
+    expect(evs(emits)).toContain('voice:mode')
+  })
+
+  it('sans effet si le canal est DÉJÀ en SFU ou en bascule (pas de double départ)', () => {
+    const { server, emits } = makeServer()
+    bascule.onScreenShare(server, CH)
+    expect(bascule.channelMode(CH)).toBe('switching')
+    const n = emits.length
+    bascule.onScreenShare(server, CH)           // re-partage pendant la bascule
+    expect(emits).toHaveLength(n)               // rien de neuf
+  })
+
+  it('DORMANT : flag off ⇒ un partage ne bascule rien, le mesh est intact', () => {
+    process.env.VOICE_SFU_AUTO = 'false'
+    const { server, emits } = makeServer()
+    bascule.onScreenShare(server, CH)
+    expect(bascule.channelMode(CH)).toBe('mesh')
+    expect(emits).toHaveLength(0)
+  })
+})
+
 describe('porte "tous prêts" (zéro coupure)', () => {
   it('commit seulement quand TOUS les sockets sont prêts', async () => {
     const { server, emits } = makeServer([{ id: 's1' }, { id: 's2' }, { id: 's3' }])
