@@ -439,8 +439,18 @@ impl MediaEngine for MediasoupEngine {
                     .map_err(|e| MediaError::Engine(format!("create_transport(direct): {e}")))?,
             ),
             Some((ip, announced)) => {
-                let listen = ListenInfo {
-                    protocol: Protocol::Udp,
+                // UDP **et** TCP. On n'annonçait que de l'UDP, et ça se payait cher :
+                // un client dont le réseau bloque l'UDP sur nos ports (opérateurs
+                // mobiles, réseaux d'entreprise, hôtels) ne se connectait PAS DU TOUT
+                // au média. Pas « moins bien » : son ICE restait à `new`, il ne
+                // recevait rien, et il voyait un écran noir sans le moindre message.
+                // Le défaut était invisible en Wi-Fi, où l'UDP passe.
+                //
+                // Avec un candidat TCP en plus, le navigateur bascule tout seul sur ce
+                // chemin quand l'UDP échoue. C'est plus lourd (retransmissions, files
+                // d'attente), mais c'est infiniment mieux que rien.
+                let listen = |protocol: Protocol| ListenInfo {
+                    protocol,
                     ip: *ip,
                     announced_address: announced.clone(),
                     port: None,
@@ -449,8 +459,9 @@ impl MediaEngine for MediasoupEngine {
                     send_buffer_size: None,
                     recv_buffer_size: None,
                 };
-                let mut opts =
-                    WebRtcTransportOptions::new(WebRtcTransportListenInfos::new(listen));
+                let infos = WebRtcTransportListenInfos::new(listen(Protocol::Udp))
+                    .insert(listen(Protocol::Tcp));
+                let mut opts = WebRtcTransportOptions::new(infos);
                 // Estimation de bande passante : mediasoup démarre par défaut à
                 // 600 kbps de débit sortant disponible. C'est calibré pour de
                 // l'audio ; avec de la VIDÉO, l'estimateur part si bas qu'il sert
