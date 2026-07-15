@@ -142,3 +142,21 @@ sont, et ils ont une porte de sortie souveraine ». Changement de nature.
   petit. Découper en jalons prouvables, ne jamais tout jouer d'un coup.
 - **Ne pas confondre** confort de dev (Rust) et topologie réseau (ICE) : la valeur est dans
   l'ICE complet, pas dans le langage.
+
+---
+
+## 11. Partage et remerciements (communauté Rust)
+
+Ce moteur s'appuiera sur le travail de la communauté Rust (webrtc-rs ou str0m, l'écosystème
+async, les crates STUN/ICE). Quand il sera prouvé, on veut :
+
+- lui donner une **page dédiée** qui explique l'approche et **remercie** les projets sur
+  lesquels il repose, sans prétention ;
+- envisager de sortir la partie réutilisable en **crate ouverte** (le cœur du produit reste
+  AGPL sur Nodyx ; une brique moteur générique pourrait être partagée sous une licence
+  adaptée, à décider), pour qu'elle serve à d'autres auto-hébergeurs ;
+- documenter **honnêtement** ce qui marche et ce qui ne marche pas (le taux de perçage réel
+  mesuré), pour que ce soit utile et pas un argument marketing.
+
+C'est cohérent avec l'ADN du projet : rendre à l'écosystème ce qu'il nous a donné. Et si ça
+sert un jour à d'autres, tant mieux.
