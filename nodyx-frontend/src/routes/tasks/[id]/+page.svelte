@@ -191,7 +191,7 @@
 	}
 </script>
 
-<svelte:head><title>{board.name} — Tâches — Nodyx</title></svelte:head>
+<svelte:head><title>{board.name} · Tâches · Nodyx</title></svelte:head>
 
 <!-- ── Header ──────────────────────────────────────────────────────────────── -->
 <div class="flex items-center gap-3 mb-6 flex-wrap">
@@ -219,7 +219,7 @@
 	{/if}
 
 	{#if board.description}
-		<span class="text-sm text-gray-500 hidden sm:inline">— {board.description}</span>
+		<span class="text-sm text-gray-500 hidden sm:inline">· {board.description}</span>
 	{/if}
 
 	{#if data.canManage}
@@ -476,7 +476,7 @@
 					class="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200
 					       focus:outline-none focus:border-indigo-600"
 				>
-					<option value={null}>— Personne</option>
+					<option value={null}>Aucun</option>
 					{#each members as m}
 						<option value={m.id}>{m.username}</option>
 					{/each}
