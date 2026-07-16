@@ -107,8 +107,8 @@ sont, et ils ont une porte de sortie souveraine ». Changement de nature.
 
 ## 8. DÉCISIONS À TRANCHER (à remplir ensemble)
 
-- **D1** : Brique ICE/WebRTC : `webrtc-rs` (str0m ? autre ?) → comparer maturité SFU, ICE
-  complet, simulcast, SVC.
+- **D1** : Brique ICE/WebRTC. **ANALYSE FAITE (2026-07-16), verdict proposé : `str0m`,
+  à CONFIRMER par le spike de la Phase A.** Voir §8.1.
 - **D2** : Le trait `MediaEngine` suffit-il, ou faut-il l'élargir (candidats ICE, événements
   de connectivité, relais TURN) ?
 - **D3** : TURN intégré : `nexus-turn` suffit-il comme repli CGNAT, ou faut-il le lier au
@@ -117,6 +117,49 @@ sont, et ils ont une porte de sortie souveraine ». Changement de nature.
   admin ? Découverte des nœuds (DHT/gossip = Phase 3.0-D) ou config statique d'abord ?
 - **D5** : Codecs : VP8/Opus (déjà) ; H264/VP9/AV1 ? Simulcast/SVC natif.
 - **D6** : Périmètre du premier jalon : audio seul d'abord (comme P1), ou audio+vidéo direct ?
+
+### 8.1 D1, l'analyse (faits vérifiés le 2026-07-16, pas des dires d'IA)
+
+Point de départ : une analyse DeepSeek fournie par Jonathan (« à prendre avec des
+pincettes »). Tout ce qui suit a été REVÉRIFIÉ à la source (crates.io, dépôts GitHub).
+
+**Les faits, vérifiés :**
+
+| Critère | `str0m` | `webrtc-rs` (v0.17) | `rustrtc` |
+|---|---|---|---|
+| **ICE COMPLET (notre critère n°1)** | **OUI, par défaut** (`set_ice_lite(true)` est l'option, pas l'inverse) + tests d'ICE restart | OUI (héritage Pion) | à vérifier |
+| Architecture | **Sans-IO** (machine à états pure, on possède les sockets) | callbacks + verrous internes, critiquée | jeune |
+| Simulcast | OUI (table des features du README) | partiel historiquement | inconnu |
+| Estimation de bande passante | module `bwe/` dédié | oui | inconnu |
+| Vitalité | v0.21, push la veille, 1,47 M téléchargements, prod chez Lookback | v0.17.1, push la veille, 5 M téléchargements | v0.3.x, **9 861 téléchargements** |
+
+**Ce que l'analyse DeepSeek avait juste** : l'architecture Sans-IO de str0m, les critiques
+structurelles de webrtc-rs, la jeunesse de rustrtc. **Ce qu'elle avait raté** : elle n'a
+jamais évalué l'ICE complet, qui est TOUTE la raison d'être de ce chantier.
+
+**L'argument Sans-IO a un poids SPÉCIFIQUE à Nodyx** que l'analyse générique ne pouvait
+pas voir. Sans-IO = la brique ne touche jamais au réseau, elle consomme et produit des
+datagrammes ; c'est NOUS qui possédons les sockets. Conséquences :
+
+1. **Multiplexage mono-port possible** : tout le média sur UN SEUL port UDP (au lieu de
+   la plage 40000-40999), et un repli TCP qu'on implémente nous-mêmes. Surface pare-feu
+   minimale, install encore plus simple.
+2. **Le média peut voyager sur N'IMPORTE QUEL transport qu'on contrôle, y compris un
+   tunnel WireGuard** (Phase E, fédération) : on donne les datagrammes au tunnel au lieu
+   d'un socket UDP, str0m n'en sait rien. L'intégration WireGuard devient naturelle au
+   lieu d'être un contournement.
+3. Cohérent avec notre doctrine d'instrumentation : on voit chaque paquet passer.
+
+**Réserves honnêtes** : communauté plus petite que webrtc-rs (579 étoiles contre 5083) ;
+un retour signale une latence bizarre sur le premier paquet DataChannel (~1,5 s), peu
+pertinent pour nous (le média passe en RTP, pas en DataChannel) mais noté ; la promesse
+d'un webrtc-rs v0.20 « Sans-IO » existe, mais on ne construit pas sur une promesse.
+
+**Verdict proposé** : `str0m` candidat principal. **La décision n'est confirmée que par
+le spike de la Phase A**, dont le critère de succès est LE nôtre : un endpoint str0m
+derrière un vrai NAT établit la connexion avec un navigateur **sans aucune redirection
+de port** (perçage mesuré, pas supposé). `webrtc-rs` v0.17 = plan B si le spike échoue.
+`rustrtc` = à surveiller, pas à adopter.
 
 ---
 
