@@ -590,25 +590,30 @@
 
 	// ── Close popups when clicking outside the editor ─────────────────────────
 	function onDocClick(e: MouseEvent) {
-		if (wrapperEl && !wrapperEl.contains(e.target as Node)) {
+		const t = e.target as Node
+		// Les popups sont portalées dans <body> (hors du wrapper) : un clic DEDANS
+		// ne doit pas les refermer, sinon on ne peut rien y taper.
+		const inPopup = t instanceof Element && !!t.closest('.popup')
+		if (wrapperEl && !wrapperEl.contains(t) && !inPopup) {
 			showColor = showEmoji = showLink = showImage = showVideo = showAudio = showTable = false
 			bubbleVisible = false
 		}
 	}
 
-	// ── Placement des popups (position: fixed, hors de tout overflow) ─────────
-	// Les popups sont en `position: fixed` (cf CSS .popup) : `fixed` échappe au
-	// clipping des ancêtres en `overflow: hidden/auto`, ce qui réglait un bug
-	// RÉCURRENT (les popups tronquées dès que l'éditeur est dans un conteneur qui
-	// scrolle ou une carte à coins arrondis : modal du chat, carte de tâche…).
-	// On calcule la position depuis le bouton déclencheur (le parent de la popup)
-	// et on BORNE à l'écran des DEUX côtés (l'ancien code ne gérait que la droite),
-	// avec bascule vers le haut si ça déborde en bas.
+	// ── Placement des popups (portalées dans <body>) ─────────────────────────
+	// Bug RÉCURRENT : les popups (lien/YouTube/image/audio/emoji/tableau) étaient
+	// tronquées dès que l'éditeur vivait dans un conteneur en overflow (modal du
+	// chat, carte de tâche, panneau qui scrolle). Un simple `position: fixed` ne
+	// suffit PAS : dès qu'un ancêtre a un `transform`/`filter`/`backdrop-filter`
+	// (le modal du chat en a un), il devient le « bloc conteneur » du fixed, qui se
+	// retrouve piégé et re-clippé. La seule solution robuste : PORTALER la popup
+	// dans <body>, où plus aucun ancêtre ne la piège, et la positionner en `fixed`
+	// depuis son bouton, bornée à l'écran des DEUX côtés, bascule haut/bas.
 	function autoFlip(node: HTMLElement) {
+		const anchor = node.parentElement   // le groupe du bouton, AVANT de déplacer
+		document.body.appendChild(node)
 		function place() {
-			const anchor = node.parentElement
 			if (!anchor) return
-			// Mesure la taille naturelle avant de borner.
 			node.style.left = '0px'
 			node.style.top = '0px'
 			node.style.right = 'auto'
@@ -618,9 +623,7 @@
 			const a = anchor.getBoundingClientRect()
 			const vw = window.innerWidth
 			const vh = window.innerHeight
-			// Horizontal : aligné au bouton, borné à l'écran (gauche ET droite).
 			const left = Math.max(8, Math.min(a.left, vw - pw - 8))
-			// Vertical : sous le bouton ; au-dessus s'il n'y a pas la place en bas.
 			let top = a.bottom + 4
 			if (top + ph > vh - 8 && a.top - ph - 4 >= 8) top = a.top - ph - 4
 			node.style.left = `${Math.round(left)}px`
@@ -636,6 +639,7 @@
 				ro.disconnect()
 				window.removeEventListener('resize', place)
 				window.removeEventListener('scroll', place, true)
+				node.remove()   // retire la popup portalée
 			},
 		}
 	}
