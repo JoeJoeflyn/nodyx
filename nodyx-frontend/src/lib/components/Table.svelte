@@ -237,15 +237,46 @@
 					</p>
 					<div class="flex flex-wrap items-start justify-center gap-4 max-w-lg">
 						{#each present.slice(0, 8) as m (m.userId)}
-							<div class="flex w-16 flex-col items-center gap-1.5" title={m.username}>
-								<div class="h-12 w-12 overflow-hidden rounded-full transition-transform duration-300 hover:scale-110"
-								     style="box-shadow: 0 0 0 2px rgb(var(--nx-accent-2-rgb) / 0.5), 0 0 20px rgb(var(--nx-accent-2-rgb) / 0.25)">
-									{#if m.avatar}
-										<img src={m.avatar} alt={m.username} class="h-full w-full object-cover"/>
-									{:else}
-										<div class="flex h-full w-full items-center justify-center text-sm font-black text-white select-none"
-										     style="background: linear-gradient(135deg, var(--nx-accent-2-strong), var(--nx-cyan-deep))">
-											{m.username.charAt(0).toUpperCase()}
+							<div class="flex w-16 flex-col items-center gap-1.5"
+							     title="{m.username}{m.sharing ? ' · partage son écran' : ''}{m.deafened ? ' · écouteurs coupés' : m.muted ? ' · micro coupé' : ''}">
+								<div class="relative">
+									<div class="h-12 w-12 overflow-hidden rounded-full transition-transform duration-300 hover:scale-110"
+									     style="box-shadow: 0 0 0 2px {m.sharing ? '#3b82f6' : 'rgb(var(--nx-accent-2-rgb) / 0.5)'}, 0 0 20px {m.sharing ? 'rgba(59,130,246,0.35)' : 'rgb(var(--nx-accent-2-rgb) / 0.25)'}">
+										{#if m.avatar}
+											<img src={m.avatar} alt={m.username} class="h-full w-full object-cover"/>
+										{:else}
+											<div class="flex h-full w-full items-center justify-center text-sm font-black text-white select-none"
+											     style="background: linear-gradient(135deg, var(--nx-accent-2-strong), var(--nx-cyan-deep))">
+												{m.username.charAt(0).toUpperCase()}
+											</div>
+										{/if}
+									</div>
+
+									<!-- Badges d'état : la vraie vie du salon, visible AVANT d'entrer.
+									     Sourd prime sur muet (on n'entend déjà plus rien). -->
+									{#if m.sharing}
+										<div class="absolute -left-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full"
+										     style="background:#3b82f6; border:2px solid #0d0d12" aria-label="Partage son écran">
+											<svg class="h-2 w-2" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 17">
+												<rect x="1" y="1" width="22" height="13" rx="2"/>
+											</svg>
+										</div>
+									{/if}
+									{#if m.deafened}
+										<div class="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full"
+										     style="background:#fb923c; border:2px solid #0d0d12" aria-label="Écouteurs coupés">
+											<svg class="h-2.5 w-2.5" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24">
+												<path stroke-linecap="round" d="M3 18v-6a9 9 0 0118 0v6"/>
+												<path stroke-linecap="round" d="M2 2l20 20"/>
+											</svg>
+										</div>
+									{:else if m.muted}
+										<div class="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full"
+										     style="background:#ef4444; border:2px solid #0d0d12" aria-label="Micro coupé">
+											<svg class="h-2.5 w-2.5" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24">
+												<path stroke-linecap="round" d="M12 15a3 3 0 003-3V6a3 3 0 00-6 0v6a3 3 0 003 3z"/>
+												<path stroke-linecap="round" d="M2 2l20 20"/>
+											</svg>
 										</div>
 									{/if}
 								</div>

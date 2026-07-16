@@ -121,7 +121,17 @@ export const localScreenStore  = writable<MediaStream | null>(null)
 export const remoteScreenStore = writable<Map<string, MediaStream>>(new Map())
 
 // ── Voice channel member roster (populated by socket voice:channel_update) ──
-export interface VoiceChannelMember { userId: string; username: string; avatar: string | null }
+export interface VoiceChannelMember {
+  userId:    string
+  username:  string
+  avatar:    string | null
+  /** État publié par chaque membre via `voice:state` (cf serveur). Permet à
+   *  l'écran d'un canal qu'on n'a PAS rejoint de montrer la vraie vie du salon :
+   *  qui est muet, qui a coupé ses écouteurs, qui partage son écran. */
+  muted?:    boolean
+  deafened?: boolean
+  sharing?:  boolean
+}
 export const voiceChannelMembersStore = writable<Record<string, VoiceChannelMember[]>>({})
 
 // ── Voice join/leave toast events ────────────────────────────────────────────
@@ -1137,12 +1147,30 @@ export function kickPeer(targetSocketId: string): void {
   _socket.emit('voice:kick', { channelId, targetSocketId })
 }
 
+// ── Publication de MON état vocal (muet / sourd / partage) ──────────────────
+// Le serveur ne peut pas deviner ces états : ils vivent dans le navigateur. On
+// les lui publie donc à chaque changement, pour qu'il les mette dans le roster
+// du canal (voice:channel_update). Sans ça, l'écran d'un canal qu'on n'a PAS
+// rejoint ne peut pas montrer qui est muet, sourd ou en train de partager.
+// Appelé aux gestes humains (rares) : jamais dans une boucle.
+export function publishVoiceState(): void {
+  const s = get(voiceStore)
+  if (!_socket || !s.active || !s.channelId) return
+  _socket.emit('voice:state', {
+    channelId: s.channelId,
+    muted:     s.muted,
+    deafened:  s.deafened,
+    sharing:   get(screenShareStore),
+  })
+}
+
 export function toggleMute(): void {
   if (!_localStream) return
   const track = _localStream.getAudioTracks()[0]
   if (!track) return
   track.enabled = !track.enabled
   voiceStore.update(s => ({ ...s, muted: !track.enabled }))
+  publishVoiceState()
 }
 
 export function toggleDeafen(): void {
@@ -1154,6 +1182,7 @@ export function toggleDeafen(): void {
     }
     return { ...s, deafened }
   })
+  publishVoiceState()
 }
 
 export function togglePTTMode(): void {
@@ -1283,6 +1312,7 @@ export async function startScreenShare(
     _screenStream = displayStream
     localScreenStore.set(displayStream)
     screenShareStore.set(true)
+    publishVoiceState()   // le roster du canal doit montrer « partage son écran »
 
     // Le partage d'écran est PRÉCISÉMENT le moment où le mesh s'écroule : le
     // partageur y uploade sa vidéo UNE FOIS PAR SPECTATEUR, et il plafonne vers 4
@@ -1341,6 +1371,7 @@ export function stopScreenShare(): void {
 
   screenShareStore.set(false)
   localScreenStore.set(null)
+  publishVoiceState()
 
   if (!channelId) return
 
