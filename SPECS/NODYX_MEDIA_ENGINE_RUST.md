@@ -30,7 +30,7 @@ l'ICE COMPLET qui compte.
 
 ## 3. La CIBLE : une pile ICE complète
 
-Une pile ICE complète (candidate : **`webrtc-rs`**) **cherche activement** un chemin : elle
+Une pile ICE complète (retenue : **`str0m`**, cf. §8.1 ; plan B : `webrtc-rs`) **cherche activement** un chemin : elle
 sonde, découvre son adresse vue de l'extérieur (STUN), et **perce le NAT** (hole punching).
 C'est exactement ce que font deux navigateurs derrière deux box qui se parlent en direct,
 sans que personne n'ouvre un port. Le vocal MESH actuel de Nodyx fait déjà ça.
@@ -113,8 +113,11 @@ sont, et ils ont une porte de sortie souveraine ». Changement de nature.
   de connectivité, relais TURN) ?
 - **D3** : TURN intégré : `nexus-turn` suffit-il comme repli CGNAT, ou faut-il le lier au
   moteur natif ?
-- **D4** : WireGuard : géré par Nodyx (montée/descente automatique du lien) ou pré-requis
-  admin ? Découverte des nœuds (DHT/gossip = Phase 3.0-D) ou config statique d'abord ?
+- **D4** : WireGuard. **Réponse proposée (2026-07-16)** : en Phase E v1, le tunnel est
+  **préconfiguré par l'administrateur** (clés échangées hors bande, configuration statique,
+  Nodyx CONSOMME un tunnel existant). L'orchestration automatique (échange de clés, rotation,
+  découverte DHT/gossip = Phase 3.0-D) viendra APRÈS : ce n'est pas le verrou actuel, et
+  personne ne doit partir construire un orchestrateur avant que le perçage soit prouvé.
 - **D5** : Codecs : VP8/Opus (déjà) ; H264/VP9/AV1 ? Simulcast/SVC natif.
 - **D6** : Périmètre du premier jalon : audio seul d'abord (comme P1), ou audio+vidéo direct ?
 
@@ -150,10 +153,18 @@ datagrammes ; c'est NOUS qui possédons les sockets. Conséquences :
    lieu d'être un contournement.
 3. Cohérent avec notre doctrine d'instrumentation : on voit chaque paquet passer.
 
-**Réserves honnêtes** : communauté plus petite que webrtc-rs (579 étoiles contre 5083) ;
-un retour signale une latence bizarre sur le premier paquet DataChannel (~1,5 s), peu
-pertinent pour nous (le média passe en RTP, pas en DataChannel) mais noté ; la promesse
-d'un webrtc-rs v0.20 « Sans-IO » existe, mais on ne construit pas sur une promesse.
+**Réserves honnêtes** : communauté plus petite que webrtc-rs (579 étoiles contre 5083),
+donc moins de DIVERSITÉ d'utilisateurs pour débusquer les bugs profonds (DTLS, SRTP, ICE) ;
+un retour signale une latence sur le premier paquet DataChannel (~1,5 s), peu pertinent pour
+nous (le média passe en RTP) mais noté ; la promesse d'un webrtc-rs v0.20 « Sans-IO » existe,
+mais on ne construit pas sur une promesse.
+
+**Le risque dépendances, rendu MESURABLE** (plutôt qu'un tableau non vérifié) : pendant les
+Phases A et B, auditer chaque dépendance critique de str0m (STUN, DTLS, SRTP, ICE) sur cinq
+points : activité récente, tests, rythme de publication, mainteneur identifiable, et
+stratégie de fork si nécessaire. Autrement dit : **assumer consciemment qu'on devient
+capables de maintenir une dépendance si un bug profond l'exige.** L'inventaire réel des
+dépendances se fait au spike (Cargo.lock en main), pas sur des affirmations d'IA.
 
 **Verdict proposé** : `str0m` candidat principal. **La décision n'est confirmée que par
 le spike de la Phase A**, dont le critère de succès est LE nôtre : un endpoint str0m
@@ -167,12 +178,51 @@ de port** (perçage mesuré, pas supposé). `webrtc-rs` v0.17 = plan B si le spi
 
 | Phase | Contenu | Preuve |
 |---|---|---|
-| **A** | Spike `webrtc-rs` : un flux audio de bout en bout, ICE complet, **derrière le trait** | labo isolé |
+| **A** | Spike `str0m` : un flux audio de bout en bout, ICE complet, **derrière le trait** (échec → même protocole avec `webrtc-rs`, plan B) | protocole §9.1 |
 | **B** | Adaptateur `NativeRustEngine` complet (produce/consume, transports, ICE) | parité audio avec mediasoup |
 | **C** | Perçage de NAT prouvé : un serveur derrière une box réelle, **sans port ouvert** | test terrain |
 | **D** | Vidéo + simulcast natifs | 1 partageur + N spectateurs |
 | **E** | Fédération WireGuard (nœud relais choisi) pour les CGNAT | test CGNAT réel |
-| **F** | Bascule mediasoup → natif par défaut, puis retrait de mediasoup | soak + rollout |
+| **F** | Bascule mediasoup → natif par défaut, puis retrait de mediasoup | grille §9.2 + soak |
+
+### 9.1 Protocole du spike Phase A (l'expérience falsifiable)
+
+Un seul essai sur une seule box ne prouve rien : les NAT diffèrent (Full Cone, Restricted,
+Port Restricted, Symmetric), et le perçage échoue sur le dernier. Le but n'est pas 200
+essais, c'est une **première photographie réelle**.
+
+**Matrice minimale** (étendue si l'occasion se présente) :
+1. box résidentielle FTTH, FAI n°1 ;
+2. box résidentielle FTTH, FAI n°2 (les box des FAI français ont des NAT différents) ;
+3. partage de connexion 4G/5G (souvent le plus dur : CGNAT opérateur) ;
+4. si possible, un cas CGNAT identifié des deux côtés (la limite connue du §6).
+
+**Chaque essai documente** : type de réseau · candidats ICE émis · **type du candidat
+gagnant (host / srflx / relay)** · temps d'établissement · succès ou échec · journaux ICE.
+Le type du candidat gagnant est LA donnée : `srflx` = perçage réel ; `relay` = on est passé
+par TURN, ce n'est PAS un perçage.
+
+**Verdict** : str0m est confirmé si le perçage réussit sur les réseaux résidentiels (1 et 2)
+et que les échecs restants correspondent aux limites connues du §6. Sinon, même protocole
+avec `webrtc-rs`, et comparaison factuelle.
+
+### 9.2 Critères de sortie de migration (« équivalent » a une définition)
+
+Sans grille, « mediasoup ne disparaît que le jour où le natif est équivalent » n'a pas de
+réponse objective : le jour peut être repoussé indéfiniment, ou déclaré trop tôt. Le moteur
+natif est déclaré équivalent quand il satisfait TOUT ceci, simultanément :
+
+| Domaine | Critère |
+|---|---|
+| Fonctionnel | audio, vidéo, simulcast, partage d'écran (avec son), ICE restart |
+| Réseau | taux de connexion ≥ mediasoup sur le même panel de NAT (§9.1) |
+| Performance | CPU ≤ mediasoup ± 10 % à charge égale (bench sfu-bench rejoué) |
+| Latence | RTT et gigue comparables (instrument daemon) |
+| Robustesse | soak 72 h sans fuite mémoire ni crash (méthode du soak SFU) |
+| Observabilité | audit ICE, /v1/subscriptions, couches servies : au moins équivalents |
+| Réversibilité | retour à mediasoup par simple flag, à tout moment |
+
+Et seulement après : mediasoup cesse d'être le défaut, puis est retiré.
 
 ---
 
