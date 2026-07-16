@@ -118,6 +118,11 @@ async function broadcastVoiceChannelUpdate(
       username:  s.data.username,
       avatar:    s.data.avatar ?? null,
       seatIndex: seatsMap.get(s.id) ?? 0,
+      // État volatile publié par le client (voice:state). Permet à l'écran d'un
+      // canal NON rejoint de montrer qui est muet / sourd / en train de partager.
+      muted:     s.data.voiceState?.muted    === true,
+      deafened:  s.data.voiceState?.deafened === true,
+      sharing:   s.data.voiceState?.sharing  === true,
     }))
   // Emit to presence (sidebar overview) AND voice room (handles presence-join timing edge cases)
   server.to('presence').to(voiceRoom(channelId)).emit('voice:channel_update', { channelId, members })
@@ -171,6 +176,11 @@ export function registerVoiceHandlers(socket: Socket, server: Server): void {
         avatar:    s.data.avatar ?? null,
         seatIndex: seatsMap.get(s.id) ?? 0,
       }))
+
+    // État vocal volatile : on repart propre à chaque arrivée (un rejoin ne doit
+    // pas traîner le « muet » d'une session précédente). Le client republie son
+    // état réel juste après, via voice:state.
+    socket.data.voiceState = null
 
     // Join the room
     socket.join(room)
@@ -315,6 +325,28 @@ export function registerVoiceHandlers(socket: Socket, server: Server): void {
     // Must be in the voice room to broadcast speaking state to its members.
     if (!socket.rooms.has(voiceRoom(channelId))) return
     socket.to(voiceRoom(channelId)).emit('voice:speaking', { socketId: socket.id, userId, speaking })
+  })
+
+  // ── voice:state — muet / sourd / partage, pour le roster du canal ─────────
+  // Le roster (voice:channel_update) ne portait que l'identité : l'écran d'un
+  // canal qu'on n'a PAS rejoint ne pouvait donc pas montrer qui est muet, sourd
+  // ou en train de partager. Le client publie ici son état ; on le garde sur le
+  // socket (volatile, rien en base) et on rediffuse le roster.
+  socket.on('voice:state', (
+    { channelId, muted, deafened, sharing }:
+    { channelId: string; muted?: unknown; deafened?: unknown; sharing?: unknown },
+  ) => {
+    if (checkRateLimit(userId, 'voice:state')) return
+    if (!isUuid(channelId)) return
+    // Doit être DANS le vocal : on ne publie pas l'état d'un canal qu'on ne
+    // fréquente pas.
+    if (!socket.rooms.has(voiceRoom(channelId))) return
+    socket.data.voiceState = {
+      muted:    muted    === true,
+      deafened: deafened === true,
+      sharing:  sharing  === true,
+    }
+    void broadcastVoiceChannelUpdate(server, channelId)
   })
 
   // ── voice:ping — keep presence alive + refresh sidebar for caller ──────────

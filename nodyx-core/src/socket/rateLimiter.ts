@@ -36,6 +36,9 @@ export const RATE_RULES: Record<string, RuleConfig[]> = {
   'whisper:message':      [{ limit: 5,  windowMs: 1_000  }],
   'whisper:typing':       [{ limit: 3,  windowMs: 1_000  }],
   'voice:speaking':       [{ limit: 10, windowMs: 1_000  }],
+  // muet/sourd/partage : gestes humains, rares. Borné car chaque envoi rediffuse
+  // le roster du canal (fetchSockets), donc on ne veut pas que ça puisse spammer.
+  'voice:state':          [{ limit: 5,  windowMs: 2_000  }],
   'jukebox:update':       [{ limit: 5,  windowMs: 1_000  }],
   'jukebox:request_sync': [{ limit: 3,  windowMs: 1_000  }],
   'voice:ping':           [{ limit: 3,  windowMs: 1_000  }],

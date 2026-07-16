@@ -35,6 +35,12 @@ declare module 'socket.io' {
     nameFontUrl?:      string | null
     grade?:            { name: string; color: string } | null
     status?:           { emoji: string; text: string } | null
+    /** État vocal volatile (muet / sourd / partage d'écran), publié par le client
+     *  via `voice:state`. Sert à enrichir le roster d'un canal vocal
+     *  (`voice:channel_update`) : sans lui, l'écran d'un canal qu'on n'a PAS
+     *  rejoint ne peut pas montrer qui est muet, sourd ou en train de partager.
+     *  Volatile par nature : rien en base, remis à zéro à chaque `voice:join`. */
+    voiceState?:       { muted: boolean; deafened: boolean; sharing: boolean } | null
   }
 }
 
