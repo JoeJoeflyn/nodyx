@@ -146,6 +146,18 @@
     // ── Actions ───────────────────────────────────────────────────
     let focusVideoElem: HTMLVideoElement | undefined = $state(undefined)
 
+    // ── Son du partage (réglage spectateur) ───────────────────────────────────
+    // Le son de l'écran vit DANS le <video> : voiceSfu rattache sa piste audio au
+    // MÊME MediaStream que l'image. Régler .volume / .muted de ce <video>, c'est
+    // donc régler le son du partage, sans jamais toucher aux voix (qui sont des
+    // <audio> séparés, avec leur propre volume par personne). Purement spectateur.
+    let screenVolume = $state(100)   // 0..100, volume « maître » du son de l'écran
+    let screenMuted  = $state(false)
+    $effect(() => {
+        void focusedEntry            // ré-applique aussi après un changement de focus
+        if (focusVideoElem) focusVideoElem.volume = screenVolume / 100
+    })
+
     function saveClip() {
         if (!clipsBuffer.length) return
         const blob = new Blob(clipsBuffer, { type: 'video/webm' })
@@ -328,7 +340,7 @@
                     bind:this={focusVideoElem}
                     use:streamSrc={focusedEntry.stream}
                     autoplay playsinline
-                    muted={focusedEntry.isLocal}
+                    muted={focusedEntry.isLocal || screenMuted}
                     ondblclick={requestFullscreen}
                     class="w-full h-full object-contain cursor-pointer"
                     title="Double-clic pour plein écran"
@@ -347,6 +359,41 @@
                     </svg>
                     <span class="text-xs font-medium">Plein écran</span>
                 </button>
+
+                <!-- Son du partage (coin bas-gauche) : mute + volume, côté spectateur.
+                     Pas pour son propre partage (on l'entend déjà en vrai). -->
+                {#if !focusedEntry.isLocal}
+                    <div class="absolute bottom-4 left-4 z-10 flex items-center gap-2 px-2.5 py-1.5 rounded-lg
+                                opacity-40 hover:opacity-100 transition-opacity duration-150"
+                         style="background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.12); color: white; backdrop-filter: blur(4px);">
+                        <button
+                            onclick={() => screenMuted = !screenMuted}
+                            class="shrink-0 hover:text-indigo-300 transition-colors"
+                            title={screenMuted ? 'Réactiver le son du partage' : 'Couper le son du partage'}
+                            aria-label={screenMuted ? 'Réactiver le son du partage' : 'Couper le son du partage'}
+                        >
+                            {#if screenMuted || screenVolume === 0}
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6 9H2v6h4l5 4V5z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M23 9l-6 6M17 9l6 6"/>
+                                </svg>
+                            {:else}
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6 9H2v6h4l5 4V5z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                                </svg>
+                            {/if}
+                        </button>
+                        <input
+                            type="range" min="0" max="100" step="1"
+                            bind:value={screenVolume}
+                            oninput={() => { if (screenVolume > 0) screenMuted = false }}
+                            class="stage-vol"
+                            title="Volume du partage ({screenVolume}%)"
+                            aria-label="Volume du partage"
+                        />
+                    </div>
+                {/if}
 
                 <!-- Hover controls bar (actions secondaires) -->
                 <div class="absolute bottom-0 left-0 right-0 px-6 py-4 flex justify-center gap-2.5
@@ -630,5 +677,33 @@
         font-size: 9px;
         line-height: 1.35;
         text-align: center;
+    }
+
+    /* Slider de volume du partage : piste fine, pouce accent Nodyx. */
+    .stage-vol {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 84px;
+        height: 4px;
+        border-radius: 99px;
+        background: rgba(255,255,255,0.22);
+        cursor: pointer;
+        outline: none;
+    }
+    .stage-vol::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--nx-accent-soft, #818cf8);
+        border: 2px solid rgba(0,0,0,0.4);
+    }
+    .stage-vol::-moz-range-thumb {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--nx-accent-soft, #818cf8);
+        border: 2px solid rgba(0,0,0,0.4);
     }
 </style>
