@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { voiceStore, setPeerVolume, inputLevel, peerStatsStore, getQuality, kickPeer, voiceChannelMembersStore } from '$lib/voice'
 	import { jukeboxStore, initJukebox, cleanupJukebox, mountYTPlayer, jukeboxLoad } from '$lib/jukebox'
+	import VoiceEqualizer from '$lib/components/VoiceEqualizer.svelte'
 	import { goto } from '$app/navigation'
 	import { PUBLIC_API_URL } from '$env/static/public'
 	import { page } from '$app/stores'
@@ -430,16 +431,28 @@
 								{p.isMe ? 'Vous' : p.username}
 							</span>
 
-							<!-- 7-bar EQ — gradient violet → cyan, 16px tall -->
-							<div class="flex items-end gap-[2.5px] transition-opacity duration-300"
-							     style="height:16px; opacity:{isSpeaking || myActive ? 1 : 0};">
-								{#each [
-									{c:'var(--nx-accent-deep)',d:'0.00s'},{c:'var(--nx-accent-2-strong)',d:'0.14s'},{c:'var(--nx-accent-2-mid)',d:'0.05s'},
-									{c:'var(--nx-accent-2-soft)',d:'0.22s'},{c:'var(--nx-cyan-soft)',d:'0.09s'},{c:'#22d3ee',d:'0.17s'},
-									{c:'var(--nx-cyan-soft)',d:'0.03s'}
-								] as bar}
-									<div class="w-[2.5px] rounded-sm eq-bar" style="background:{bar.c}; animation-delay:{bar.d}"></div>
-								{/each}
+							<!-- ÉQUALISEUR RÉEL — dégradé violet → cyan.
+							     Avant : une animation CSS en boucle (animation-delay), donc le
+							     MÊME dessin pour tout le monde, en permanence. Maintenant chaque
+							     barre suit le vrai spectre de la personne. Ici on a la place, donc
+							     on est plus généreux qu'en sidebar (plus haut, plus large).
+							     Au repos les barres retombent d'elles-mêmes : on garde l'EQ
+							     visible en sourdine plutôt que de le faire disparaître, ça montre
+							     que la personne est là, simplement silencieuse. -->
+							<div class="transition-opacity duration-300"
+							     style="opacity:{isSpeaking || myActive ? 1 : 0.35};">
+								<VoiceEqualizer
+									socketId={p.socketId}
+									isMe={p.isMe}
+									height={26}
+									barWidth={3.5}
+									gap={3}
+									colors={[
+										'var(--nx-accent-deep)', 'var(--nx-accent-2-strong)', 'var(--nx-accent-2-mid)',
+										'var(--nx-accent-2-soft)', 'var(--nx-cyan-soft)', '#22d3ee',
+										'var(--nx-cyan-soft)',
+									]}
+								/>
 							</div>
 						</div>
 
@@ -678,14 +691,6 @@
 	}
 
 	/* ── Barres égaliseur ────────────────────────────────────────────────── */
-	@keyframes eq-dance {
-		0%, 100% { height: 25%; }
-		50%       { height: 100%; }
-	}
-	.eq-bar {
-		height: 100%;
-		animation: eq-dance 0.75s ease-in-out infinite;
-	}
 
 	/* ── Mini vinyle Jukebox ─────────────────────────────────────────────── */
 	@keyframes vinyl-spin {
