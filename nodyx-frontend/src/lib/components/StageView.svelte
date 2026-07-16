@@ -157,6 +157,7 @@
     let screenAudioElem = $state<HTMLAudioElement | undefined>(undefined)
     let screenVolume = $state(100)   // 0..100, volume « maître » du son de l'écran
     let screenMuted  = $state(false)
+    let hasScreenAudio = $state(false)   // le partage focalisé diffuse-t-il du son ?
 
     // Rattache le son de l'écran focalisé au <audio> dédié. Le son peut arriver
     // APRÈS l'image (l'ordre n'est pas garanti), addTrack() programmatique ne
@@ -167,10 +168,11 @@
         const el = screenAudioElem
         const entry = focusedEntry
         if (!el) return
-        if (!entry || entry.isLocal) { try { el.srcObject = null } catch { /* rien */ } return }
+        if (!entry || entry.isLocal) { hasScreenAudio = false; try { el.srcObject = null } catch { /* rien */ } return }
         const stream = entry.stream
         const attach = (): boolean => {
             const tracks = stream.getAudioTracks()
+            hasScreenAudio = tracks.length > 0
             if (tracks.length === 0) return false
             const cur = el.srcObject as MediaStream | null
             const same = !!cur && cur.getAudioTracks().length === tracks.length
@@ -418,32 +420,40 @@
                     <div class="absolute bottom-4 left-4 z-10 flex items-center gap-2 px-2.5 py-1.5 rounded-lg
                                 opacity-40 hover:opacity-100 transition-opacity duration-150"
                          style="background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.12); color: white; backdrop-filter: blur(4px);">
-                        <button
-                            onclick={() => { screenMuted = !screenMuted; if (!screenMuted) nudgeScreenAudio() }}
-                            class="shrink-0 hover:text-indigo-300 transition-colors"
-                            title={screenMuted ? 'Réactiver le son du partage' : 'Couper le son du partage'}
-                            aria-label={screenMuted ? 'Réactiver le son du partage' : 'Couper le son du partage'}
-                        >
-                            {#if screenMuted || screenVolume === 0}
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6 9H2v6h4l5 4V5z"/>
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M23 9l-6 6M17 9l6 6"/>
-                                </svg>
-                            {:else}
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6 9H2v6h4l5 4V5z"/>
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-                                </svg>
-                            {/if}
-                        </button>
-                        <input
-                            type="range" min="0" max="100" step="1"
-                            bind:value={screenVolume}
-                            oninput={() => { if (screenVolume > 0) { screenMuted = false; nudgeScreenAudio() } }}
-                            class="stage-vol"
-                            title="Volume du partage ({screenVolume}%)"
-                            aria-label="Volume du partage"
-                        />
+                        {#if hasScreenAudio}
+                            <button
+                                onclick={() => { screenMuted = !screenMuted; if (!screenMuted) nudgeScreenAudio() }}
+                                class="shrink-0 hover:text-indigo-300 transition-colors"
+                                title={screenMuted ? 'Réactiver le son du partage' : 'Couper le son du partage'}
+                                aria-label={screenMuted ? 'Réactiver le son du partage' : 'Couper le son du partage'}
+                            >
+                                {#if screenMuted || screenVolume === 0}
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6 9H2v6h4l5 4V5z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M23 9l-6 6M17 9l6 6"/>
+                                    </svg>
+                                {:else}
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6 9H2v6h4l5 4V5z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                                    </svg>
+                                {/if}
+                            </button>
+                            <input
+                                type="range" min="0" max="100" step="1"
+                                bind:value={screenVolume}
+                                oninput={() => { if (screenVolume > 0) { screenMuted = false; nudgeScreenAudio() } }}
+                                class="stage-vol"
+                                title="Volume du partage ({screenVolume}%)"
+                                aria-label="Volume du partage"
+                            />
+                        {:else}
+                            <svg class="w-4 h-4 shrink-0" style="color: rgba(255,255,255,0.5)" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6 9H2v6h4l5 4V5z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M23 9l-6 6M17 9l6 6"/>
+                            </svg>
+                            <span class="text-xs" style="color: rgba(255,255,255,0.7)">Ce partage ne diffuse pas de son</span>
+                        {/if}
                     </div>
                 {/if}
 
