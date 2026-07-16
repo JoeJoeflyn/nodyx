@@ -596,37 +596,46 @@
 		}
 	}
 
-	// ── Auto-flip popups that would overflow their scroll container ──────────
+	// ── Placement des popups (position: fixed, hors de tout overflow) ─────────
+	// Les popups sont en `position: fixed` (cf CSS .popup) : `fixed` échappe au
+	// clipping des ancêtres en `overflow: hidden/auto`, ce qui réglait un bug
+	// RÉCURRENT (les popups tronquées dès que l'éditeur est dans un conteneur qui
+	// scrolle ou une carte à coins arrondis : modal du chat, carte de tâche…).
+	// On calcule la position depuis le bouton déclencheur (le parent de la popup)
+	// et on BORNE à l'écran des DEUX côtés (l'ancien code ne gérait que la droite),
+	// avec bascule vers le haut si ça déborde en bas.
 	function autoFlip(node: HTMLElement) {
-		function findScrollContainer(): HTMLElement {
-			let p = node.parentElement
-			while (p && p !== document.body) {
-				const o = getComputedStyle(p).overflow
-				if (o !== 'visible' && o !== '') return p
-				p = p.parentElement
-			}
-			return document.body
-		}
-		function adjust() {
+		function place() {
+			const anchor = node.parentElement
+			if (!anchor) return
+			// Mesure la taille naturelle avant de borner.
 			node.style.left = '0px'
+			node.style.top = '0px'
 			node.style.right = 'auto'
-			const rect = node.getBoundingClientRect()
-			const container = findScrollContainer()
-			const cRect = container.getBoundingClientRect()
-			const boundary = Math.min(window.innerWidth, cRect.right) - 8
-			if (rect.right > boundary) {
-				node.style.left = 'auto'
-				node.style.right = '0px'
-			}
+			node.style.bottom = 'auto'
+			const pw = node.offsetWidth
+			const ph = node.offsetHeight
+			const a = anchor.getBoundingClientRect()
+			const vw = window.innerWidth
+			const vh = window.innerHeight
+			// Horizontal : aligné au bouton, borné à l'écran (gauche ET droite).
+			const left = Math.max(8, Math.min(a.left, vw - pw - 8))
+			// Vertical : sous le bouton ; au-dessus s'il n'y a pas la place en bas.
+			let top = a.bottom + 4
+			if (top + ph > vh - 8 && a.top - ph - 4 >= 8) top = a.top - ph - 4
+			node.style.left = `${Math.round(left)}px`
+			node.style.top = `${Math.round(top)}px`
 		}
-		adjust()
-		const ro = new ResizeObserver(adjust)
+		place()
+		const ro = new ResizeObserver(place)
 		ro.observe(node)
-		window.addEventListener('resize', adjust)
+		window.addEventListener('resize', place)
+		window.addEventListener('scroll', place, true)  // suit le scroll (fixed ne suit pas seul)
 		return {
 			destroy() {
 				ro.disconnect()
-				window.removeEventListener('resize', adjust)
+				window.removeEventListener('resize', place)
+				window.removeEventListener('scroll', place, true)
 			},
 		}
 	}
@@ -1585,11 +1594,9 @@
 
 	/* ── Popups ────────────────────────────────────────────────────────── */
 	:global(.popup) {
-		position: absolute;
-		top: 100%;
-		left: 0;
-		margin-top: 0.25rem;
-		z-index: 50;
+		position: fixed;        /* échappe au clipping des overflow ancêtres ; placée par use:autoFlip */
+		z-index: 1000;          /* au-dessus des modals (chat z-400, tâches…) */
+		max-width: calc(100vw - 16px);   /* jamais plus large que l'écran (mobile) */
 		background-color: rgb(31 41 55);
 		border: 1px solid rgb(55 65 81);
 		border-radius: 0.75rem;
