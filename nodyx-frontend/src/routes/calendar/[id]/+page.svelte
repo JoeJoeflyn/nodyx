@@ -66,9 +66,19 @@
 	{/if}
 </svelte:head>
 
+<!-- Conteneur de la page. `/calendar` est dans le groupe SANS padding du layout
+     (chaque page y gère sa marge, comme la liste avec son .cal-root) : sans ce
+     conteneur, le contenu collait aux sidebars. Le padding sert aussi de repère
+     au bandeau ci-dessous, qui s'en échappe par des marges négatives. -->
+<div class="px-4 sm:px-6 py-8">
+
 <!-- ── HERO IMAGE ──────────────────────────────────────────────────────────── -->
 {#if ev.cover_url}
-	<div class="relative -mx-4 sm:-mx-6 lg:-mx-8 mb-8 h-72 sm:h-96 overflow-hidden">
+	<!-- Bord-à-bord : les marges négatives DOIVENT correspondre au padding du
+	     conteneur, sinon le bandeau déborde sous les sidebars et rogne le titre
+	     et le bouton retour (c'était le cas avec un lg:-mx-8 sans lg:px-8 en face).
+	     -mt-8 annule le py-8 pour que l'image parte bien du haut. -->
+	<div class="relative -mx-4 sm:-mx-6 -mt-8 mb-8 h-72 sm:h-96 overflow-hidden">
 		<img src={ev.cover_url} alt="" class="w-full h-full object-cover"/>
 		<div class="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/40 to-transparent"></div>
 
@@ -392,4 +402,6 @@
 		{/if}
 
 	</aside>
+</div>
+
 </div>
