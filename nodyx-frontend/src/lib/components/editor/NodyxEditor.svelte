@@ -315,6 +315,49 @@
 			},
 		})
 
+		// ── Live Twitch (.twitch-live) : bloc HTML protégé ───────────────────
+		// Même piège que la console SSH ci-dessous, découvert en prod : l'éditeur
+		// ne connaît pas les iframes Twitch, donc il les JETAIT silencieusement à
+		// la réédition. On corrigeait une virgule ailleurs dans l'article, et le
+		// lecteur + le chat disparaissaient à l'enregistrement.
+		// Nœud ATOMIQUE : capture son HTML interne au chargement, le ré-émet tel
+		// quel à la sauvegarde. Les paramètres de l'embed (chaîne, `parent`,
+		// thème) sont donc préservés à l'identique, sans qu'on ait à les deviner.
+		const TwitchLive = Node.create({
+			name: 'twitchLive',
+			group: 'block',
+			atom: true,
+			selectable: true,
+			draggable: true,
+			addAttributes() {
+				return {
+					html: { default: '', parseHTML: (el: HTMLElement) => el.innerHTML, renderHTML: () => ({}) },
+				}
+			},
+			parseHTML() { return [{ tag: 'div.twitch-live' }] },
+			renderHTML({ node }: any) {
+				const dom = document.createElement('div')
+				dom.className = 'twitch-live'
+				dom.innerHTML = node.attrs.html
+				return dom
+			},
+			addNodeView() {
+				return ({ node }: any) => {
+					// Aperçu non éditable. `pointer-events: none` sur les iframes :
+					// sinon le lecteur avale les clics et le bloc devient impossible
+					// à sélectionner, donc à déplacer ou supprimer.
+					const dom = document.createElement('div')
+					dom.setAttribute('contenteditable', 'false')
+					const inner = document.createElement('div')
+					inner.className = 'twitch-live'
+					inner.innerHTML = node.attrs.html
+					inner.style.pointerEvents = 'none'
+					dom.appendChild(inner)
+					return { dom }
+				}
+			},
+		})
+
 		// ── Console SSH (.nodyx-term) : bloc HTML protégé ────────────────────
 		// Les tutos d'installation contiennent des consoles stylées (div.nodyx-term
 		// avec barre/corps/spans colorés). Ce n'est PAS éditable inline : on en
@@ -574,7 +617,7 @@
 				HeadingIds, TocBox,
 				NodyxTwoCols, NodyxColumn,
 				NodyxAudio, NodyxTrack,
-				NodyxTerm,
+				NodyxTerm, TwitchLive,
 			],
 			content: initialContent,
 			onTransaction() { syncActive(); syncBubble() },
