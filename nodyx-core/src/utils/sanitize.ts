@@ -78,7 +78,15 @@ export function sanitize(raw: string): string {
   return sanitizeHtml(raw, {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: ALLOWED_ATTRS,
-    allowedIframeHostnames: ['www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com', 'player.vimeo.com', 'vimeo.com'],
+    // Embeds vidéo : uniquement les domaines de lecteur OFFICIELS de chaque
+    // plateforme (pas une page quelconque du site). Twitch permet d'intégrer un
+    // live dans un post ; son lecteur EXIGE un paramètre `parent=<domaine>`
+    // correspondant au site qui l'affiche, sinon il refuse de démarrer.
+    allowedIframeHostnames: [
+      'www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com',
+      'player.vimeo.com', 'vimeo.com',
+      'player.twitch.tv', 'embed.twitch.tv',
+    ],
     transformTags: {
       'nodyx-audio-player': (tagName, attribs) => {
         if (attribs.cover && !isAllowedImgSrc(attribs.cover)) {
